@@ -772,17 +772,53 @@ class 더블클릭_그래프(unittest.TestCase):
         self.assertNotIn("PIO 반송실패 점수 (M14)", lb)
 
 
-class 작은_그래프_호버(unittest.TestCase):
+class 마우스를_대면_그_자리에_뜬다(unittest.TestCase):
     """칸에는 '구간 최고값' 만 적혀 있어서, 아래 작은 그래프를 보고 '그럼 이
-    시각엔 얼마였나' 를 물으면 화면에 답이 없었다."""
+    시각엔 얼마였나' 를 물으면 화면에 답이 없었다.
+
+    ★말풍선(<title>)을 쓰지 않는다. 브라우저 기본 말풍선은 **1초쯤 늦게** 뜨고
+      마우스를 조금만 움직이면 사라졌다 다시 센다 — 그래프를 훑으며 값을 읽는
+      데는 못 쓴다. 자바스크립트도 안 쓴다(리포트·저장한 SVG 도 그대로 돌아야
+      한다). 칸마다 글자를 미리 그려 두고 CSS 로 그것만 켠다.
+    """
     C = _dt.datetime(2026, 9, 16, 14, 30)
 
     def _tips(self, svg):
-        return [x for x in re.findall(r"<title>([^<]*)</title>", svg)]
+        return re.findall(r'class="hvt"[^>]*>([^<]*)', svg)
 
-    def test_분마다_값이_말풍선으로_뜬다(self):
+    def test_분마다_시각과_값이_나온다(self):
         tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
         self.assertIn("14:10 · 8분 ▲", tips)
+
+    def test_스코어도_마찬가지다(self):
+        """'스코어쪽도' — 점수 선을 훑으면서 몇 시에 몇 점인지 읽어야 한다."""
+        tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertTrue(any(re.fullmatch(r"14:1\d · \d+점 \S+ · M14", t)
+                            for t in tips), [t for t in tips if "점" in t][:4])
+
+    def test_말풍선을_안_쓴다(self):
+        """<title> 은 1초 늦다. 남겨 두면 우리 글자 위에 하나 더 겹쳐 뜬다."""
+        svg = _G.render(_rows("M14"), self.C, minutes=60)
+        self.assertLessEqual(svg.count("<title>"), 1)   # 이름표 잘림 표시만 허용
+
+    def test_자바스크립트_없이_뜬다(self):
+        """리포트·저장한 SVG 는 자바스크립트 없이 열린다."""
+        svg = _G.render(_rows("M14"), self.C, minutes=60)
+        self.assertIn(".hv:hover .hvt{opacity:1}", svg)
+        self.assertIn(".hv .hvt,.hv .hvr{opacity:0}", svg)
+        self.assertNotIn("<script", svg)
+
+    def test_밑에_있던_글자가_안_비친다(self):
+        """호버 글자는 평소 '임계 3.3분' 이 있는 자리를 덮는다. 처음엔 글자에
+        배경색 테두리만 둘렀는데 **글자 사이**가 안 덮여 밑이 비쳤다 —
+        눈으로 보고 알았다. 바탕을 깐다."""
+        svg = _G.render(_rows("M14"), self.C, minutes=60)
+        self.assertIn('class="hvr"', svg)
+        self.assertIn(".hv:hover .hvr{opacity:.97}", svg)
+        # 바탕은 글자보다 넓어야 덮인다
+        m = re.search(r'class="hvr" x="(\d+)" y="\d+" width="(\d+)"', svg)
+        self.assertTrue(m, "바탕 사각형을 못 찾았다")
+        self.assertGreater(int(m.group(2)), 40)
 
     def test_임계를_안_넘은_분에는_표가_안_붙는다(self):
         tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
@@ -792,8 +828,13 @@ class 작은_그래프_호버(unittest.TestCase):
     def test_쌓은_칸은_경로별로_나눠_말한다(self):
         """합만 보여 주면 '어느 경로냐' 가 안 남는다 — 그게 조치 지점이다."""
         tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
-        self.assertTrue(any("M16HUB&lt;-M14A ×2" in t and "·" in t for t in tips),
+        self.assertTrue(any("M16HUB&lt;-M14A ×2" in t for t in tips),
                         [t for t in tips if "×2" in t][:3])
+
+    def test_여러_줄은_글자를_따로_세운다(self):
+        """SVG <text> 는 줄바꿈을 안 먹는다 — 그냥 넣으면 한 줄로 이어 붙는다."""
+        tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
+        self.assertFalse([t for t in tips if "\n" in t], "줄바꿈이 글자 안에 남았다")
 
     def test_창이_길면_띠를_묶는다(self):
         """180분이면 1.8px 짜리 띠가 180개 — 마우스로 집을 수가 없다."""
@@ -801,15 +842,16 @@ class 작은_그래프_호버(unittest.TestCase):
         self.assertTrue(any("최고" in t for t in self._tips(svg)))
 
     def test_눌러서_고정할_수_있다(self):
-        """스코어 패널과 같은 동작 — 작은 그래프에서 튄 곳을 바로 집는다."""
+        """발동 룰까지 한 줄에 못 적는다 — 그건 눌러서 고정한 표가 보여 준다."""
         svg = _G.render(_rows("M14"), self.C, minutes=60)
-        hits = re.findall(r'<rect class="ghit" data-at="([^"]+)" x="\d+" ', svg)
-        self.assertTrue(hits, "칸 히트에도 data-at 이 있어야 한다")
+        self.assertTrue(re.findall(r'class="ghit" data-at="([^"]+)" x="\d+" ', svg),
+                        "칸 히트에도 data-at 이 있어야 한다")
 
-    def test_말풍선이_이름표를_되풀이하지_않는다(self):
-        """띠가 수백 개다 — 같은 글자를 수백 번 실어 보내면 파일만 커진다."""
-        tips = self._tips(_G.render(_rows("M14"), self.C, minutes=60))
-        self.assertFalse([t for t in tips if t.startswith("M14 반송시간\n")])
+    def test_글자_모양은_규칙_한_줄로_모은다(self):
+        """히트가 수백 개다 — 칸마다 font/색을 적으면 파일이 두 배가 된다."""
+        svg = _G.render(_rows("M14"), self.C, minutes=60)
+        self.assertNotIn('class="hvt" font-size', svg)
+        self.assertIn(".hvt{font:", svg)
 
 
 class 실제지표_칸(unittest.TestCase):

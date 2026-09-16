@@ -792,14 +792,33 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
                  f'y2="{ty:.1f}" stroke="{P["crit"]}" stroke-width="1" opacity=".55"/>')
     o.append(f'<line x1="{x + 12:.1f}" y1="{pb:.1f}" x2="{x + w - 12:.1f}" '
              f'y2="{pb:.1f}" stroke="{P["line"]}" stroke-width="1"/>')
-    _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P)
+    _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, color)
 
 
 # 한 띠가 이보다 좁으면 마우스로 집을 수가 없다 — 분을 묶는다.
 HIT_MIN_W = 6.0
 
 
-def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P):
+def _readout(o, rx, ry, txt):
+    """'시각 · 값' 한 줄 — **늘 같은 자리**에 뜬다.
+
+    ★마우스를 따라다니는 말풍선을 쓰지 않는다. 눈이 글자를 쫓아가느라
+      정작 그래프를 못 본다. 자리가 고정이면 거기만 보면 된다.
+    ★글자 모양(색·크기·테두리)은 전부 <style> 규칙이다. 칸마다 속성을 적으면
+      히트가 수백 개라 파일이 두 배가 된다. 색은 바깥 <g> 에서 물려받는다.
+    """
+    # ★SVG <text> 는 줄바꿈을 안 먹는다. 여러 줄이면 글자를 따로 세워야 한다
+    #   — 그냥 넣으면 한 줄로 이어 붙어서 무슨 말인지 알 수가 없다.
+    lines = [x.strip() for x in str(txt).split("\n")]
+    wid = max((_text_w(x, 10.5) for x in lines), default=0) + 12
+    o.append(f'<rect class="hvr" x="{rx - wid:.0f}" y="{ry - 11:.0f}" '
+             f'width="{wid:.0f}" height="{4 + 14 * len(lines):.0f}" rx="4"/>')
+    for k, line in enumerate(lines):
+        o.append(f'<text class="hvt" x="{rx - 6:.0f}" y="{ry + k * 14:.0f}">'
+                 f'{_e(line)}</text>')
+
+
+def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, color=None):
     """칸 위에 분마다 투명한 띠를 깔고 그 분의 값을 말풍선으로 붙인다.
 
     ★칸에는 '구간 최고값' 만 적혀 있었다. 그래서 아래 작은 그래프를 보고
@@ -841,13 +860,21 @@ def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P):
                     for sp in stk]
             part = [f"{nm} {_fmt(v)}" for nm, v in part if v]
             if part:
-                tip += "\n  " + " · ".join(part)
+                tip += "\n" + " · ".join(part)
         # data-at 을 같이 실어 **누르면 그 분이 고정**되게 한다 — 스코어
         # 패널과 같은 동작이다. 묶인 띠는 그 구간 최고값이 난 분을 가리킨다.
-        o.append(f'<rect class="ghit" data-at="{_e(best[0].isoformat())}" '
+        # <g> 로 묶어야 CSS 가 '이 칸에 마우스가 왔을 때 이 글자' 를 고른다.
+        # fill 은 여기서 한 번만 적고 글자가 물려받는다 (히트 rect 는 .ghit
+        # 규칙이 직접 칠하므로 안 물든다).
+        o.append(f'<g class="hv" fill="{color}"><rect class="ghit" '
+                 f'data-at="{_e(best[0].isoformat())}" '
                  f'x="{lx:.0f}" y="{y + 60:.0f}" '
-                 f'width="{max(1.0, rx - lx):.0f}" height="{h - 66:.0f}">'
-                 f'<title>{_e(tip)}</title></rect>')
+                 f'width="{max(1.0, rx - lx):.0f}" height="{h - 66:.0f}"/>')
+        # ★값 줄의 오른쪽 — 평소엔 '임계 3.3분' 이 있는 자리다. 호버하는
+        #   동안만 그 위를 덮는다(글자 테두리가 배경색이라 깨끗이 덮인다).
+        #   그래프 안(y+76)에 두면 선 위에 글자가 얹혀 둘 다 안 읽힌다.
+        _readout(o, x + w - 12, y + 56, tip)
+        o.append("</g>")
 
 
 
@@ -955,8 +982,21 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
          f'style="display:block" role="img" xmlns="http://www.w3.org/2000/svg">',
          # ★fill/커서를 인라인으로 적으면 히트 영역 하나당 50자가 더 붙는다.
          #   칸마다 분 단위 히트를 깔면서 수백 개가 됐다 — 규칙으로 뺀다.
+         # ★말풍선을 안 쓴다. 브라우저 기본 <title> 은 1초쯤 늦게 뜨고 마우스를
+         #   조금만 움직이면 사라졌다 다시 센다 — 지표 그래프를 훑으며 값을
+         #   읽는 데는 못 쓴다. 자바스크립트도 안 쓴다(리포트·저장한 SVG 에서도
+         #   그대로 돌아야 한다). 칸마다 '시각 · 값' 글자를 미리 그려 두고
+         #   **그 칸에 마우스가 오면 그것만 보이게** 한다. CSS 한 줄이면 된다.
          f'<style>.ghit{{fill:{P["tx"]};fill-opacity:0;cursor:pointer}}'
-         f'.ghit:hover{{fill-opacity:.07}}</style>',
+         f'.hv:hover .ghit{{fill-opacity:.07}}'
+         f'.hv .hvt,.hv .hvr{{opacity:0}}'
+         f'.hv:hover .hvt{{opacity:1}}.hv:hover .hvr{{opacity:.97}}'
+         # ★글자 모양은 전부 여기 한 줄로 모은다. 히트가 수백 개라 칸마다
+         #   font·색을 적으면 파일이 두 배가 된다 (색만 바깥 <g> 에서 물려받음).
+         # ★바탕을 깐다. 처음엔 글자에 배경색 테두리만 둘렀는데, 글자 **사이**는
+         #   안 덮여서 밑에 있던 '임계 3.3분' 이 비쳤다 — 눈으로 보고 알았다.
+         f'.hvt{{font:700 10.5px Consolas,monospace;text-anchor:end}}'
+         f'.hvr{{fill:{P["bg2"]}}}</style>',
          f'<rect width="100%" height="100%" fill="{P["bg"]}"/>']
 
     # ── 제목 ─────────────────────────────────────────────────────────
@@ -1032,31 +1072,37 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
                  f'stroke-linejoin="round" stroke-linecap="round"/>')
 
     # ── 분마다 호버 ───────────────────────────────────────────────────
-    # ★서버가 그린 SVG 라 <title> 이 곧 툴팁이다(JS 없이 뜬다). 선이 1px 라도
-    #   손이 닿게 히트 영역을 칸 폭만큼 넓게 깐다. data-at 은 화면이 클릭으로
-    #   그 분을 집을 때 쓴다.
+    # ★마우스를 대면 **그 자리에** '시각 · 점수 · 등급 · 주 영역' 이 한 줄로
+    #   뜬다. 말풍선(<title>)은 안 쓴다 — 1초쯤 늦게 뜨고, 마우스를 조금만
+    #   움직여도 사라졌다 다시 센다. 선을 따라 훑으며 값을 읽을 수가 없다.
+    # ★발동 룰까지 여기 적지 않는다. 한 줄로 안 들어가고, 그건 **눌러서**
+    #   고정한 표가 제대로 보여 준다 (data-at 이 그 길이다).
     hw = max(3.0, pw / max(1, n))
     for i, (t, r) in enumerate(pts):
         v = _f(r.get("unified_risk_score"))
-        lv2 = next((nm for lo, hi, nm, _c in bands
-                    if v is not None and lo <= v <= hi), "")
-        ln = [f"{t:%H:%M}  {'' if v is None else f'{v:.0f}점'} {lv2}".rstrip()]
+        lv2, lc2 = "", P["tx"]
+        for lo, hi, nm, c2 in bands:
+            if v is not None and lo <= v <= hi:
+                lv2, lc2 = nm, (P["tx"] if nm == "정상" else c2)
         ho = (r.get("hot_area") or "").strip()
-        if ho:
-            ln.append(f"주 영역 {ho}")
-        ft = (r.get("predicted_fault_type") or "").strip()
-        if ft:
-            ln.append(f"예측 {ft}")
-        # ★발동 룰은 **한글 요약**으로 준다. CSV 의 reason 은
-        #   "hot_area=M16HUB; S3확정; 발동: M16HUB[R-A_sus,R-C,...]" 같은 기계
-        #   글자다. 그걸 통째로 뿌리면 읽을 것이 아니라 덮는 것이 된다 —
-        #   화면 목록이 쓰는 summarize_reason 과 같은 글을 쓴다.
+        tip = (f"{t:%H:%M} · {'—' if v is None else f'{v:.0f}점'} {lv2}"
+               + (f" · {ho}" if ho else "")).rstrip()
+        # ★첫 줄은 '시각 · 값' 이다 — 그게 훑으면서 읽으려는 것이다.
+        #   발동 룰은 **둘째 줄**로 내린다. 빼 버리면 "왜 이 점수냐" 가 호버에서
+        #   사라져, 매번 눌러서 표를 열어야 한다.
+        #   CSV 의 reason 은 기계 글자라 그대로 못 쓴다 — 화면 목록과 같은
+        #   한글 요약(summarize_reason)을 쓴다.
         rs = summarize_reason(str(r.get("reason") or "").strip(), ho)
         if rs:
-            ln += [x.strip() for x in rs.split(" · ") if x.strip()]
-        o.append(f'<rect class="ghit" data-at="{_e(t.isoformat())}" '
-                 f'x="{X(i) - hw / 2:.1f}" y="{top_s}" width="{hw:.1f}" '
-                 f'height="{SCORE_H}"><title>{_e(chr(10).join(ln))}</title></rect>')
+            while rs and _text_w(rs, 10.5) > pw * 0.72:
+                rs = rs[:-1]
+            tip += "\n" + rs
+        o.append(f'<g class="hv" fill="{lc2}"><rect class="ghit" '
+                 f'data-at="{_e(t.isoformat())}" '
+                 f'x="{X(i) - hw / 2:.0f}" y="{top_s}" width="{hw:.0f}" '
+                 f'height="{SCORE_H}"/>')
+        _readout(o, width - PAD, top_s + 15, tip)
+        o.append("</g>")
 
     # ── 사건 표시 ─────────────────────────────────────────────────────
     # ★딱지는 스코어 패널 **위** 줄에 둔다. 밴드(붉은 띠) 위에 맨 글자를 얹으면

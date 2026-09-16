@@ -15,6 +15,27 @@ with open(os.environ.get("MOCK_CSV") or os.path.join(
         "fixtures", "발동이벤트_샘플.csv"), "rb") as _f:
     CSV = _f.read()
 SESS = set()
+# ── 진짜 파일서버처럼 Range 를 받는다 ──────────────────────────────────
+# 하루치 CSV 는 예측 잡이 1분에 한 줄씩 **덧붙이는** 파일이다. 수집이 그걸
+# 매번 통째로 받으면 오후엔 1.5MB 를 받아 새 줄 하나를 얻는다. 꼬리만 받는
+# 길(Range)을 시험하려면 가짜 서버도 진짜처럼 굴어야 한다.
+LOCK = threading.Lock()
+STATE = {"csv": CSV, "range": True, "hits": []}   # hits: 요청마다 받은 Range
+
+
+def _rng(hdr: str, n: int):
+    """'bytes=123-' → (시작, 끝). 못 읽으면 None."""
+    if not hdr or not hdr.startswith("bytes="):
+        return None
+    a, _, b = hdr[6:].partition("-")
+    try:
+        start = int(a)
+    except ValueError:
+        return None
+    end = int(b) if b.strip() else n - 1
+    if start >= n:
+        return "416"
+    return start, min(end, n - 1)
 
 # FAB 별 파일(fab분리 폴더) — 실물과 같은 특징만 축약:
 #   · unified_risk_score(전체 점수)와 hot_area(전체 기준 M16HUB)가 그대로 있고
@@ -89,7 +110,46 @@ class H(BaseHTTPRequestHandler):
                     return self._send(200, fab_csv(name[:8], fab), "text/csv")
             if not name.endswith("발동이벤트.csv"):
                 return self._send(404, "<html>Not Found</html>")
-            return self._send(200, CSV, "text/csv")
+            with LOCK:
+                body, ok_range = STATE["csv"], STATE["range"]
+            rq = self.headers.get("Range")
+            STATE["hits"].append(rq or "")
+            if rq and ok_range:
+                r = _rng(rq, len(body))
+                if r == "416":
+                    return self._send(416, "<html>Range Not Satisfiable</html>")
+                if r:
+                    a, b = r
+                    part = body[a:b + 1]
+                    self.send_response(206)
+                    self.send_header("Content-Type", "text/csv")
+                    self.send_header("Content-Length", str(len(part)))
+                    self.send_header("Content-Range",
+                                     f"bytes {a}-{b}/{len(body)}")
+                    self.end_headers()
+                    self.wfile.write(part)
+                    return
+            return self._send(200, body, "text/csv")
+        if path.startswith("/mock/"):
+            # 시험용 손잡이 — 예측 잡이 줄을 덧붙이거나, 파일을 통째로 다시
+            # 쓰거나, 서버가 Range 를 아예 안 받는 상황을 만든다.
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with LOCK:
+                if path == "/mock/append":
+                    STATE["csv"] += (q.get("line", ["x"])[0] + "\n").encode()
+                elif path == "/mock/rewrite":
+                    # 길이는 그대로 두고 **앞부분만** 바꾼다 — 꼬리 검사만으로는
+                    # 절대 못 잡는 경우다 (수집이 여기서 조용히 틀릴 뻔했다)
+                    STATE["csv"] = b"X" + STATE["csv"][1:]
+                elif path == "/mock/reset":
+                    STATE.update(csv=CSV, range=True, hits=[])
+                elif path == "/mock/norange":
+                    STATE["range"] = False
+                elif path == "/mock/truncate":
+                    STATE["csv"] = STATE["csv"][:len(STATE["csv"]) // 2]
+                out = json.dumps({"size": len(STATE["csv"]),
+                                  "hits": STATE["hits"][-6:]})
+            return self._send(200, out, "application/json")
         return self._send(404, "<html>Not Found</html>")
 
     def do_POST(self):

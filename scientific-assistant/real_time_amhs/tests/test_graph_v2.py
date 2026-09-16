@@ -271,10 +271,16 @@ class 클릭할_수_있게_시각을_실어_보낸다(unittest.TestCase):
     def test_히트_영역에_시각이_실려_있다(self):
         self.assertIn('data-at="2026-09-12T15:20:00"', self.svg)
 
-    def test_말풍선도_그대로_있다(self):
-        """클릭을 넣었다고 호버를 없애면 안 된다 — 훑어볼 때는 그쪽이 빠르다."""
-        self.assertIn("<title>", self.svg)
+    def test_호버도_그대로_있다(self):
+        """클릭을 넣었다고 호버를 없애면 안 된다 — 훑어볼 때는 그쪽이 빠르다.
+
+        ★2026-09 에 말풍선(<title>)을 걷어냈다. 브라우저 기본 말풍선은 1초쯤
+          늦게 뜨고 마우스를 조금만 움직이면 사라졌다 다시 센다 — 그래프를
+          훑으며 값을 읽을 수가 없다. 대신 그 자리에 글자를 띄운다(.hvt).
+        """
+        self.assertIn('class="hvt"', self.svg)
         self.assertIn("15:20", self.svg)
+        self.assertIn(".hv:hover .hvt{opacity:1}", self.svg)
 
     def test_화면이_클릭을_받는다(self):
         html = open(os.path.join(os.path.dirname(os.path.dirname(

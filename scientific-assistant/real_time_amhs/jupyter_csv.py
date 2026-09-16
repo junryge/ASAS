@@ -200,21 +200,24 @@ def _drop_session(c: dict) -> None:
 
 
 def login(c: dict, fresh: bool = False) -> tuple["_Session | None", str]:
-    """주피터 로그인 → (세션, 오류). 비밀번호가 없으면 익명 세션으로 진행.
+    """로그인 세션 — 캐시가 살아 있으면 그대로 쓴다.
 
-    fresh=True 면 캐시를 무시하고 새로 로그인한다.
+    ★락을 **로그인 전체**에 건다 (예전엔 dict 를 만질 때만 걸었다).
+      여섯 시스템을 동시에 받기 시작하면서, 캐시가 비어 있는 순간 여섯
+      스레드가 각자 로그인을 하러 갔다 — 왕복 두 번짜리가 여섯 벌이다.
+      한 놈이 하는 동안 나머지는 기다렸다가 그 결과를 같이 쓴다.
     """
     key = _sess_key(c)
-    if not fresh and key:
-        with _SESS_LOCK:
+    with _SESS_LOCK:
+        if not fresh:
             hit = _SESS.get(key)
-        if hit and (time.time() - hit[1]) < _SESS_TTL:
-            return hit[0], ""
-    s, err = _login_fresh(c)
-    if not err and s is not None and key:
-        with _SESS_LOCK:
-            _SESS[key] = (s, time.time())
-    return s, err
+            if hit and (time.time() - hit[1]) < _SESS_TTL:
+                return hit[0], ""
+        s, err = _login_fresh(c)
+        if err:
+            return None, err
+        _SESS[key] = (s, time.time())
+        return s, ""
 
 
 def _login_fresh(c: dict) -> tuple["_Session | None", str]:
@@ -258,6 +261,59 @@ def _login_fresh(c: dict) -> tuple["_Session | None", str]:
 
 
 # ────────────────────────────── 내려받기 ──────────────────────────────
+# ── 하루치 파일은 **덧붙기만 한다** — 그러니 꼬리만 받는다 ────────────────
+# ★이게 '데이터가 느리다' 의 진짜 원인이었다. 예측 잡이 1분에 한 줄을 덧붙이는
+#   파일을, 우리는 매 주기마다 **처음부터 끝까지** 다시 받고 있었다. 오후가
+#   되면 한 파일이 1.5MB 쯤 되는데 시스템이 여섯이라 1분에 9MB 를 받아 새 줄
+#   여섯 개를 얻었다. 하루로 치면 13GB 다.
+# ★그래서 Range 로 **마지막으로 받은 자리부터** 달라고 한다. 다만 그냥 이어
+#   붙이면 위험하다 — 예측 잡이 파일을 통째로 다시 썼다면 앞부분이 달라져
+#   있는데 우리는 모르고 꿰맨다. 그래서 **이미 가진 꼬리 512바이트를 같이**
+#   받아서, 그 자리가 똑같은지 확인하고 이어 붙인다. 하나라도 어긋나면 그냥
+#   전체를 다시 받는다 (틀린 데이터보다 느린 게 낫다).
+# ★이어 붙인 결과는 전체를 받은 것과 **바이트까지 같다.** 그래서 파싱·저장·
+#   원본보관 등 아래 모든 것이 하나도 안 달라진다 — 줄어드는 건 통신량뿐이다.
+# ★겹침 검사만으로는 부족하다. 시험을 쓰다가 잡았다 —
+#   파일을 **같은 길이로** 다시 쓰면서 앞부분 값만 바꾸면(44→45), 꼬리는
+#   그대로라 검사를 통과하고 우리는 옛 본문을 그대로 들고 있게 된다.
+#   조용히 틀린 데이터가 된다. 그래서 두 가지를 더 건다:
+#     ① **자랐을 때만** 이어 붙인다 (Content-Range 의 전체 크기로 판단).
+#        덧붙기가 아니면 이어 붙일 근거가 없다 — 전체를 다시 받는다.
+#     ② 그래도 '자라면서 앞부분도 바뀐' 경우가 남는다. 매번 확인할 길이
+#        없으니 **몇 번에 한 번은 전체를 다시 읽어** 맞춰 놓는다.
+#        어긋나 있어도 그 몇 분 안에 제자리로 돌아온다.
+_TAIL_OVERLAP = 512          # 이어 붙이는 자리를 검사할 겹침
+_TAIL_FULL_EVERY = 10        # 이만큼마다 한 번은 전체를 받는다 (config 로 덮음)
+_BODY: dict = {}             # {세션키: (day, 마지막으로 받은 전체 원문, 이어붙인 횟수)}
+_BODY_LOCK = threading.Lock()
+_CR_RE = re.compile(r"bytes\s+(\d+)-(\d+)/(\d+)")
+# 마지막 한 번이 실제로 몇 바이트를 받았나 (로그가 '꼬리 12KB/1.5MB' 라고 말한다)
+_LAST_WIRE: dict = {}
+
+
+def _body_get(key: str, day: str) -> tuple[bytes, int]:
+    """(마지막으로 받은 전체 원문, 이어 붙인 횟수) — 날짜가 다르면 빈 것."""
+    with _BODY_LOCK:
+        d, raw, n = _BODY.get(key) or ("", b"", 0)
+    return (raw, n) if d == day else (b"", 0)
+
+
+def _body_put(key: str, day: str, raw: bytes, n: int = 0) -> None:
+    # 날짜마다 쌓아 두지 않는다 — 시스템당 한 벌(오늘치)만 들고 있는다
+    with _BODY_LOCK:
+        _BODY[key] = (day, raw, n)
+
+
+def _body_drop(key: str) -> None:
+    with _BODY_LOCK:
+        _BODY.pop(key, None)
+
+
+def wire_bytes(c: dict | None = None) -> tuple[int, int]:
+    """마지막 내려받기의 (실제 통신 바이트, 전체 파일 바이트)."""
+    return _LAST_WIRE.get(_sess_key(c or {}), (0, 0))
+
+
 def download(day: str, cfg: dict | None = None) -> tuple[bytes | None, str]:
     """그 날짜 CSV 원문 → (bytes, 오류).
 
@@ -269,21 +325,52 @@ def download(day: str, cfg: dict | None = None) -> tuple[bytes | None, str]:
     return _download_once(day, c, fresh=False)
 
 
-def _download_once(day: str, c: dict, fresh: bool) -> tuple[bytes | None, str]:
+def _download_once(day: str, c: dict, fresh: bool,
+                   full: bool = False) -> tuple[bytes | None, str]:
     s, err = login(c, fresh=fresh)
     if err:
         return None, err
     url = file_url(day, c)
+    key = _sess_key(c)
+    every = int(c.get("tail_full_every", _TAIL_FULL_EVERY) or 0)
+    have, spliced = _body_get(key, day)
+    # every=3 이면 '세 번 받을 때 한 번은 전체' — 이어 붙이기는 연달아 두 번까지
+    if full or not c.get("tail_fetch", True) or (every and spliced >= every - 1):
+        have, spliced = b"", 0       # 전체로 받는다 (주기적 맞춤 포함)
+    hdr, at = {}, 0
+    if len(have) > _TAIL_OVERLAP:
+        at = len(have) - _TAIL_OVERLAP
+        hdr["Range"] = f"bytes={at}-"
     try:
-        r = s.get(url)
+        r = s.get(url, hdr or None)
         raw = r.read()
+        code = getattr(r, "status", None) or r.getcode()
+        if at and code == 206:
+            cr = _CR_RE.search(r.headers.get("Content-Range") or "")
+            total = int(cr.group(3)) if cr else 0
+            # ★'덧붙었는가' 와 '이은 자리가 같은가' 를 **둘 다** 본다.
+            #   자라지 않았는데 이어 붙이면, 같은 길이로 다시 쓴 파일을
+            #   옛 내용 그대로 들고 있게 된다 (실제로 시험이 잡았다).
+            if total <= len(have) or raw[:_TAIL_OVERLAP] != have[at:]:
+                _body_drop(key)
+                return _download_once(day, c, fresh, full=True)
+            _LAST_WIRE[key] = (len(raw), total)
+            raw = have + raw[_TAIL_OVERLAP:]
+            spliced += 1
+        else:
+            # 206 이 아니면 서버가 Range 를 무시하고 전체를 준 것이다 — 그대로 쓴다
+            _LAST_WIRE[key] = (len(raw), len(raw))
+            spliced = 0
     except urllib.error.HTTPError as e:
+        if e.code == 416 and at:        # 파일이 줄었다 (다시 쓰는 중) — 전체로
+            _body_drop(key)
+            return _download_once(day, c, fresh, full=True)
         body = e.read(300).decode("utf-8", "replace")
         hint = ""
         if e.code in (403, 302):
             if not fresh:                  # 쿠키가 만료됐을 수 있다 — 한 번만
                 _drop_session(c)
-                return _download_once(day, c, fresh=True)
+                return _download_once(day, c, fresh=True, full=full)
             hint = " — 로그인이 안 됐을 수 있습니다 (비밀번호 파일 확인)"
         elif e.code == 404:
             hint = " — 그 날짜 파일이 아직 없을 수 있습니다"
@@ -296,8 +383,11 @@ def _download_once(day: str, c: dict, fresh: bool) -> tuple[bytes | None, str]:
     if head.startswith(b"<!doctype html") or head.startswith(b"<html"):
         if not fresh:                      # 쿠키 만료 → 로그인 폼이 온 것
             _drop_session(c)
-            return _download_once(day, c, fresh=True)
+            _body_drop(key)
+            return _download_once(day, c, fresh=True, full=True)
+        _body_drop(key)
         return None, "CSV 가 아니라 HTML 이 왔습니다 — 로그인 실패로 보입니다"
+    _body_put(key, day, raw, spliced)
     return raw, ""
 
 

@@ -144,7 +144,8 @@ def _bootstrap_today() -> None:
     ss = systems()
     print(f"[기동] 오늘({day}) 00:00 ~ {now:%H:%M} 하루치 확보 중… "
           f"({'주피터 CSV' if jup else '로그프레소'} · {' '.join(ss)})")
-    for sys in ss:
+
+    def one(sys):
         ctx = get_ctx(sys)
         t0 = time.time()
         tag = f"[기동:{sys}]"
@@ -166,11 +167,11 @@ def _bootstrap_today() -> None:
             if not r.get("ok"):
                 print(f"{tag} ⚠️ 확보 실패 — {r.get('error')}")
                 ctx["state"]["bootstrap"] = {"ok": False, "error": r.get("error")}
-                continue
+                return
             print(f"{tag} ✅ {r['rows']}행({r['minutes']}분) 조회 · 신규 {r['written']}행 저장 · "
                   f"중복 {r['skipped']}"
                   + (f" → {', '.join(r['files'])}" if r.get("files") else "")
-                  + f"  [{round(time.time()-t0,1)}초]")
+                  + f"  [{round(time.time()-t0,1)}초{_wire(ctx)}]")
             if r.get("warn"):
                 print(f"{tag} ⚠️ {r['warn']}")
             ctx["state"]["bootstrap"] = {"ok": True, "minutes": r["minutes"],
@@ -179,6 +180,46 @@ def _bootstrap_today() -> None:
         except Exception as e:
             print(f"{tag} ⚠️ 확보 예외: {type(e).__name__}: {e}")
             ctx["state"]["bootstrap"] = {"ok": False, "error": str(e)}
+
+    # ★여섯 시스템을 **같이** 받는다. 예전엔 한 줄로 세워 놓고 하나씩 받아서,
+    #   한 파일에 2초면 기동에만 12초가 걸렸다. 서로 다른 파일·다른 저장소라
+    #   기다릴 이유가 없다 (로그인 세션은 한 벌을 나눠 쓴다 — login 단일 비행).
+    t_all = time.time()
+    _fan_out(one, ss)
+    print(f"[기동] 하루치 확보 끝 — 전체 {round(time.time() - t_all, 1)}초")
+
+
+def _fan_out(fn, items) -> None:
+    """시스템들을 **동시에** 돌린다 — 서로 다른 파일·저장소라 줄 세울 이유가 없다.
+
+    하나가 터져도 나머지는 간다 (각 fn 이 자기 예외를 삼키게 되어 있다).
+    """
+    items = list(items)
+    if len(items) < 2:
+        for x in items:
+            fn(x)
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=min(len(items), 8),
+                            thread_name_prefix="sys") as ex:
+        list(ex.map(fn, items))
+
+
+def _wire(ctx: dict) -> str:
+    """이번에 실제로 몇 바이트를 받았나 — ' · 꼬리 12KB/1.5MB' 처럼 붙인다.
+
+    ★'느리다' 는 말에 숫자를 붙이려고 남긴다. 통신량이 전체 그대로면 꼬리
+      받기가 안 먹는 것이고, 꼬리만인데도 느리면 원인은 다른 데 있다.
+    """
+    try:
+        from jupyter_csv import cfg_of, wire_bytes
+        got, tot = wire_bytes(cfg_of(ctx["cfg"]))
+    except Exception:                                   # noqa: BLE001
+        return ""
+    if not tot:
+        return ""
+    kb = lambda n: f"{n / 1024:.0f}KB" if n < 1024 * 1024 else f"{n / 1048576:.1f}MB"
+    return f" · 받음 {kb(got)}/{kb(tot)}" + ("" if got >= tot else " (꼬리)")
 
 
 def _llm_mode(sys: str) -> str:
@@ -233,7 +274,9 @@ def _poll_loop() -> None:
     _bootstrap_today()                 # ① 하루치 먼저 확보
     while True:                        # ② 이후 증분 수집
         interval = max(5, int(CFG.get("query", {}).get("poll_interval_s", 60)))
-        for i, sys in enumerate(systems()):
+
+        def scan(iv):
+            i, sys = iv
             ctx = get_ctx(sys)
             st = ctx["state"]
             t0 = time.time()
@@ -257,7 +300,8 @@ def _poll_loop() -> None:
                 if st["scans"] == 1 or sv.get("written"):
                     print(f"[수집:{sys}] {res.get('rows')}행 조회 · "
                           f"신규 {sv.get('written', 0)}행 저장"
-                          + (f" → {sv['files'][0]}" if sv.get("files") else ""))
+                          + (f" → {sv['files'][0]}" if sv.get("files") else "")
+                          + f"  [{round(time.time() - t0, 1)}초{_wire(ctx)}]")
                 if res.get("ok"):
                     # ★데이터가 우선이다. 선행 감지는 가벼우니 바로 하고,
                     #   LLM(케이스 자동 판단·분당 판단)은 **별도 스레드**로
@@ -275,6 +319,12 @@ def _poll_loop() -> None:
             except Exception as e:
                 st.update(connected=False, error=f"{type(e).__name__}: {e}",
                           last_scan=datetime.now().isoformat())
+
+        # ★여섯 시스템을 **같이** 돌린다. 예전엔 한 줄로 세워서, 한 시스템이
+        #   2초 걸리면 한 바퀴에 12초가 갔다 — 주기가 60초라도 화면에 도착하는
+        #   시각이 그만큼 계단처럼 밀렸고, 게이트웨이가 느린 날엔 주기를 통째로
+        #   넘겼다. 서로 다른 파일·다른 저장소라 기다릴 이유가 없다.
+        _fan_out(scan, list(enumerate(systems())))
 
         # 주기를 나눠 자며 변경을 빠르게 반영
         slept = 0
