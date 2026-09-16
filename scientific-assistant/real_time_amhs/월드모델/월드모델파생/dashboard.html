@@ -322,7 +322,11 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
     <span id="status-badge" class="badge badge-stopped">정지</span>
     <span id="loading-msg">로딩중...</span>
     <button onclick="resetMapView()" class="tb-fit" title="맵을 전체가 보이게 되돌린다">⤢ 전체보기</button>
-    <button id="btn-iso" class="toggle-btn" onclick="toggleLayer('iso')" title="등각(유사 3D)으로 눕혀 본다 — 정보는 같다. 기본은 평면">◈ 등각</button>
+    <div class="tb-group tb-seg" title="보기 — 2D 평면(기본) / 유사 3D(눕혀 보기). 정보는 같다">
+      <span class="tb-cap">보기</span>
+      <button id="btn-2d"  class="toggle-btn on" onclick="setMapView('2d')">▭ 2D</button>
+      <button id="btn-iso" class="toggle-btn"    onclick="setMapView('iso')">◈ 유사 3D</button>
+    </div>
     <div class="tb-group tb-seg" title="맵에 무엇을 보일지">
       <span class="tb-cap">표시</span>
       <button id="btn-zone" class="toggle-btn on" onclick="toggleLayer('zone')" title="HID Zone 진입/진출 레인">Zone</button>
@@ -1022,6 +1026,16 @@ let showStation = true, showLabel = true, showSensor = false, showJunction = tru
 //   M14 레일은 단층(cad-z 7,242개 = 0)이라 3D 로 올려도 보여줄 높이가 없다 —
 //   그래서 기본 화면으로 두지 않고, 보고 싶을 때만 위 단추로 켠다.
 let showIso = false;
+// 보기 전환 — '2d' | 'iso'. 투영이 바뀌면 팬의 뜻도 바뀌므로 전체보기로 되돌린다.
+function setMapView(mode) {
+  const iso = (mode === 'iso');
+  if (iso !== showIso) { mapZoom = 1; mapPanX = 0; mapPanY = 0; }
+  showIso = iso;
+  const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', v); };
+  on('btn-iso', showIso); on('btn-2d', !showIso);
+  railCacheCanvas = null;
+  drawMap();
+}
 function toggleLayer(layer) {
   if (layer==='zone') showZone = !showZone;
   if (layer==='railcut') showRailCut = !showRailCut;
@@ -1032,12 +1046,12 @@ function toggleLayer(layer) {
   if (layer==='label') showLabel = !showLabel;
   if (layer==='sensor') showSensor = !showSensor;
   if (layer==='junction') showJunction = !showJunction;
-  if (layer==='iso') { showIso = !showIso; mapZoom = 1; mapPanX = 0; mapPanY = 0; }   // 투영이 바뀌면 팬 뜻도 바뀐다 — 전체보기로
+  if (layer==='iso') { setMapView(showIso ? '2d' : 'iso'); return; }
   const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', v); };
   on('btn-zone', showZone); on('btn-railcut', showRailCut); on('btn-id', showId);
   on('btn-name', showName); on('btn-hotspot', showHotspot);
   on('btn-station', showStation); on('btn-label', showLabel); on('btn-sensor', showSensor);
-  on('btn-junction', showJunction); on('btn-iso', showIso);
+  on('btn-junction', showJunction); on('btn-iso', showIso); on('btn-2d', !showIso);
   railCacheCanvas = null;
   drawMap();
 }

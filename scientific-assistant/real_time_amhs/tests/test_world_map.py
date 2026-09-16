@@ -86,8 +86,11 @@ class 월드모델_HMI_맵(unittest.TestCase):
             self.assertNotIn(old, src, old)
         self.assertEqual(src.count("mapCenterOn("), 4)          # 정의 1 + 차량·존·핫스팟 3
         self.assertGreaterEqual(src.count("mapProj(b, w, h)"), 2)  # drawMap + 클릭
-        self.assertIn('id="btn-iso"', src)
-        self.assertIn("if (layer==='iso')", src)
+        # 보기 전환은 '2D | 유사 3D' 두 칸 — 지금 상태가 켜져 보여야 한다 (고객 말 그대로)
+        self.assertIn('id="btn-2d"  class="toggle-btn on"', src)     # 기본 = 2D 켬
+        self.assertIn('id="btn-iso" class="toggle-btn"    onclick="setMapView(\'iso\')"', src)
+        self.assertIn("function setMapView(mode)", src)
+        self.assertIn("if (layer==='iso')", src)                    # 옛 길도 살아 있다
         # 등각은 기본 **끔** — 지금보다 못하면 하지 말라는 것이 결정이었다
         self.assertIn("let showIso = false;", src)
 
