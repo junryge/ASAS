@@ -556,6 +556,22 @@ class 화면배선(unittest.TestCase):
         self.assertIn("post('/api/score_policy'", m.group(0), "길이 둘이면 한쪽만 저장된다")
         self.assertIn("repaintGrades()", m.group(0), "저장 뒤 지금 화면을 새 설정으로")
 
+    def test_알람_위험은_빨강_하지만_등급_알약은_그대로(self):
+        """고객 지정: 경계는 지금 색 유지, 위험·초위험은 둘 다 빨강.
+
+        ★.lv위험 자체를 고치면 종합점수 칸의 등급 알약·추이 밴드까지
+          빨개진다. 알람 배지에서만 덮어야 한다.
+        """
+        self.assertIn(".chip.alm.lv위험{color:var(--crit)}", self.src,
+                      "알람 배지의 위험이 아직 주황이다")
+        self.assertIn(".lv위험{background:color-mix(in srgb, var(--major) 16%, "
+                      "var(--panel));color:var(--major)}", self.src,
+                      "등급 알약의 위험 색이 바뀌었다 — 여기는 건드리면 안 된다")
+        # 경계는 덮지 않는다 (지금 색 유지)
+        self.assertNotIn(".chip.alm.lv경계{", self.src, "경계는 지금 색 그대로다")
+        # 초위험은 원래 --crit 이라 덮을 것이 없다
+        self.assertNotIn(".chip.alm.lv초위험{", self.src)
+
     def test_등급_색_클래스가_실제로_있다(self):
         # almChip 이 lv경계·lv위험·lv초위험 을 쓴다
         for lv in ("경계", "위험", "초위험"):
