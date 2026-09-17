@@ -452,9 +452,16 @@ class Viewer {
     const X = x => x - cx, Z = y => y - cy;
     const H = this.o.railHeight;
 
-    const floor = new T.Mesh(new T.BoxGeometry(W, 0.8, D),
-      [this.mat(0xbfc3c8), this.mat(0xbfc3c8), this.mat(0xd6d9dc, { r: 0.9 }), this.mat(0x9aa0a6), this.mat(0xeef0f2), this.mat(0xeef0f2)]);
-    floor.position.y = -0.4;
+    // 바닥 — walls:false 면 **두께 없는 평면**이다. 원본은 0.8 m 짜리 상자라
+    //   등각으로 보면 그 옆면이 낮은 벽처럼 둘러싼다 (고객: "벽 남아있어").
+    //   벽을 안 세울 때는 그 테두리도 같이 없애야 '벽이 없다' 가 된다.
+    const noWall = this.o.walls === false;
+    const floor = noWall
+      ? new T.Mesh(new T.PlaneGeometry(W, D), this.mat(0xd6d9dc, { r: 0.9 }))
+      : new T.Mesh(new T.BoxGeometry(W, 0.8, D),
+          [this.mat(0xbfc3c8), this.mat(0xbfc3c8), this.mat(0xd6d9dc, { r: 0.9 }), this.mat(0x9aa0a6), this.mat(0xeef0f2), this.mat(0xeef0f2)]);
+    if (noWall) { floor.rotation.x = -Math.PI / 2; floor.position.y = 0; }
+    else floor.position.y = -0.4;
     floor.receiveShadow = true;
     W0.add(floor);
     const gp = [], step = 1.2;

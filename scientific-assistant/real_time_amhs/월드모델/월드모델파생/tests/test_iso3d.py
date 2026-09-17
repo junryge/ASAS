@@ -94,6 +94,9 @@ class 뷰어에_보탠_것(unittest.TestCase):
     def test_벽을_뺄_수_있다(self):
         self.assertIn("walls: true,", self.s, "기본은 원본대로 벽 있음")
         self.assertIn("this.walls = this.o.walls === false ? [] :", self.s, "walls:false 면 외곽 벽도 안 세워야 한다")
+        # ★바닥이 0.8 m 상자면 그 옆면이 낮은 벽처럼 둘러싼다 — 벽을 뺄 땐 평면이어야 한다
+        self.assertIn("const noWall = this.o.walls === false;", self.s)
+        self.assertIn("? new T.Mesh(new T.PlaneGeometry(W, D), this.mat(0xd6d9dc, { r: 0.9 }))", self.s)
 
     def test_네_색만_준_옛_호출도_산다(self):
         self.assertIn("if (o.colors.state.length < ST_NAME.length)", self.s)
