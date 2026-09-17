@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""차량 표시 — 현장 HMI 와 같은 규칙으로 동그라미 둘 · 나머지 세모.
+"""차량 표시 — 삼각형 안에 점을 찍는다 (현장 HMI 캡처 그대로).
 
 고객 요청(2026-09):
-  · ● 검은 동그라미 = FOUP 을 들고 이동하는 상태
-  · ● 흰 동그라미   = FOUP 을 가지러 가는 상태 (Assigned 되어 Source 포트로)
-  · ▲ 나머지 전부   = 세모
+  · 삼각형은 그대로 두고 **그 안에 점**을 찍는다
+  · ● 검은 점 = FOUP 을 들고 이동하는 상태
+  · ● 흰 점   = FOUP 을 가지러 가는 상태 (Assigned 되어 Source 포트로)
+  · 그 밖에는 점을 안 찍는다
+  · 삼각형의 색·모양은 여전히 상태(공차 · 적재 · OBS · 정지 · JAM)가 정한다
 
 가장 확실한 신호는 UDP/로그프레소의 **VEHICLE_EXECUTE_CYCLE**(차량 실행 사이클)
 이다 — 2 = ACQUIRE_MOVING, 4 = DEPOSIT_MOVING. 화면까지 그 값이 오도록
@@ -85,44 +87,62 @@ class 실행사이클이_화면까지_온다(unittest.TestCase):
         self.assertIn("vhlCycle:v.vhlCycle,", self.h, "새로 생길 때 경로")
 
 
-class 동그라미_둘_나머지_세모(unittest.TestCase):
+class 삼각형_안의_점(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.h = _read("dashboard.html")
 
-    def test_기본값(self):
-        for k, v in (("colorLoaded", "'#111111'"), ("colorAssign", "'#ffffff'"),
-                     ("shapeLoaded", "'circle'"), ("shapeAssign", "'circle'")):
-            self.assertRegex(self.h, r"%s:\s*%s" % (k, re.escape(v)), k)
-        for k in ("shapeEmpty", "shapeObs", "shapeStop", "shapeJam"):
+    def test_삼각형은_안_건드렸다(self):
+        """모양도 색도 예전 그대로다 — 점은 그 **위에** 얹는 표시일 뿐이다."""
+        for k in ("shapeEmpty", "shapeLoaded", "shapeObs", "shapeStop", "shapeJam"):
             self.assertRegex(self.h, r"%s:\s*'triangle'" % k, k + " 는 세모")
+        self.assertRegex(self.h, r"colorLoaded:\s*'#22d3ee'", "적재 색은 예전 그대로")
+        self.assertRegex(self.h, r"colorEmpty:\s*'#22c55e'", "공차 색은 예전 그대로")
+
+    def test_점_기본값(self):
+        for k, v in (("carryDot", "'on'"), ("dotLoaded", "'#000000'"),
+                     ("dotAssign", "'#ffffff'")):
+            self.assertRegex(self.h, r"%s:\s*%s" % (k, re.escape(v)), k)
+        self.assertRegex(self.h, r"dotSize:\s*0\.\d+", "점 크기 기본값")
+
+    def test_삼각형을_동그라미로_바꿨던_판이_안_남았다(self):
+        """처음에 잘못 읽어 세모를 통째로 동그라미로 바꿨다. 그 찌꺼기가 남으면
+        설정창에 죽은 줄이 뜬다."""
+        for dead in ("colorAssign", "shapeAssign", "ms-colorAssign", "ms-shapeAssign"):
+            self.assertNotIn(dead, self.h, dead + " 가 남아 있다")
 
     def test_저장_키를_올렸다(self):
         """★기본값만 바꾸면, 한 번이라도 ⚙ 를 저장한 사람은 옛 값이 덮어
         '바꿨다는데 화면은 그대로' 가 된다. 이 프로젝트에서 이미 한 번 겪었다."""
-        self.assertIn("const MAP_SETTINGS_KEY = 'oht_world_map_settings_v2';", self.h)
+        self.assertIn("const MAP_SETTINGS_KEY = 'oht_world_map_settings_v3';", self.h)
 
-    def test_설정창에_두_줄이_있다(self):
-        self.assertIn('id="ms-colorAssign"', self.h)
-        self.assertIn('id="ms-shapeAssign"', self.h)
-        self.assertIn('id="ms-colorLoaded"', self.h)
-        self.assertIn('id="ms-shapeLoaded"', self.h)
+    def test_설정창에_점_묶음이_있다(self):
+        for i in ("ms-carryDot", "ms-dotLoaded", "ms-dotAssign", "ms-dotSize"):
+            self.assertIn('id="%s"' % i, self.h)
         # 설정창은 DEFAULT_MAP_SETTINGS 의 키 이름으로 입력을 찾는다 — 짝이 맞아야 한다
         i = self.h.index("const DEFAULT_MAP_SETTINGS = {")
         keys = set(re.findall(r"^\s{2}(\w+):", self.h[i:self.h.index("\n};", i)], re.M))
-        for k in ("colorAssign", "shapeAssign"):
+        for k in ("carryDot", "dotLoaded", "dotAssign", "dotSize"):
             self.assertIn(k, keys, k + " 가 DEFAULT_MAP_SETTINGS 에 없다")
 
-    def test_간소로는_동그라미가_안_보인다고_적었다(self):
+    def test_켜고_끄는_값은_글자다(self):
+        """설정창 저장 루프가 숫자/글자만 다룬다. 참·거짓으로 두면 저장이 깨진다."""
+        self.assertRegex(self.h, r"carryDot:\s*'on'")
+        self.assertIn('<option value="on">', self.h)
+        self.assertIn('<option value="off">', self.h)
+
+    def test_간소로는_점이_잘_안_보인다고_적었다(self):
         """눌러 보고 알면 늦다 — 설정창과 주석 둘 다에."""
+        self.assertIn("점을 제대로 보려면", self.h)
         self.assertIn("상세", self.h)
-        self.assertIn("동그라미를 보려면", self.h)
 
     def test_아이소메트리는_안_건드렸다(self):
-        """회의 뒤로 미룬 것 — 3D 색은 예전 값으로 고정."""
-        self.assertIn("const V3D_COLORS_BEFORE = ['#22c55e', '#22d3ee', '#9ca3af', '#ef4444', '#f59e0b'];", self.h)
-        i = self.h.index("function v3dColors()")
-        self.assertNotIn("mapSettings", self.h[i:i + 200], "3D 가 2D 설정을 따라가면 적재 차가 검게 묻는다")
+        """회의 뒤로 미룬 것. 차량 색은 예전 그대로라 3D 는 건드릴 게 없고,
+        점은 2D 에만 찍는다."""
+        a = self.h.index("===== 3D 아이소메트리 (시작) =====")
+        b = self.h.index("===== 3D 아이소메트리 (끝) =====")
+        self.assertNotIn("drawCarryDot", self.h[a:b], "점은 2D 에만")
+        self.assertNotIn("V3D_COLORS_BEFORE", self.h, "3D 색을 따로 박아 둘 이유가 없다")
 
     def test_점수_예측은_안_건드린다(self):
         for f in ("replay_engine.py", "predictor.py"):

@@ -535,10 +535,11 @@ function jumpFrame(val) { sendCmd('jump_frame', { frame: parseInt(val) }); }
 // ============================================================
 // 맵 표시 설정 (색상/크기) — localStorage 영속 저장
 // ============================================================
-/* ★키 v1 → v2. 차량 색·모양 기본값이 바뀌어서다(적재 ▲하늘 → ●검정, 지시 ●흰색 추가).
+/* ★키 v1 → v3. 차량 표시 기본값이 바뀌어서다(삼각형 안에 점을 찍는다).
      키를 그대로 두면 예전에 ⚙ 설정을 한 번이라도 저장한 사람은 옛 값이 새 기본값을
-     덮어 "바꿨다는데 화면은 그대로" 가 된다. 옛 값은 그냥 안 읽고 버린다. */
-const MAP_SETTINGS_KEY = 'oht_world_map_settings_v2';
+     덮어 "바꿨다는데 화면은 그대로" 가 된다. 옛 값은 그냥 안 읽고 버린다.
+     (v2 는 삼각형을 동그라미로 바꿨던 판 — 잘못 읽은 것이라 건너뛴다.) */
+const MAP_SETTINGS_KEY = 'oht_world_map_settings_v3';
 const DEFAULT_MAP_SETTINGS = {
   // ★2026-09 현장 요청 — "월드모델 맵을 현장 HMI 화면처럼". 밝은 바탕에 검은
   //   레일, 레일 옆 포트 네모 줄, ZC/HID 초록 상자, 베이·열 글자, 진행 방향을
@@ -552,24 +553,29 @@ const DEFAULT_MAP_SETTINGS = {
   vehicleRadius:  3,              // mapZoom 에 곱해짐 (삼각형이 보이려면 3 은 돼야 한다)
   stationSize:    1.0,            // 포트 네모 크기 배수
   colorEmpty:     '#22c55e',      // 공차 (초록)
-  /* ★2026-09 고객 요청 — 현장 HMI 와 같은 규칙.
-       ● 검은 동그라미 = FOUP 을 들고 이동 (DEPOSIT_MOVING)
-       ● 흰 동그라미   = FOUP 을 가지러 이동 (지시받아 Source 포트로 · ACQUIRE_MOVING)
-       ▲ 나머지 전부   = 세모 (진행 방향을 가리킨다)
-     두 동그라미만 반송 중인 차다. 색·모양 다 아래에서 바꿀 수 있다. */
-  colorLoaded:    '#111111',      // 적재 이동 — 검은 동그라미
-  colorAssign:    '#ffffff',      // 가지러 가는 중 — 흰 동그라미
+  colorLoaded:    '#22d3ee',      // 적재 (하늘) — 현장 캡처의 색
   colorObs:       '#f59e0b',      // OBS
   colorStop:      '#9ca3af',      // 정지
   colorJam:       '#ef4444',      // JAM
   // 카테고리별 도형: 'circle' | 'triangle' | 'square' | 'diamond'
   // 삼각형은 **진행 방향을 가리킨다** (현재 노드 → 다음 노드). 원은 방향이 없다.
   shapeEmpty:     'triangle',
-  shapeLoaded:    'circle',
-  shapeAssign:    'circle',
+  shapeLoaded:    'triangle',
   shapeObs:       'triangle',
   shapeStop:      'triangle',
   shapeJam:       'triangle',
+  /* ★2026-09 고객 요청 — 현장 HMI 캡처 그대로. **삼각형 안에 점**을 찍는다.
+       ● 검은 점 = FOUP 을 들고 이동      (VEHICLE_EXECUTE_CYCLE 4 = DEPOSIT_MOVING)
+       ● 흰 점   = FOUP 을 가지러 이동     (          〃          2 = ACQUIRE_MOVING)
+         (지시받아 Source 포트로 가는 중)
+         그 밖에는 점을 안 찍는다.
+     ★삼각형(모양·색)은 그대로다. 점은 그 위에 얹는 표시일 뿐이고, 차의 색은
+       여전히 상태(공차·적재·OBS·정지·JAM)가 정한다 — 캡처에서도 노란 삼각형,
+       하늘 삼각형 안에 똑같이 검은 점이 찍혀 있다. */
+  carryDot:       'on',           // 'on' | 'off'
+  dotLoaded:      '#000000',      // 들고 감 — 검은 점
+  dotAssign:      '#ffffff',      // 가지러 감 — 흰 점
+  dotSize:        0.55,           // 차량 크기(vehicleRadius) 대비 점의 반지름 배수
 };
 // 테마 팔레트 — hmi 는 현장 캡처(밝은 회색 바탕·검은 레일·초록 ZC 상자)를 그대로 옮긴 것
 const MAP_THEMES = {
@@ -1521,9 +1527,30 @@ function drawVehicleShape(ctx, sx, sy, rr, shape, ang, color, stroke) {
     ctx.arc(0, 0, rr, 0, 6.283);
   }
   ctx.fillStyle = color; ctx.fill();
-  // ★크기와 상관없이 그린다. 예전엔 rr >= 3 일 때만 그렸는데, 흰 동그라미(가지러
-  //   가는 중)가 밝은 HMI 바탕에서 통째로 사라졌다 — 차량 크기 최소는 2.5px 다.
+  // ★크기와 상관없이 그린다. 예전엔 rr >= 3 일 때만 그렸는데, 흰 점(가지러 가는 중)이
+  //   밝은 삼각형 안에서 테두리 없이 묻혔다 — 차량 크기 최소는 2.5px 다.
   if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(0.6, Math.min(1.2, rr*0.18)); ctx.stroke(); }
+  ctx.restore();
+}
+
+/* 삼각형 안의 점 — 현장 HMI 캡처 그대로. 검은 점 = 들고 감, 흰 점 = 가지러 감.
+   ★삼각형 **위에 얹는다**. 삼각형의 모양·색은 그대로고(상태가 정한다), 점은
+     짐을 들었는지 가지러 가는지만 말한다. 캡처에서도 하늘·노랑·초록 삼각형
+     안에 똑같은 점이 찍혀 있다.
+   ★자리는 삼각형의 **무게중심**이다. 삼각형 꼭짓점이 (tr,0)·(−0.7tr,±0.78tr)
+     이므로 무게중심은 국소좌표로 (−0.133·tr, 0) — 진행 방향으로 돌려 놓는다.
+     한가운데(0,0)에 찍으면 뾰족한 쪽으로 치우쳐 보인다. */
+function drawCarryDot(ctx, sx, sy, rr, kind, ang) {
+  if (!kind || mapSettings.carryDot === 'off') return;
+  const color = (kind === 'loaded') ? mapSettings.dotLoaded : mapSettings.dotAssign;
+  if (!color) return;
+  const dr = Math.max(0.9, rr * (Number(mapSettings.dotSize) || 0.55));
+  const cx = -0.133 * (rr * 1.56);                 // 무게중심 (세모의 국소 x)
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(ang || 0);
+  ctx.beginPath(); ctx.arc(cx, 0, dr, 0, 6.283);
+  ctx.fillStyle = color; ctx.fill();
   ctx.restore();
 }
 // ===== HMI 맵 레이어 (끝) =====
@@ -1549,14 +1576,12 @@ function state3D(v) {
   if (v.state === 2 || v.state === 8 || v.state === 9) return 2;
   return v.isFull ? 1 : 0;
 }
-/* 3D 상태 순서대로의 색.
-   ★아이소메트리는 이번 변경에서 **뺐다** — 회의 뒤에 같이 정하기로 했다.
-     그래서 2D 가 쓰던 예전 색을 여기 박아 둔다. mapSettings 를 그대로 따라가면
-     2D 의 새 규칙(적재 = 검정)이 3D 에도 번져 어두운 바닥에서 차가 안 보인다.
-     회의에서 정해지면 이 줄을 지우고 다시 mapSettings 를 읽게 하면 된다. */
-const V3D_COLORS_BEFORE = ['#22c55e', '#22d3ee', '#9ca3af', '#ef4444', '#f59e0b'];
+// 3D 상태 순서대로의 색 — 설정창(⚙)의 그 색이다. 2D 범례와 3D 범례가 같은 색을 말한다.
+// ★아이소메트리는 이번 변경에서 뺐다 (회의 뒤). 삼각형 안의 점은 2D 에만 찍는다 —
+//   차량 색은 예전 그대로라 3D 는 건드릴 것이 없다.
 function v3dColors() {
-  return V3D_COLORS_BEFORE.slice();
+  return [mapSettings.colorEmpty, mapSettings.colorLoaded, mapSettings.colorStop,
+          mapSettings.colorJam, mapSettings.colorObs];
 }
 // 프레임의 차량 한 대 → 3D 행. 엣지(현재→다음 노드) + 비율로 레일 위에 놓고,
 // 엣지를 못 찾으면(레이아웃에 없는 주소) x,y 좌표로 떨어진다.
@@ -1878,22 +1903,23 @@ function drawMap() {
     const [sx,sy] = toS(v.dx, v.dy);
     if (sx<-5||sx>w+5||sy<-5||sy>h+5) continue;
 
-    // ★순서가 곧 우선순위다. 현장 HMI 의 Status List 도 위(멈춤·이상)가 먼저다 —
-    //   멈춰 선 차는 짐을 들었어도 '이동 중' 이 아니므로 ● 가 아니라 ▲ 로 나간다.
+    // 색·모양은 **상태**가 정한다 (예전 그대로). 짐 여부는 삼각형 안의 점이 말한다.
     let color, shape;
-    const carry = vehCarry(v);
     if (v.state === 6)                                       { color = mapSettings.colorObs;    shape = mapSettings.shapeObs;    }
     else if (v.state === 7)                                  { color = mapSettings.colorJam;    shape = mapSettings.shapeJam;    }
     else if (v.state === 2 || v.state === 8 || v.state === 9){ color = mapSettings.colorStop;   shape = mapSettings.shapeStop;   }
-    else if (carry === 'loaded')                             { color = mapSettings.colorLoaded; shape = mapSettings.shapeLoaded; }
-    else if (carry === 'assign')                             { color = mapSettings.colorAssign; shape = mapSettings.shapeAssign; }
+    else if (v.isFull)                                       { color = mapSettings.colorLoaded; shape = mapSettings.shapeLoaded; }
     else                                                     { color = mapSettings.colorEmpty;  shape = mapSettings.shapeEmpty;  }
 
     if (showIso) {   // 바닥 그림자 — 떠 있는 느낌
       mapCtx.fillStyle = 'rgba(0,0,0,0.18)';
       mapCtx.beginPath(); mapCtx.ellipse(sx + 2, sy + 3, r * 1.1, r * 0.6, 0, 0, 6.283); mapCtx.fill();
     }
-    drawVehicleShape(mapCtx, sx, showIso ? sy - 2 : sy, r, shape || 'triangle', vehicleHeading(v, railGraph, toS), color, pal.vehicleStroke);
+    const ang = vehicleHeading(v, railGraph, toS);
+    const vy = showIso ? sy - 2 : sy;
+    drawVehicleShape(mapCtx, sx, vy, r, shape || 'triangle', ang, color, pal.vehicleStroke);
+    // 삼각형 안의 점 — 짐을 들었나(검정) / 가지러 가나(흰색). 상태와 상관없이 찍는다.
+    drawCarryDot(mapCtx, sx, vy, r, vehCarry(v), (shape || 'triangle') === 'triangle' ? ang : 0);
   }
 
   // 2.4. 선택된 OHT 강조 (노란 링 + 라벨)
@@ -3321,38 +3347,21 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
 
     <section class="ms-sec">
       <h4>차량 색 · 모양 <small>▲ 세모는 진행 방향(현재 → 다음 노드)을 가리킵니다</small></h4>
-      <p class="ms-note">현장 HMI 와 같은 규칙입니다 — <b>●</b> 동그라미 둘만 반송 중인 차,
-        나머지는 <b>▲</b> 세모입니다.<br>
-        위에서부터 먼저 맞는 것으로 그립니다. 멈춰 선 차(OBS · 정지 · JAM)는 짐을 들고
-        있어도 '이동 중' 이 아니므로 세모로 나갑니다.<br>
-        <b>간소</b> 로 조회하면 실행 사이클 · 적재 · 목적지 컬럼이 안 와서 동그라미가
-        안 보입니다 — 동그라미를 보려면 <b>상세</b> 로 조회하세요.</p>
-      <div class="ms-row"><label>적재 이동<small>FOUP 을 들고 간다</small></label>
-        <span class="ms-veh">
-          <input type="color" id="ms-colorLoaded">
-          <select id="ms-shapeLoaded">
-            <option value="triangle">▲ 세모 (진행 방향)</option>
-            <option value="circle">● 원</option>
-            <option value="square">■ 사각형</option>
-            <option value="diamond">◆ 마름모</option>
-          </select>
-        </span>
-      </div>
-      <div class="ms-row"><label>가지러 이동<small>지시받아 Source 포트로</small></label>
-        <span class="ms-veh">
-          <input type="color" id="ms-colorAssign">
-          <select id="ms-shapeAssign">
-            <option value="triangle">▲ 세모 (진행 방향)</option>
-            <option value="circle">● 원</option>
-            <option value="square">■ 사각형</option>
-            <option value="diamond">◆ 마름모</option>
-          </select>
-        </span>
-      </div>
       <div class="ms-row"><label>공차운행</label>
         <span class="ms-veh">
           <input type="color" id="ms-colorEmpty">
           <select id="ms-shapeEmpty">
+            <option value="triangle">▲ 세모 (진행 방향)</option>
+            <option value="circle">● 원</option>
+            <option value="square">■ 사각형</option>
+            <option value="diamond">◆ 마름모</option>
+          </select>
+        </span>
+      </div>
+      <div class="ms-row"><label>적재</label>
+        <span class="ms-veh">
+          <input type="color" id="ms-colorLoaded">
+          <select id="ms-shapeLoaded">
             <option value="triangle">▲ 세모 (진행 방향)</option>
             <option value="circle">● 원</option>
             <option value="square">■ 사각형</option>
@@ -3392,6 +3401,32 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
             <option value="diamond">◆ 마름모</option>
           </select>
         </span>
+      </div>
+    </section>
+
+    <section class="ms-sec">
+      <h4>삼각형 안의 점 <small>현장 HMI 캡처와 같은 표시</small></h4>
+      <p class="ms-note">삼각형은 그대로 두고 <b>그 안에 점</b>을 찍습니다.
+        삼각형의 색·모양은 여전히 상태(공차 · 적재 · OBS · 정지 · JAM)가 정하고,
+        점은 <b>짐을 들었는지</b>만 말합니다.<br>
+        ● 검은 점 = FOUP 을 들고 이동 &nbsp;·&nbsp; ● 흰 점 = FOUP 을 가지러 이동
+        (지시받아 Source 포트로) &nbsp;·&nbsp; 그 밖에는 점을 안 찍습니다.<br>
+        <b>간소</b> 로 조회하면 실행 사이클 · 적재 · 목적지 컬럼이 안 와서 점이 잘 안
+        보입니다 — 점을 제대로 보려면 <b>상세</b> 로 조회하세요.</p>
+      <div class="ms-row"><label>점 표시</label>
+        <span><select id="ms-carryDot">
+            <option value="on">켜기</option>
+            <option value="off">끄기</option>
+          </select></span>
+      </div>
+      <div class="ms-row"><label>들고 감<small>FOUP 을 싣고 간다</small></label>
+        <span><input type="color" id="ms-dotLoaded"></span>
+      </div>
+      <div class="ms-row"><label>가지러 감<small>지시받아 Source 포트로</small></label>
+        <span><input type="color" id="ms-dotAssign"></span>
+      </div>
+      <div class="ms-row"><label>점 크기</label>
+        <span><input type="number" id="ms-dotSize" step="0.05" min="0.1" max="0.9"><small>차량 크기 대비 배수 (0.55 = 기본)</small></span>
       </div>
     </section>
 
