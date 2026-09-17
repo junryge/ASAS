@@ -6,12 +6,12 @@ logpresso_query.py — 로그프레소 OHT 조회 (시간 구간 → CSV DataFra
 쿼리 형식: 'remote icamcslogdt01 [ ... ]' 로 감싸 원격 노드에서 조회.
 
 쿼리가 **두 벌**이다 (QUERY_PROFILES). 지금 쓰는 것은 PROFILE 이 가리킨다.
-  · "agg30" (기본) — MSG_ID=2 만 걸러 30초로 묶는다. 고객이 준 쿼리.
-  · "raw"          — 예전 쿼리. 원본 그대로 다 가져온다.
+  · "raw"   (기본) — 예전 쿼리. 원본 그대로 다 가져온다. 화면의 [상세].
+  · "agg30"        — MSG_ID=2 만 걸러 30초로 묶는다. 화면의 [간소].
 바꾸는 법 — 셋 중 아무거나:
-  ① 이 파일 맨 아래쪽 PROFILE = "raw"
-  ② 환경변수  LP_QUERY_PROFILE=raw
-  ③ /api/logpresso/load 본문에 {"profile": "raw"}  (화면이 안 보내면 ①②를 따른다)
+  ① 화면 위 툴바의 [상세] / [간소] 단추 — 고른 것이 이 브라우저에 저장된다
+  ② /api/logpresso/load 본문에 {"profile": "raw" | "agg30"}
+  ③ 환경변수 LP_QUERY_PROFILE · 이 파일의 PROFILE (①②가 없을 때만)
 
 ★agg30 은 컬럼이 줄어든다 — 받는 쪽(data_loader.parse_oht_data_m14a_row)이
   읽는 것 중 이 둘이 안 온다:
@@ -117,6 +117,10 @@ FMT = "%Y%m%d%H%M%S"
 MAX_BYTES = 30 * 1024 * 1024   # 30MB
 
 
+class QueryCancelled(RuntimeError):
+    """사람이 '조회 멈춤' 을 눌렀다 — 실패가 아니다."""
+
+
 # ───────────────────────────────────────────────────────────
 # 쿼리 두 벌
 # ───────────────────────────────────────────────────────────
@@ -143,8 +147,10 @@ def _q_agg30(from_dt: str, to_dt: str, table: str) -> str:
 
 QUERY_PROFILES = {"agg30": _q_agg30, "raw": _q_raw}
 
-# 지금 쓰는 쿼리. "raw" 로 바꾸면 예전 쿼리로 돌아간다.
-PROFILE = os.environ.get("LP_QUERY_PROFILE", "").strip() or "agg30"
+# 아무도 안 고르면 쓰는 쿼리. ★기본은 "raw"(상세) — 처음부터 쓰던 쿼리라,
+# 화면이 형태를 안 보내는 옛 호출도 예전과 똑같이 돌아야 한다.
+# 화면은 위 툴바의 [상세]/[간소] 로 골라 profile 을 함께 보낸다.
+PROFILE = os.environ.get("LP_QUERY_PROFILE", "").strip() or "raw"
 
 
 def _build_query(from_dt: str, to_dt: str, table: str, profile: str = None) -> str:
@@ -198,7 +204,14 @@ def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
 def query_oht_chunked(from_dt: str, to_dt: str,
                       table: str = "oht_data_m16br",
                       chunk_minutes: int = 10,
-                      profile: str = None) -> pd.DataFrame:
+                      profile: str = None,
+                      should_cancel=None) -> pd.DataFrame:
+    """should_cancel: 인자 없이 불러 True 면 멈춘다 (QueryCancelled).
+
+    ★멈춤은 **조각과 조각 사이**에서만 듣는다. 로그프레소에 한 번 보낸 요청은
+      중간에 못 끊는다 (requests 가 응답을 기다리는 중이다). 그래서 누른 뒤
+      길어야 조각 하나(기본 10분치)만큼 더 기다린다 — 화면에 그렇게 적었다.
+    """
     start = datetime.strptime(from_dt, FMT)
     end   = datetime.strptime(to_dt, FMT)
     step  = timedelta(minutes=chunk_minutes)
@@ -213,6 +226,8 @@ def query_oht_chunked(from_dt: str, to_dt: str,
     cur = start
 
     while cur < end:
+        if should_cancel and should_cancel():
+            raise QueryCancelled(f"조회를 멈췄습니다 ({len(frames)}조각까지 받음)")
         nxt = min(cur + step, end)
         f_s = cur.strftime(FMT)
         t_s = nxt.strftime(FMT)
@@ -222,8 +237,10 @@ def query_oht_chunked(from_dt: str, to_dt: str,
         if size > MAX_BYTES and (nxt - cur) > timedelta(seconds=1):
             mid = cur + (nxt - cur) / 2
             print(f"[SPLIT] {f_s}~{t_s} = {size/1024/1024:.1f}MB 초과 → 분할")
-            sub = query_oht_chunked(f_s, mid.strftime(FMT), table, chunk_minutes, profile)
-            sub2 = query_oht_chunked(mid.strftime(FMT), t_s, table, chunk_minutes, profile)
+            sub = query_oht_chunked(f_s, mid.strftime(FMT), table, chunk_minutes,
+                                    profile, should_cancel)
+            sub2 = query_oht_chunked(mid.strftime(FMT), t_s, table, chunk_minutes,
+                                     profile, should_cancel)
             frames.extend([sub, sub2])
         else:
             print(f"[OK] {f_s}~{t_s}  {len(df):>6}건  {size/1024/1024:5.1f}MB")

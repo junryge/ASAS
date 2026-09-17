@@ -222,6 +222,35 @@ async def load_date(request: Request):
     return result
 
 
+# ── 조회 멈춤 ────────────────────────────────────────────────────
+# ★조각과 조각 사이에서만 듣는다 — 보낸 요청 하나는 중간에 못 끊는다.
+# ★단순한 True/False 로는 안 된다. 멈춤을 누른 사람은 곧바로 다시 조회한다
+#   ("다시 재조회 할 수도 있잖아"). 그때 새 조회가 플래그를 False 로 지우는데,
+#   멈추라고 한 옛 조회가 아직 제 조각을 붙들고 있으면 그 False 를 보고 되살아나
+#   두 조회가 같이 돌아 리플레이 엔진을 함께 건드린다.
+#   그래서 조회마다 번호(gen)를 준다:
+#     · 멈춤  = "지금 번호까지는 그만"  (stop_upto = gen)
+#     · 새 조회 = gen + 1 → 멈춤에 안 걸리고, 옛 조회는 제 번호가 아니라 스스로 멎는다
+LP_RUN = {"gen": 0, "stop_upto": 0}
+
+
+def _lp_should_cancel(my_gen: int):
+    """이 조회(my_gen)가 멈춰야 하는지. 조각과 조각 사이에서 불린다."""
+    def _f():
+        if LP_RUN["stop_upto"] >= my_gen:
+            return True                    # 사람이 멈춤을 눌렀다
+        return LP_RUN["gen"] != my_gen     # 더 새 조회가 시작됐다 — 나는 한물갔다
+    return _f
+
+
+@app.post("/api/logpresso/cancel")
+async def logpresso_cancel():
+    """조회 멈춤 — 다음 조각으로 넘어가기 전에 멈춘다."""
+    LP_RUN["stop_upto"] = LP_RUN["gen"]
+    print(f"[로그프레소] 멈춤 요청 (조회 #{LP_RUN['gen']}) — 다음 조각에서 멈춥니다")
+    return {"ok": True, "gen": LP_RUN["gen"]}
+
+
 @app.post("/api/logpresso/load")
 async def logpresso_load(request: Request):
     """로그프레소에서 시간 구간을 조회 → CSV 저장 → 리플레이 엔진에 로드.
@@ -244,6 +273,8 @@ async def logpresso_load(request: Request):
     table   = (body.get('table')   or '').strip()
     chunk_minutes = int(body.get('chunk_minutes', 10))
     profile = (body.get('profile') or '').strip() or None
+    LP_RUN["gen"] += 1                 # 새 조회 — 번호를 하나 올린다
+    _my_gen = LP_RUN["gen"]
 
     if not (from_dt and to_dt and table):
         return JSONResponse(
@@ -263,9 +294,20 @@ async def logpresso_load(request: Request):
           + (f"  profile={profile}" if profile else ""))
     t0 = _time.perf_counter()
     try:
-        df = query_oht_chunked(from_dt, to_dt, table=table,
-                                chunk_minutes=chunk_minutes, profile=profile)
+        # ★조회는 **다른 실에서** 돌린다. 여기서 그냥 부르면 조회가 끝날 때까지
+        #   서버가 통째로 멎어 /api/logpresso/cancel 요청 자체가 안 들어온다.
+        #   (멈춤 단추를 눌러도 아무 일도 안 일어나는 이유가 그것이었다.)
+        from starlette.concurrency import run_in_threadpool
+        df = await run_in_threadpool(
+            lambda: query_oht_chunked(from_dt, to_dt, table=table,
+                                      chunk_minutes=chunk_minutes, profile=profile,
+                                      should_cancel=_lp_should_cancel(_my_gen)))
     except Exception as e:
+        # 멈춤은 실패가 아니다 — 화면이 빨간 오류로 띄우면 안 된다
+        from logpresso_query import QueryCancelled
+        if isinstance(e, QueryCancelled):
+            print(f"[로그프레소] {e}")
+            return JSONResponse({"cancelled": True, "error": str(e)}, status_code=200)
         print(f"[로그프레소] 조회 실패: {e}")
         return JSONResponse(
             {"error": f"로그프레소 조회 실패: {e}"}, status_code=502)

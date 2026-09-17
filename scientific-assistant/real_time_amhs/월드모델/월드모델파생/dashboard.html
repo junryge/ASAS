@@ -55,6 +55,9 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); 
 #topbar .tb-primary { background:var(--primary) !important; border-color:var(--primary) !important; color:#fff !important; font-weight:700; }
 #topbar .tb-primary:hover { filter:brightness(1.08); }
 #topbar .tb-fit { font-weight:700; }
+#topbar button:disabled { opacity:.45; cursor:default; }
+#topbar button:disabled:hover { background:var(--ctl); }
+#topbar .tb-primary:disabled:hover { filter:none; }
 #lp-status { font-size:12px; color:var(--fg2); }
 /* 붙어 있는 단추 묶음 — 속도·표시 레이어 */
 .tb-seg { display:inline-flex; align-items:center; }
@@ -291,7 +294,16 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <input type="text" id="lp-to" placeholder="yyyyMMddHHmmss" title="끝 시각 (14자리, 예: 20260621010000)" maxlength="14">
       <label>테이블</label>
       <input type="text" id="lp-table" placeholder="(FAB 선택 시 자동)" title="로그프레소 테이블명 — FAB 변경 시 자동 갱신, 직접 수정 가능">
+      <div class="tb-seg" title="조회 형태 — 상세는 원본 그대로(컬럼 전부), 간소는 30초로 묶어 가볍게">
+        <span class="tb-cap">조회</span>
+        <button id="lp-raw"   class="toggle-btn on" onclick="setLpProfile('raw')"
+                title="상세 — 예전 그대로. 컬럼이 다 온다(적재·목적지 포함). 데이터가 많아 긴 구간은 느리다">상세</button>
+        <button id="lp-agg30" class="toggle-btn"    onclick="setLpProfile('agg30')"
+                title="간소 — MSG_ID=2 만 30초로 묶는다. 10분 넘는 구간도 조회된다. 적재·목적지는 안 온다">간소</button>
+      </div>
       <button onclick="logpressoLoad()" id="lp-btn" class="tb-primary" title="로그프레소 조회 후 리플레이 로드">📡 조회 로드</button>
+      <button onclick="logpressoStop()" id="lp-stop" disabled
+              title="조회 멈춤 — 조각과 조각 사이에서 멈춘다. 누른 뒤 조각 하나(기본 10분치)만큼은 더 기다릴 수 있다. 멈춘 뒤 바로 다시 조회할 수 있다">⏹ 멈춤</button>
       <span id="lp-status"></span>
     </div>
     <span class="tb-spacer"></span>
@@ -683,6 +695,62 @@ function _toLP(ts) {
   if (digits.length < 8) return '';     // 최소 yyyyMMdd 는 있어야
   return digits.padEnd(14, '0').slice(0, 14);
 }
+/* ── 조회 형태 — 상세(raw, 처음 것) / 간소(agg30, 30초 묶음) ──────────
+   ★기본은 **상세**다. 처음부터 쓰던 쿼리라, 아무것도 안 고르면 예전과 똑같이
+     동작해야 한다. 간소는 "데이터가 너무 많아 10분 이상이 조회가 안 된다" 는
+     자리에서만 고르면 된다.
+   ★간소는 컬럼이 준다 — STOCK_INFO(적재)·DESTINATION(목적지)이 안 온다.
+     그래서 간소로 보면 차량이 전부 공차 색으로 나온다. 단추 툴팁에 적어 뒀다.
+   ★고른 값을 **저장하지 않는다**. 화면을 새로 열면 언제나 상세로 되돌아간다.
+     "처음 조회할 때는 무조건 상세" 라서 그렇다. 간소는 그 화면에서 그 조회에만
+     쓰는 임시 선택이다 — 간소로 한 번 보고 창을 닫았다가 다시 열면 상세다. */
+let lpProfile = 'raw';
+function initLpProfile() {
+  lpProfile = 'raw';               // 열 때마다 상세부터 (지난 선택을 안 따라간다)
+  syncLpProfileBtns();
+}
+function setLpProfile(p) {
+  lpProfile = (p === 'agg30') ? 'agg30' : 'raw';
+  syncLpProfileBtns();
+}
+function syncLpProfileBtns() {
+  const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', v); };
+  on('lp-raw', lpProfile === 'raw');
+  on('lp-agg30', lpProfile === 'agg30');
+}
+
+/* ── 조회 멈춤 ───────────────────────────────────────────────────
+   ★두 군데를 같이 끊어야 한다.
+     1) 서버 — /api/logpresso/cancel 로 "그만" 을 알린다. 서버는 **조각과 조각
+        사이**에서만 멈추므로, 누른 뒤에도 조각 하나(기본 10분치)만큼은 더
+        긁고 있을 수 있다.
+     2) 화면 — 기다리던 fetch 를 AbortController 로 끊는다. 이걸 안 하면 위의
+        조각이 끝날 때까지 조회 단추가 잠긴 채라 "다시 재조회" 를 못 한다.
+   ★멈춤은 실패가 아니다. 빨간 ❌ 도, alert 도 띄우지 않는다. */
+let lpAbort = null;         // 조회 중인 fetch 의 AbortController (없으면 null)
+let lpStopping = false;     // 이번 조회는 사람이 멈춘 것 — 오류로 처리하지 않는다
+function syncLpButtons(busy) {
+  const btn  = document.getElementById('lp-btn');
+  const stop = document.getElementById('lp-stop');
+  if (btn)  btn.disabled  = !!busy;
+  if (stop) stop.disabled = !busy;
+}
+async function logpressoStop() {
+  if (!lpAbort) return;                       // 조회 중이 아니면 할 일 없음
+  lpStopping = true;
+  const stat = document.getElementById('lp-status');
+  const stop = document.getElementById('lp-stop');
+  if (stop) stop.disabled = true;
+  if (stat) stat.textContent = '\u23f9 멈추는 중...';
+  // 서버에게 먼저 알리고(다음 조각부터 안 긁는다), 그다음 화면 쪽을 끊는다
+  try {
+    await fetch('/api/logpresso/cancel', { method: 'POST' });
+  } catch (e) {
+    console.warn('[로그프레소] 멈춤 요청 실패 (화면만 끊습니다):', e);
+  }
+  try { lpAbort.abort(); } catch (e) {}
+}
+
 // FAB/Layout 에 맞는 기본 테이블명 생성 — config.py 규칙과 동일.
 // 예) M14A/A → oht_data_m14a,  M16A/BR → oht_data_m16br,  M16A/E → oht_data_m16e
 function _logpressoTableFor(fab, prefix) {
@@ -705,8 +773,7 @@ async function logpressoLoad() {
   const fromEl = document.getElementById('lp-from');
   const toEl   = document.getElementById('lp-to');
   const tblEl  = document.getElementById('lp-table');
-  const btn    = document.getElementById('lp-btn');
-  const stat   = document.getElementById('lp-status');
+  const stat   = document.getElementById('lp-status');   // 단추 잠금은 syncLpButtons() 가 한다
 
   const from_dt = _toLP(fromEl.value);
   const to_dt   = _toLP(toEl.value);
@@ -714,6 +781,7 @@ async function logpressoLoad() {
   //   친 값에 대문자가 섞이면 없는 테이블을 쳐서 조회가 빈다 (실제로 oht_data_m16A
   //   가 넘어와 그랬다). 화면에도 고쳐 넣어 무엇으로 쳤는지 보이게 한다.
   const table   = (tblEl.value || '').trim().toLowerCase();
+  const profile = lpProfile;
   if (table && tblEl.value !== table) tblEl.value = table;
   if (!from_dt || !to_dt || !table) {
     alert('시작/끝 시각과 테이블명을 모두 입력하세요.\n예) oht_data_m16br');
@@ -727,9 +795,15 @@ async function logpressoLoad() {
   const _parse = s => new Date(
     +s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8),
     +s.slice(8,10), +s.slice(10,12), +s.slice(12,14));
+  /* 구간 상한 — 상세는 30분, 간소는 3시간. 간소를 만든 이유가 "데이터가 너무
+     많아 10분 이상이 조회가 안 된다" 라, 상한까지 같이 두면 소용이 없다. */
+  const _cap = (profile === 'agg30') ? 180 : 30;
   const _diffMin = (_parse(to_dt) - _parse(from_dt)) / 60000;
-  if (_diffMin > 30) {
-    alert(`조회 구간이 ${_diffMin.toFixed(1)}분입니다.\n30분 이내로 줄여주세요.`);
+  if (_diffMin > _cap) {
+    alert(`조회 구간이 ${_diffMin.toFixed(1)}분입니다.\n`
+        + (profile === 'agg30'
+            ? `간소 조회는 ${_cap}분 이내로 줄여주세요.`
+            : `상세 조회는 ${_cap}분 이내입니다.\n더 긴 구간은 위 '간소' 로 바꿔서 조회하세요.`));
     return;
   }
 
@@ -742,7 +816,9 @@ async function logpressoLoad() {
     if (el) el.style.display = 'none';
   });
 
-  btn.disabled = true;
+  lpStopping = false;
+  lpAbort = new AbortController();
+  syncLpButtons(true);               // 조회 로드 잠그고, 멈춤 단추를 연다
   const t0 = performance.now();
   stat.textContent = '⏳ 조회 중...';
   document.getElementById('loading-msg').style.display = 'inline';
@@ -750,16 +826,22 @@ async function logpressoLoad() {
     const resp = await fetch('/api/logpresso/load', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ from_dt, to_dt, table }),
+      body: JSON.stringify({ from_dt, to_dt, table, profile }),
+      signal: lpAbort.signal,
     });
     const data = await resp.json();
+    // 멈춤은 실패가 아니다 — 서버가 200 으로 {cancelled:true} 를 준다
+    if (data.cancelled) {
+      stat.textContent = '⏹ 조회를 멈췄습니다 — 다시 조회할 수 있습니다';
+      return;
+    }
     if (!resp.ok || data.error) {
       stat.textContent = `❌ ${data.error || resp.status}`;
       alert(`로그프레소 조회 실패: ${data.error || resp.status}`);
       return;
     }
     const lp = data.logpresso || {};
-    stat.textContent = `✅ ${lp.rows?.toLocaleString?.() || '?'} 건  ${lp.elapsed_sec || '?'}s`;
+    stat.textContent = `✅ ${profile === 'agg30' ? '간소' : '상세'} ${lp.rows?.toLocaleString?.() || '?'} 건  ${lp.elapsed_sec || '?'}s`;
 
     // 로드 결과 — loadDate 와 동일하게 후속 데이터 갱신
     document.getElementById('time-slider').max = data.total_frames || 100;
@@ -781,10 +863,18 @@ async function logpressoLoad() {
     } catch (e) {}
     console.log(`[로그프레소] 로드 완료 (${((performance.now()-t0)/1000).toFixed(1)}s):`, lp);
   } catch (e) {
-    stat.textContent = `❌ ${e.message || e}`;
-    alert(`요청 실패: ${e.message || e}`);
+    // 멈춤 단추로 끊은 fetch — AbortError 다. 오류창을 띄우면 안 된다.
+    if (lpStopping || e.name === 'AbortError') {
+      stat.textContent = '⏹ 조회를 멈췄습니다 — 다시 조회할 수 있습니다';
+      console.log('[로그프레소] 사용자가 조회를 멈췄습니다');
+    } else {
+      stat.textContent = `❌ ${e.message || e}`;
+      alert(`요청 실패: ${e.message || e}`);
+    }
   } finally {
-    btn.disabled = false;
+    lpAbort = null;
+    lpStopping = false;
+    syncLpButtons(false);            // 조회 로드 풀고, 멈춤 단추를 닫는다
     document.getElementById('loading-msg').style.display = 'none';
   }
 }
@@ -3147,6 +3237,7 @@ async function bootFabs() {
     rebuildFabSelect();
     rebuildLayoutSelect();
     syncLogpressoTable();   // 초기 FAB에 맞는 테이블명 주입
+    initLpProfile();        // 조회 형태 — 열 때마다 상세부터
     // 페이지 첫 진입 시 맵(rail graph) 즉시 로드 — 데이터 조회 전에도 노드/엣지가 그려져야 함
     try { await loadRailGraph(); } catch(e) { console.error('rail graph 초기 로드 실패:', e); }
   } catch(e) { console.error('FAB 목록 로드 실패:', e); }

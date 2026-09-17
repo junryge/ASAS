@@ -51,8 +51,9 @@ class 쿼리두벌(unittest.TestCase):
     def test_둘_다_있다(self):
         self.assertEqual(sorted(self.ns["QUERY_PROFILES"]), ["agg30", "raw"])
 
-    def test_기본은_고객이_준_쿼리(self):
-        self.assertEqual(self.ns["PROFILE"], "agg30")
+    def test_기본은_상세_예전_쿼리(self):
+        """★화면이 형태를 안 보내는 옛 호출은 예전과 똑같이 돌아야 한다."""
+        self.assertEqual(self.ns["PROFILE"], "raw")
 
     def test_고객이_준_쿼리_그대로(self):
         """★한 글자 틀리면 로그프레소가 문법 오류를 낸다 — 받은 글자 그대로 본다."""
@@ -107,12 +108,15 @@ class 배선(unittest.TestCase):
         blk = m.group(0)
         self.assertIn("profile: str = None", blk)
         self.assertIn("_fetch(f_s, t_s, table, profile)", blk)
-        self.assertEqual(blk.count("chunk_minutes, profile)"), 2, "쪼갠 두 조각 다")
+        # 쪼갠 두 조각 다 — 멈춤 손잡이(should_cancel)도 같이 들고 간다
+        self.assertEqual(blk.count("profile, should_cancel)"), 2, "쪼갠 두 조각 다")
 
     def test_API_가_profile_을_받아_넘긴다(self):
         s = _read("main.py")
         self.assertIn("profile = (body.get('profile') or '').strip() or None", s)
-        self.assertIn("chunk_minutes=chunk_minutes, profile=profile)", s)
+        i = s.find("query_oht_chunked(from_dt, to_dt, table=table,")
+        self.assertNotEqual(i, -1, "API 가 조각내기 조회를 안 부른다")
+        self.assertIn("profile=profile", s[i:i + 300])
 
     def test_어느_쿼리로_쳤는지_로그에_남는다(self):
         s = _read("logpresso_query.py")
@@ -208,6 +212,170 @@ class 키와_주소는_한_짝(unittest.TestCase):
         self.assertEqual(s.count("{" + tok + "}"), 1,
                          "키를 통째로 넣는 곳은 조회 URL 한 군데뿐이어야 한다")
         self.assertEqual(s.count(tok + "[-4:]"), 2, "끝 4자만 (로그 한 곳, 오류 한 곳)")
+
+
+class 화면의_상세_간소_단추(unittest.TestCase):
+    """고객: "상세(처음), 간소(지금 만든거) 2개 사용할수 있도록 해주라"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("dashboard.html")
+
+    def test_단추_둘이_조회_로드_옆에_있다(self):
+        m = re.search(r'<div class="tb-seg"[^>]*>\s*<span class="tb-cap">조회</span>\s*'
+                      r'<button id="lp-raw"[\s\S]*?<button id="lp-agg30"[\s\S]*?</div>\s*'
+                      r'<button onclick="logpressoLoad\(\)" id="lp-btn"', self.h)
+        self.assertIsNotNone(m, "상세/간소 단추가 '조회 로드' 앞에 없다")
+        self.assertIn(">상세<", m.group(0))
+        self.assertIn(">간소<", m.group(0))
+
+    def test_기본은_상세가_켜져_있다(self):
+        self.assertIn('<button id="lp-raw"   class="toggle-btn on"', self.h)
+        self.assertIn('<button id="lp-agg30" class="toggle-btn"    ', self.h)
+        self.assertIn("let lpProfile = 'raw';", self.h)
+
+    def test_고른_것을_보낸다(self):
+        self.assertIn("const profile = lpProfile;", self.h)
+        self.assertIn("body: JSON.stringify({ from_dt, to_dt, table, profile }),", self.h)
+
+    def test_고른_것을_남기지_않는다(self):
+        """★고객: "처음 조회할 때는 무조건 상세로 해야 되".
+
+        지난번에 간소를 골랐다고 다음에 연 화면이 간소로 시작하면 안 된다.
+        저장을 아예 안 하므로 화면을 열 때마다 상세다."""
+        self.assertNotIn("LP_PROFILE_KEY", self.h, "조회 형태를 저장하면 안 된다")
+        for line in self.h.splitlines():
+            if "localStorage" in line and "lpProfile" in line:
+                self.fail("조회 형태를 localStorage 에 넣거나 빼고 있다: " + line.strip())
+        self.assertIn("initLpProfile();", self.h, "화면을 열 때 상세로 되돌려야 한다")
+        self.assertIn("lpProfile = 'raw';               // 열 때마다 상세부터", self.h)
+
+    def test_간소는_구간_상한이_길다(self):
+        """★간소를 만든 이유가 '10분 이상이 조회가 안 된다' 인데 상한을 30분으로
+        같이 두면 소용이 없다."""
+        m = re.search(r"const _cap = \(profile === 'agg30'\) \? (\d+) : (\d+);", self.h)
+        self.assertIsNotNone(m, "형태별 상한이 없다")
+        agg, raw = int(m.group(1)), int(m.group(2))
+        self.assertGreater(agg, raw, f"간소({agg}분)가 상세({raw}분)보다 길어야 한다")
+        self.assertEqual(raw, 30, "상세는 예전 그대로 30분")
+        self.assertIn("위 '간소' 로 바꿔서 조회하세요", self.h, "넘치면 어디를 누를지 알려야 한다")
+
+    def test_어느_형태로_쳤는지_화면에_남는다(self):
+        self.assertIn("${profile === 'agg30' ? '간소' : '상세'}", self.h)
+
+    def test_단추_설명에_무엇이_다른지_적었다(self):
+        # 간소로 보면 적재 색이 안 뜬다 — 눌러 보고 알면 늦다
+        self.assertIn("적재·목적지는 안 온다", self.h)
+        self.assertIn("10분 넘는 구간도 조회된다", self.h)
+
+
+class 조회_멈춤(unittest.TestCase):
+    """고객: "조회 멈춤 버튼도 만들어주라..다시 재조회 할 수도 있잖아"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("dashboard.html")
+        cls.m = _read("main.py")
+        cls.q = _read("logpresso_query.py")
+
+    # ── 화면 ────────────────────────────────────────────────────
+    def test_멈춤_단추가_조회_로드_옆에_있다(self):
+        m = re.search(r'<button onclick="logpressoLoad\(\)" id="lp-btn"[\s\S]*?'
+                      r'<button onclick="logpressoStop\(\)" id="lp-stop"', self.h)
+        self.assertIsNotNone(m, "멈춤 단추가 '조회 로드' 바로 뒤에 없다")
+
+    def test_조회_중에만_눌린다(self):
+        self.assertIn('id="lp-stop" disabled', self.h, "처음엔 눌리지 않아야 한다")
+        self.assertIn("if (btn)  btn.disabled  = !!busy;", self.h)
+        self.assertIn("if (stop) stop.disabled = !busy;", self.h)
+        self.assertIn("syncLpButtons(true);", self.h, "조회 시작하며 멈춤을 열어야 한다")
+        self.assertIn("syncLpButtons(false);", self.h, "끝나면 다시 닫아야 한다")
+
+    def test_서버에_알리고_화면도_끊는다(self):
+        """★둘 다 해야 한다. 서버에만 알리면 조각 하나가 끝날 때까지 조회
+        단추가 잠긴 채라 '다시 재조회' 를 못 한다."""
+        i = self.h.index("async function logpressoStop()")
+        body = self.h[i:i + 1200]
+        self.assertIn("fetch('/api/logpresso/cancel', { method: 'POST' })", body)
+        self.assertIn("lpAbort.abort()", body)
+        self.assertLess(body.index("/api/logpresso/cancel"), body.index("lpAbort.abort()"),
+                        "서버에 먼저 알리고 그다음 화면을 끊어야 한다")
+
+    def test_조회는_끊을_수_있게_보낸다(self):
+        self.assertIn("lpAbort = new AbortController();", self.h)
+        self.assertIn("signal: lpAbort.signal,", self.h, "fetch 에 signal 을 안 넘기면 못 끊는다")
+
+    def test_멈춤은_실패가_아니다(self):
+        """빨간 ❌ 도 alert 도 뜨면 안 된다. 두 길(200 cancelled · AbortError) 다."""
+        self.assertIn("if (data.cancelled) {", self.h, "서버가 준 200 cancelled 처리")
+        self.assertIn("if (lpStopping || e.name === 'AbortError') {", self.h,
+                      "끊은 fetch 는 오류로 떠들면 안 된다")
+        i = self.h.index("if (lpStopping || e.name === 'AbortError') {")
+        branch = self.h[i:self.h.index("} else {", i)]
+        self.assertNotIn("alert(", branch, "멈췄는데 오류창을 띄우면 안 된다")
+        self.assertIn("다시 조회할 수 있습니다", branch)
+
+    def test_끝나면_상태를_되돌린다(self):
+        i = self.h.index("  } finally {", self.h.index("async function logpressoLoad()"))
+        fin = self.h[i:i + 400]
+        self.assertIn("lpAbort = null;", fin)
+        self.assertIn("lpStopping = false;", fin)
+
+    # ── 서버 ────────────────────────────────────────────────────
+    def test_멈춤_API_가_있다(self):
+        self.assertIn('@app.post("/api/logpresso/cancel")', self.m)
+
+    def test_조회를_다른_실에서_돌린다(self):
+        """★이게 없으면 멈춤 단추가 아무 일도 안 한다 — 조회가 서버를 통째로
+        붙들고 있어 /api/logpresso/cancel 요청 자체가 안 들어온다."""
+        self.assertIn("from starlette.concurrency import run_in_threadpool", self.m)
+        i = self.m.index("df = await run_in_threadpool(")
+        self.assertIn("query_oht_chunked(", self.m[i:i + 400])
+
+    def test_다시_조회해도_멈춘_조회가_살아나지_않는다(self):
+        """★True/False 한 개로는 안 된다. 멈추자마자 다시 조회하면 새 조회가
+        플래그를 지우고, 아직 제 조각을 붙들고 있던 옛 조회가 그걸 보고 되살아나
+        둘이 같이 돈다."""
+        self.assertIn('LP_RUN = {"gen": 0, "stop_upto": 0}', self.m)
+        self.assertIn('LP_RUN["gen"] += 1', self.m, "조회마다 번호를 올려야 한다")
+        self.assertIn('LP_RUN["stop_upto"] = LP_RUN["gen"]', self.m)
+        self.assertIn("should_cancel=_lp_should_cancel(_my_gen)", self.m)
+
+    def test_멈춤_판정_그대로_돌려_본다(self):
+        """_lp_should_cancel 을 배포되는 그 코드 그대로 떼어 돌린다."""
+        a = self.m.index("LP_RUN = {")
+        b = self.m.index('@app.post("/api/logpresso/cancel")')
+        ns = {}
+        exec(self.m[a:b], ns)
+        run, should = ns["LP_RUN"], ns["_lp_should_cancel"]
+
+        run["gen"] = 1                      # 조회 #1 시작
+        f1 = should(1)
+        self.assertFalse(f1(), "막 시작한 조회가 멈추면 안 된다")
+
+        run["stop_upto"] = run["gen"]       # 사람이 멈춤을 눌렀다
+        self.assertTrue(f1(), "멈춤을 눌렀으면 멈춰야 한다")
+
+        run["gen"] = 2                      # 곧바로 다시 조회
+        f2 = should(2)
+        self.assertFalse(f2(), "새 조회는 지난 멈춤에 걸리면 안 된다")
+        self.assertTrue(f1(), "한물간 옛 조회는 계속 멈춘 채여야 한다")
+
+    def test_멈춤은_502_가_아니다(self):
+        i = self.m.index("if isinstance(e, QueryCancelled):")
+        br = self.m[i:i + 300]
+        self.assertIn('{"cancelled": True', br)
+        self.assertIn("status_code=200", br)
+
+    def test_쿼리_쪽이_멈춤을_안다(self):
+        self.assertIn("class QueryCancelled(RuntimeError)", self.q)
+        self.assertIn("should_cancel=None", self.q)
+        i = self.q.index("def query_oht_chunked(")
+        body = self.q[i:i + 3000]
+        self.assertIn("if should_cancel and should_cancel():", body)
+        self.assertIn("raise QueryCancelled(", body)
+        self.assertEqual(body.count("should_cancel)"), 2,
+                         "조각을 쪼개 다시 부를 때도 들고 가야 한다")
 
 
 if __name__ == "__main__":
