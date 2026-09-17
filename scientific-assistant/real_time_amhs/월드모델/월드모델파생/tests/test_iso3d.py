@@ -50,6 +50,7 @@ class 뷰어에_보탠_것(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.s = _read("static", "js", "oht3d", "oht3d.js")
+        cls.h = _read("dashboard.html")
 
     def test_아이소메트리_직교_카메라(self):
         self.assertIn("new T.OrthographicCamera(", self.s, "원본은 원근뿐이었다 — 등각(직교)이 있어야 '아이소메트리' 다")
@@ -97,6 +98,27 @@ class 뷰어에_보탠_것(unittest.TestCase):
         # ★바닥이 0.8 m 상자면 그 옆면이 낮은 벽처럼 둘러싼다 — 벽을 뺄 땐 평면이어야 한다
         self.assertIn("const noWall = this.o.walls === false;", self.s)
         self.assertIn("? new T.Mesh(new T.PlaneGeometry(W, D), this.mat(0xd6d9dc, { r: 0.9 }))", self.s)
+
+    def test_레일이_평행_간격보다_좁다(self):
+        """실물 M14A: 평행 레일 사이 중앙값 0.30 m. 판 0.56 m 를 그대로 쓰면 83% 가 겹친다."""
+        self.assertIn("railScale: 0.45,", self.s, "기본이 1.0 이면 레일이 한 덩어리로 뭉친다")
+        self.assertIn("this.local(0, 0.1 * rs, 0, len + 0.04, 0.05 * rs, 0.56 * rs);", self.s,
+                      "판·바 둘 다 배수를 타야 한다")
+        self.assertIn("buildRails() {", self.s, "굵기를 바꾸면 다시 세워야 한다")
+
+    def test_크기_패널이_3D_안에_있다(self):
+        # 고객: "아이소메트리 [안에] 만들어야되" — 2D 설정과 섞지 않는다
+        self.assertIn('data-a="size"', self.s)
+        self.assertIn("class = 'o3d-size'", self.s.replace('className', 'class'))
+        for k in ("['rs', '레일 굵기'", "['vs', '차량'", "['ps', '설비'", "['ts', '글자'"):
+            self.assertIn(k, self.s, k)
+        self.assertIn("[data-s=reset]", self.s, "기본값 단추")
+        self.assertIn("this.emit('sizechange'", self.s, "화면이 저장할 수 있게 알려야 한다")
+
+    def test_크기_저장은_2D_와_따로(self):
+        self.assertIn("const V3D_SIZE_KEY = 'oht_world_v3d_size_v1';", self.h)
+        self.assertIn("inst.on('sizechange', v3dSizeSave);", self.h)
+        self.assertIn("...v3dSizeLoad(),", self.h, "다음에 열 때 그 크기로")
 
     def test_네_색만_준_옛_호출도_산다(self):
         self.assertIn("if (o.colors.state.length < ST_NAME.length)", self.s)

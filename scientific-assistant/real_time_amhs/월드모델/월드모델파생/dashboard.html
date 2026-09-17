@@ -573,6 +573,16 @@ function mapPal() {
 let mapSettings = { ...DEFAULT_MAP_SETTINGS };
 // 3D 아이소메트리 상태 — 선언만 여기(아래 applyPageTheme 이 먼저 본다). 본체는 '3D 아이소메트리' 절.
 let show3D = false, v3d = null, v3dLoading = null, v3dLayoutSig = '';
+/* 3D 크기(레일 굵기·차량·설비·글자) — **3D 안의 '크기' 패널**에서 고친다.
+   ★2D 설정(⚙)과 섞지 않는다. 2D 의 차량 크기는 px 배수고 3D 는 m 배수라 뜻이 다르다.
+   저장은 따로 키를 쓴다 — 이 브라우저에만 남는다. */
+const V3D_SIZE_KEY = 'oht_world_v3d_size_v1';
+function v3dSizeLoad() {
+  try { return JSON.parse(localStorage.getItem(V3D_SIZE_KEY)) || {}; } catch (e) { return {}; }
+}
+function v3dSizeSave(sz) {
+  try { localStorage.setItem(V3D_SIZE_KEY, JSON.stringify(sz)); } catch (e) {}
+}
 function loadMapSettings() {
   try {
     const raw = localStorage.getItem(MAP_SETTINGS_KEY);
@@ -1505,7 +1515,10 @@ async function open3D() {
         walls: false,                               // 벽 없음 — 돌려 보면 안쪽을 가리기만 한다 (고객 지시)
         dark: mapSettings.mapTheme === 'dark',
         colors: { state: v3dColors(), background: pal.bg, accent: '#1f6feb' },
+        // 지난번에 고쳐 둔 크기가 있으면 그걸로 연다
+        ...v3dSizeLoad(),
       });
+      inst.on('sizechange', v3dSizeSave);   // '크기' 패널에서 고치면 바로 저장
       // 3D 에서 고른 것 → 오른쪽 목록도 같이 (2D 의 selectZone/selectOHT 와 같은 상태)
       inst.on('zoneclick', e => {
         selectedZone = (railGraph && railGraph.zones || []).find(z => z3dId(z) === e.id) || null;

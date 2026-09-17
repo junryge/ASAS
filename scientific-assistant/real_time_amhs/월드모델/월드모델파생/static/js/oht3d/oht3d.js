@@ -29,6 +29,10 @@
  *     원본은 prefers-color-scheme 만 봤다.
  *   · setActive(false) — 숨겨진 동안 루프가 헛돌지 않게.
  *   · walls: false — 벽을 안 세운다 (고객: "벽 필요없다").
+ *   · 크기 패널 (바의 '크기' 단추) — 레일 굵기 · 차량 · 설비 · 글자 배수를 그 자리에서
+ *     조절한다. 3D 안에서만 쓰는 값이라 2D 설정과 섞지 않는다 (고객: "따로 가야지").
+ *     ★기본 레일 굵기가 0.45 인 이유: 실물 M14A 는 평행 레일 사이가 중앙값 0.30 m
+ *     (p25 0.22 m) 인데 원본 레일 판은 0.56 m 라 83% 가 겹쳐 한 덩어리로 보였다.
  * ============================================================================= */
 
 const ST_NAME = ['운행', '적재', '정지', 'JAM', 'OBS'];
@@ -54,6 +58,9 @@ const DEFAULTS = {
   wallHeight: 7.5,
   wallCutHeight: 1.0,
   vehicleScale: 1,
+  railScale: 0.45,       // 레일 굵기 배수 — 평행 레일이 붙어 보이지 않는 값 (위 주석)
+  portScale: 1,          // 설비(포트) 상자 크기 배수
+  textScale: 1,          // 글자(차량 라벨·존) 크기 배수
   labels: true,
   heat: true,
   ui: true,        // 뷰어 내부 버튼/범례/툴팁
@@ -129,6 +136,15 @@ const CSS = `
 .o3d-btn:hover{border-color:var(--o3d-acc)}
 .o3d-btn.on{background:var(--o3d-acc);border-color:var(--o3d-acc);color:#fff}
 .o3d-btn[hidden]{display:none}
+.o3d-size{position:absolute;left:8px;top:44px;z-index:3;background:var(--o3d-panel);border:1px solid var(--o3d-line);
+  border-radius:8px;padding:8px 10px;display:none;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.o3d-size.on{display:block}
+.o3d-size h5{margin:0 0 6px;font-size:12px;font-weight:700}
+.o3d-size label{display:flex;align-items:center;gap:6px;margin:5px 0;font-size:12px;white-space:nowrap}
+.o3d-size label>span:first-child{width:62px;color:var(--o3d-muted)}
+.o3d-size input[type=range]{width:120px}
+.o3d-size b{width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.o3d-size .o3d-btn{margin-top:6px;width:100%}
 .o3d-panel{position:absolute;right:8px;top:44px;bottom:8px;width:330px;display:flex;flex-direction:column;gap:6px;z-index:2;pointer-events:none}
 .o3d-panel[hidden]{display:none}
 .o3d-card{background:var(--o3d-panel);border:1px solid var(--o3d-line);border-radius:8px;display:flex;flex-direction:column;min-height:0;overflow:hidden;pointer-events:auto}
@@ -169,7 +185,8 @@ class Viewer {
     this.orb = { tx: 0, ty: 1.5, tz: 0, az: -2.3, el: 0.8, dist: 60 };
     if (o.projection === 'iso') { this.orb.az = ISO_AZ; this.orb.el = ISO_EL; }
     this.fly = null;
-    this.opt = { labels: o.labels, heat: o.heat, vs: o.vehicleScale, proj: o.projection === 'iso' ? 'iso' : 'persp' };
+    this.opt = { labels: o.labels, heat: o.heat, vs: o.vehicleScale, proj: o.projection === 'iso' ? 'iso' : 'persp',
+                 rs: +o.railScale || 0.45, ps: +o.portScale || 1, ts: +o.textScale || 1 };
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
     this.needRender = true; this.camDirty = true; this.vehDirty = true; this.resized = true; this.domDirty = true;
     this.mouse = null; this.lastDom = 0;
@@ -235,7 +252,7 @@ class Viewer {
       <button class="o3d-btn" data-a="proj" title="아이소메트리(직교) / 원근 전환">${o.projection === 'iso' ? '원근으로' : '아이소로'}</button>
       <button class="o3d-btn ${o.labels ? 'on' : ''}" data-a="labels">ID·속도</button>
       <button class="o3d-btn ${o.heat ? 'on' : ''}" data-a="heat">히트맵</button>
-      <button class="o3d-btn" data-a="vs">차량 x${o.vehicleScale}</button>
+      <button class="o3d-btn" data-a="size" title="레일 굵기·차량·설비·글자 크기">크기</button>
       <button class="o3d-btn" data-a="png">이미지 저장</button>
       ${o.panel ? '<button class="o3d-btn on" data-a="panel">패널</button>' : ''}`;
     r.appendChild(bar);
@@ -244,6 +261,24 @@ class Viewer {
     leg.innerHTML = ST_NAME.map((n, i) => `<span><i class="o3d-dot" style="background:${sc[i]}"></i>${n}</span>`).join('') +
       '<span>레일 원활<i class="o3d-hb"></i>정체</span>';
     r.appendChild(leg);
+    // 크기 패널 — 3D 안에서만 쓰는 값이라 2D 설정과 섞지 않는다 (고객: "따로 가야지")
+    const SZ = [['rs', '레일 굵기', 0.1, 1.5, 0.05], ['vs', '차량', 0.2, 4, 0.1],
+                ['ps', '설비', 0.2, 3, 0.1], ['ts', '글자', 0.4, 2.5, 0.1]];
+    const sz = document.createElement('div');
+    sz.className = 'o3d-size';
+    sz.innerHTML = '<h5>크기</h5>' + SZ.map(([k, nm, lo, hi, st]) =>
+      `<label><span>${nm}</span><input type="range" data-s="${k}" min="${lo}" max="${hi}" step="${st}" value="${this.opt[k]}"><b data-v="${k}">${(+this.opt[k]).toFixed(2)}</b></label>`).join('')
+      + '<button class="o3d-btn" data-s="reset">기본값</button>';
+    r.appendChild(sz);
+    this.dom.size = sz;
+    this.szDefault = { rs: +o.railScale || 0.45, vs: +o.vehicleScale || 1, ps: +o.portScale || 1, ts: +o.textScale || 1 };
+    const SKEY = { rs: 'railScale', vs: 'vehicleScale', ps: 'portScale', ts: 'textScale' };
+    sz.addEventListener('input', ev => {
+      const k = ev.target.dataset.s;
+      if (k && k !== 'reset') this.setOptions({ [SKEY[k]]: +ev.target.value });
+    });
+    sz.querySelector('[data-s=reset]').addEventListener('click', () =>
+      this.setOptions(Object.fromEntries(Object.entries(this.szDefault).map(([k, v]) => [SKEY[k], v]))));
     this.dom.bar = bar;
     this.dom.ts = bar.querySelector('.o3d-ts');
     bar.addEventListener('click', ev => {
@@ -255,7 +290,7 @@ class Viewer {
       if (a === 'proj') this.setOptions({ projection: this.opt.proj === 'iso' ? 'persp' : 'iso' });
       if (a === 'labels') this.setOptions({ labels: !this.opt.labels });
       if (a === 'heat') this.setOptions({ heat: !this.opt.heat });
-      if (a === 'vs') this.setOptions({ vehicleScale: this.opt.vs === 1 ? 2 : this.opt.vs === 2 ? 4 : 1 });
+      if (a === 'size') { const z = this.dom.size; z.classList.toggle('on'); b.classList.toggle('on', z.classList.contains('on')); }
       if (a === 'png') this.snapshot();
       if (a === 'follow') { this.follow = !this.follow; b.classList.toggle('on', this.follow); if (this.follow && this.orb.dist > 40) this.flyTo({ dist: 20 }); }
       if (a === 'panel') { const p = this.dom.panel; p.hidden = !p.hidden; b.classList.toggle('on', !p.hidden); }
@@ -369,7 +404,7 @@ class Viewer {
   /* 스프라이트 화면 크기 — 원근: 기본 scale(NDC) 그대로 · 직교: × dist
      (원근에서 -z 를 곱해 주던 것을 손으로 한다. 반높이 = dist·tan(16°) 이므로 배율은 dist). */
   fitSprite(L) {
-    const k = this.cam && this.cam.isOrthographicCamera ? this.orb.dist : 1;
+    const k = (this.cam && this.cam.isOrthographicCamera ? this.orb.dist : 1) * (this.opt.ts || 1);
     L.sp.scale.set(L.bs[0] * k, L.bs[1] * k, 1);
   }
   fitSprites() { for (const L of this.sprites) if (L.sp.parent) this.fitSprite(L); }
@@ -426,6 +461,7 @@ class Viewer {
     for (const w of walls) b = [Math.min(b[0], w.x0, w.x1), Math.min(b[1], w.y0, w.y1), Math.max(b[2], w.x0, w.x1), Math.max(b[3], w.y0, w.y1)];
     this.G = { nodes, edges, zones, ports, walls, bounds: b, eIdx, ftIdx };
     this.sprites.clear();
+    this.zoneMeshes = null;
     this.chainCache.clear();
     this.slots = []; this.idx.clear(); this.cap = 0;
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
@@ -489,15 +525,9 @@ class Viewer {
       if (len > 0.01) segs.push([e.i, (x0 + x1) / 2, (y0 + y1) / 2, len, Math.atan2(y1 - y0, x1 - x0)]);
     }
     this.segs = segs;
-    const bars = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xc7ccd2, { r: 0.35, m: 0.6 }), segs.length * 2);
-    this.plate = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xffffff, { r: 0.5, m: 0.2 }), segs.length);
-    for (const [, mx, my, len, a] of segs) {
-      this.base(X(mx), H, Z(my), -a);
-      this.local(0, 0, 0.21, len + 0.04, 0.13, 0.1); this.put(bars);
-      this.local(0, 0, -0.21, len + 0.04, 0.13, 0.1); this.put(bars);
-      this.local(0, 0.1, 0, len + 0.04, 0.05, 0.56); this.put(this.plate, 0x9aa1a9);
-    }
-    this.fin(bars); this.fin(this.plate);
+    this.railGroup = new T.Group();
+    W0.add(this.railGroup);
+    this.buildRails();
 
     // 행거 — ★노드마다가 아니라 **4 m 칸마다 하나**. 실물 레이아웃(M14A)은 노드가
     //   0.7 m 간격이라(9,403개) 노드마다 세우면 1.8 m 봉 9천 개가 숲이 되어
@@ -522,22 +552,28 @@ class Viewer {
     }
     [clampM, blk, rod].forEach(m => this.fin(m));
 
-    // 설비 / 스토커
+    // 설비 / 스토커 — 한 그룹에, 크기 배수로 다시 세울 수 있게
+    this.portGroup = new T.Group();
+    W0.add(this.portGroup);
+    this._buildPortBodies(X, Z, this.opt.ps || 1);
+  }
+  _buildPortBodies(X, Z, ps) {
+    const T = this.T, G = this.G, pg = { parent: this.portGroup };
     const ports = G.ports, n = ports.length, rb = this.rbox();
-    const eqBody = this.IM(rb, this.mat(0xffffff, { r: 0.55 }), n, { recv: true });
-    const eqFront = this.IM(rb, this.mat(0xffffff, { r: 0.5 }), n, { recv: true });
-    const eqCap = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xaeb3b9, { r: 0.5, m: 0.3 }), n);
-    const screen = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0x7c4ddb }), n, { cast: false });
-    const bezel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x2d3137), n);
-    const lp = this.IM(rb, this.mat(0x8f969e, { r: 0.45, m: 0.3 }), n * 2);
-    const sfoup = this.IM(rb, this.mat(0xefece6), n);
-    const sfWin = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.2, transparent: true, opacity: 0.85 }), n, { cast: false });
-    const lamp = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0xffffff }), n, { cast: false });
-    const pole = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x6b7178), n);
-    const panel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xa9afb6, { r: 0.4, m: 0.3 }), n * 12, { cast: false });
+    const eqBody = this.IM(rb, this.mat(0xffffff, { r: 0.55 }), n, { recv: true, ...pg });
+    const eqFront = this.IM(rb, this.mat(0xffffff, { r: 0.5 }), n, { recv: true, ...pg });
+    const eqCap = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xaeb3b9, { r: 0.5, m: 0.3 }), n, pg);
+    const screen = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0x7c4ddb }), n, { cast: false, ...pg });
+    const bezel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x2d3137), n, pg);
+    const lp = this.IM(rb, this.mat(0x8f969e, { r: 0.45, m: 0.3 }), n * 2, pg);
+    const sfoup = this.IM(rb, this.mat(0xefece6), n, pg);
+    const sfWin = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.2, transparent: true, opacity: 0.85 }), n, { cast: false, ...pg });
+    const lamp = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0xffffff }), n, { cast: false, ...pg });
+    const pole = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x6b7178), n, pg);
+    const panel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xa9afb6, { r: 0.4, m: 0.3 }), n * 12, { cast: false, ...pg });
     const tones = [0xeceae5, 0xdcd9d2, 0xe5e3de], fronts = [0xf4f3f0, 0xcfccc6, 0xdedcd7], lampCol = [0x3ddc84, 0xffb020, 0xff4d4f];
     for (const p of ports) {
-      const { w, d, h } = p;
+      const w = p.w * ps, d = p.d * ps, h = p.h * ps;
       this.base(X(p.x), 0, Z(p.y), -(p.rot || 0));
       if (p.kind === 'stk') {
         this.local(0, h / 2, 0, w, h, d); this.put(eqBody, 0x2a2d32);
@@ -565,7 +601,11 @@ class Viewer {
       this.local(-0.38 * w, h + 0.46, 0.38 * d, 0.13, 0.16, 0.13); this.put(lamp, lampCol[p.lamp | 0] ?? lampCol[0]);
     }
     [eqBody, eqFront, eqCap, screen, bezel, lp, sfoup, sfWin, lamp, pole, panel].forEach(m => this.fin(m));
-
+    if (!this.zoneMeshes) this._buildZonesAndRest();     // 첫 세우기에만 (다시 세울 땐 설비만)
+  }
+  _buildZonesAndRest() {
+    const T = this.T, G = this.G, W0 = this.world;
+    const X = x => x - this.cx, Z = y => y - this.cy;
     // HID Zone 바닥/라벨
     this.zoneMeshes = [];
     this.zoneLabels = [];
@@ -599,6 +639,29 @@ class Viewer {
     W0.add(this.labelGroup);
     this.vehGroup = new T.Group();
     W0.add(this.vehGroup);
+  }
+
+  /* 레일 — 굵기 배수로 다시 세운다. 판 폭 0.56 m × rs 가 평행 레일 간격(실물 0.30 m)
+     보다 좁아야 두 줄로 보인다. */
+  buildRails() {
+    const T = this.T, g = this.railGroup, H = this.o.railHeight, rs = this.opt.rs || 1;
+    const X = x => x - this.cx, Z = y => y - this.cy, segs = this.segs;
+    this.disposeGroup(g);
+    const pg = { parent: g };
+    const bars = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xc7ccd2, { r: 0.35, m: 0.6 }), segs.length * 2, pg);
+    this.plate = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xffffff, { r: 0.5, m: 0.2 }), segs.length, pg);
+    for (const [, mx, my, len, a] of segs) {
+      this.base(X(mx), H, Z(my), -a);
+      this.local(0, 0, 0.21 * rs, len + 0.04, 0.13 * rs, 0.1 * rs); this.put(bars);
+      this.local(0, 0, -0.21 * rs, len + 0.04, 0.13 * rs, 0.1 * rs); this.put(bars);
+      this.local(0, 0.1 * rs, 0, len + 0.04, 0.05 * rs, 0.56 * rs); this.put(this.plate, 0x9aa1a9);
+    }
+    this.fin(bars); this.fin(this.plate);
+  }
+  buildPorts() {
+    const X = x => x - this.cx, Z = y => y - this.cy;
+    this.disposeGroup(this.portGroup);
+    this._buildPortBodies(X, Z, this.opt.ps || 1);
   }
 
   buildVehicleMeshes(cap) {
@@ -1009,6 +1072,9 @@ class Viewer {
     if (p.heat != null) this.opt.heat = !!p.heat;
     if (p.vehicleScale != null) this.opt.vs = +p.vehicleScale || 1;
     if (p.projection != null) this.setProjection(p.projection);
+    if (p.textScale != null && +p.textScale > 0 && +p.textScale !== this.opt.ts) { this.opt.ts = +p.textScale; this.fitSprites(); }
+    if (p.portScale != null && +p.portScale > 0 && +p.portScale !== this.opt.ps) { this.opt.ps = +p.portScale; if (this.G) this.buildPorts(); }
+    if (p.railScale != null && +p.railScale > 0 && +p.railScale !== this.opt.rs) { this.opt.rs = +p.railScale; if (this.G) this.buildRails(); }
     if (p.dark !== undefined) { this.o.dark = p.dark; this.applyTheme(); this.domDirty = true; for (const L of this.labelPool.values()) L.txt = ''; }
     if (p.background) { this.o.colors.background = p.background; if (this.scene) this.scene.background.set(p.background); }
     if (Array.isArray(p.stateColors) && p.stateColors.length) {
@@ -1020,13 +1086,18 @@ class Viewer {
       for (const L of this.labelPool.values()) L.txt = '';
       this.domDirty = true;
     }
-    const bar = this.dom.bar;
-    if (bar) {
-      bar.querySelector('[data-a=labels]').classList.toggle('on', this.opt.labels);
-      bar.querySelector('[data-a=heat]').classList.toggle('on', this.opt.heat);
-      bar.querySelector('[data-a=vs]').textContent = '차량 x' + this.opt.vs;
-      bar.querySelector('[data-a=proj]').textContent = this.opt.proj === 'iso' ? '원근으로' : '아이소로';
+    const bar = this.dom.bar, q = a => bar && bar.querySelector(`[data-a=${a}]`);
+    if (q('labels')) q('labels').classList.toggle('on', this.opt.labels);
+    if (q('heat')) q('heat').classList.toggle('on', this.opt.heat);
+    if (q('proj')) q('proj').textContent = this.opt.proj === 'iso' ? '원근으로' : '아이소로';
+    // 크기 패널 슬라이더·숫자를 지금 값으로 (기본값 단추·바깥에서 부른 setOptions 도 따라온다)
+    const sz2 = this.dom.size;
+    if (sz2) for (const k of ['rs', 'vs', 'ps', 'ts']) {
+      const sl = sz2.querySelector(`input[data-s=${k}]`), vv = sz2.querySelector(`b[data-v=${k}]`);
+      if (sl) sl.value = this.opt[k];
+      if (vv) vv.textContent = (+this.opt[k]).toFixed(2);
     }
+    this.emit('sizechange', { railScale: this.opt.rs, vehicleScale: this.opt.vs, portScale: this.opt.ps, textScale: this.opt.ts });
     this.vehDirty = true; this.camDirty = true; this.needRender = true;
   }
   /* 아이소메트리 ↔ 원근. 같은 orbit(tx·tz·dist)을 쓰므로 보던 자리는 그대로고,
@@ -1245,7 +1316,7 @@ class Viewer {
     this._on.forEach(([el, ev, fn, opt]) => el.removeEventListener(ev, fn, opt));
     this.disposeGroup(this.world);
     this.r.dispose();
-    this.root.querySelectorAll('.o3d-cv,.o3d-tip,.o3d-bar,.o3d-leg,.o3d-panel').forEach(n => n.remove());
+    this.root.querySelectorAll('.o3d-cv,.o3d-tip,.o3d-bar,.o3d-leg,.o3d-panel,.o3d-size').forEach(n => n.remove());
     this.root.classList.remove('o3d-root');
     this.G = null;
   }
