@@ -17,6 +17,7 @@ import sys
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 # 현재 디렉토리를 path에 추가 (개발 모드)
@@ -42,6 +43,18 @@ print(f"[경로] DATA_DIR = {DATA_DIR}")
 # ============================================================
 
 app = FastAPI(title="OHT 월드모델 시뮬레이션", version="1.0")
+
+# ★정적 파일 — 3D 아이소메트리 보기(static/js/oht3d/*.js). 이 앱은 dashboard.html
+#   한 장을 글자로 돌려주는 구조라 정적 폴더가 없었다. three.js 는 ES 모듈이라
+#   <script type=module> 이 http 로 받아야 하고(file:// 는 브라우저가 막는다),
+#   폐쇄망이라 CDN 이 아니라 **이 폴더**에서 나가야 한다.
+#   PyInstaller 로 묶으면 sys._MEIPASS 밑에 풀리므로 bundled_dir() 기준이다
+#   (oht_world.spec 의 datas 에 ('static', 'static') 이 같이 있어야 한다).
+_STATIC_DIR = bundled_dir() / "static"
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+else:
+    print(f"[경고] static 폴더가 없다 — 3D 아이소메트리 보기가 안 뜬다: {_STATIC_DIR}")
 
 
 # ============================================================

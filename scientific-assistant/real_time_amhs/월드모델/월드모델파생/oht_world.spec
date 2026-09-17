@@ -5,8 +5,8 @@
 # 결과:   dist/oht_world.exe
 #
 # 사용자 데이터(OHT_MAP, OHS_DATA_MD, _logpresso_cache)는 .exe와 같은 폴더에
-# 두면 됨 (런타임에 runtime_dir() 가 .exe 폴더를 가리킴). dashboard.html 만
-# 번들에 포함.
+# 두면 됨 (런타임에 runtime_dir() 가 .exe 폴더를 가리킴). dashboard.html 과
+# static/(3D 뷰어 JS) 을 번들에 포함.
 
 from PyInstaller.utils.hooks import collect_submodules
 
@@ -32,6 +32,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('dashboard.html', '.'),     # 번들에 dashboard.html 포함
+        ('static', 'static'),        # 3D 아이소메트리 — three.js + oht3d.js (main.py 가 /static 으로 서빙)
     ],
     hiddenimports=hidden,
     hookspath=[],
