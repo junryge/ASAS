@@ -91,6 +91,10 @@ class 뷰어에_보탠_것(unittest.TestCase):
         self.assertIn("setActive: on =>", self.s)
         self.assertIn("if (!this.G || !this.active) return;", self.s)
 
+    def test_벽을_뺄_수_있다(self):
+        self.assertIn("walls: true,", self.s, "기본은 원본대로 벽 있음")
+        self.assertIn("this.walls = this.o.walls === false ? [] :", self.s, "walls:false 면 외곽 벽도 안 세워야 한다")
+
     def test_네_색만_준_옛_호출도_산다(self):
         self.assertIn("if (o.colors.state.length < ST_NAME.length)", self.s)
 
@@ -170,6 +174,7 @@ class 화면(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIn("await import('/static/js/oht3d/oht3d.js')", m.group(0))
         self.assertIn("projection: 'iso'", m.group(0), "단추 이름이 아이소메트리다 — 등각으로 열어야 한다")
+        self.assertIn("walls: false,", m.group(0), "벽 없이 연다 (고객: 벽 필요없다)")
         self.assertIn("coordScale: V3D_SCALE", m.group(0))
         self.assertIn("const V3D_SCALE = 0.01;", self.h)
         self.assertIn("class=\"v3d-err\"", m.group(0), "못 받으면 왜인지 화면에 적어야 한다")

@@ -28,6 +28,7 @@
  *   · dark / background 옵션 — 페이지 테마(body[data-theme])를 따라간다.
  *     원본은 prefers-color-scheme 만 봤다.
  *   · setActive(false) — 숨겨진 동안 루프가 헛돌지 않게.
+ *   · walls: false — 벽을 안 세운다 (고객: "벽 필요없다").
  * ============================================================================= */
 
 const ST_NAME = ['운행', '적재', '정지', 'JAM', 'OBS'];
@@ -60,6 +61,7 @@ const DEFAULTS = {
   maxTweenMs: 3000,
   jamSec: 0,       // 0 이면 state 값 그대로 사용
   projection: 'persp',   // 'iso' = 아이소메트리(직교) · 'persp' = 원근
+  walls: true,           // false 면 벽(외곽·layout.walls)을 아예 안 세운다
   dark: null,            // true/false 로 주면 그것, null 이면 prefers-color-scheme
   colors: {
     state: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#f97316'],   // 운행·적재·정지·JAM·OBS
@@ -464,7 +466,9 @@ class Viewer {
       W0.add(new T.LineSegments(gg, new T.LineBasicMaterial({ color: 0xc9cdd1, transparent: true, opacity: 0.7 })));
     }
 
-    this.walls = G.walls.length ? G.walls : [
+    // 벽 — walls:false 면 없다 (월드모델파생은 안 세운다: 등각으로 돌려 보면 벽이
+    //   안쪽을 가리고, 레일·차량 말고는 보여줄 정보가 없는 상자다).
+    this.walls = this.o.walls === false ? [] : G.walls.length ? G.walls : [
       { x0: ext[0] + 0.5, y0: ext[1] + 0.5, x1: ext[2] - 0.5, y1: ext[1] + 0.5 }, { x0: ext[2] - 0.5, y0: ext[1] + 0.5, x1: ext[2] - 0.5, y1: ext[3] - 0.5 },
       { x0: ext[2] - 0.5, y0: ext[3] - 0.5, x1: ext[0] + 0.5, y1: ext[3] - 0.5 }, { x0: ext[0] + 0.5, y0: ext[3] - 0.5, x1: ext[0] + 0.5, y1: ext[1] + 0.5 }];
     const wm = [this.mat(0xd9dcdf, { r: 0.85 }), this.mat(0xd9dcdf, { r: 0.85 }), this.mat(0xf7f8f9, { r: 0.9 }), this.mat(0xd9dcdf), this.mat(0xe1e4e7, { r: 0.85 }), this.mat(0xe1e4e7, { r: 0.85 })];
