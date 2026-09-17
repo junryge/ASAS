@@ -37,8 +37,6 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); 
 .tb-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; row-gap:6px; min-height:34px; }
 .tb-group { display:inline-flex; align-items:center; gap:6px; }
 .tb-group + .tb-group, .tb-group + #time-display { margin-left:6px; padding-left:12px; border-left:1px solid var(--line); }
-.tb-brand { font-size:14px; font-weight:800; letter-spacing:-.2px; color:var(--fg); margin-right:6px; white-space:nowrap; }
-.tb-brand small { font-weight:400; color:var(--muted); font-size:11px; margin-left:6px; }
 .tb-spacer { flex:1; }
 .tb-cap { font-size:11px; color:var(--muted); font-weight:700; margin-right:2px; white-space:nowrap; }
 .tb-tilde { color:var(--muted); }
@@ -48,8 +46,11 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); 
   line-height:1.4;                    /* ★ 글자 위아래 짤림 방지 */
 }
 #topbar input[type=text] { cursor:text; font-family:Consolas,'D2Coding',monospace; font-size:13px; }
-#topbar .tb-query input { width:138px; }
-#topbar .tb-query #lp-table { width:200px; }
+/* 조회 칸 — 들어갈 글자만큼만. 시작/끝은 14자리(yyyyMMddHHmmss),
+   테이블은 oht_data_m16br 가 가장 긴 이름이다. 더 줄이면 글자가 잘린다. */
+#topbar .tb-query input { width:126px; padding-left:7px; padding-right:7px; font-size:12px; }
+#topbar .tb-query #lp-table { width:140px; }
+#topbar .tb-query label { margin-left:2px; }
 #topbar label { font-size:12px; font-weight:700; color:var(--fg2); }
 #topbar button:hover { background:var(--ctl-hover); }
 #topbar .tb-primary { background:var(--primary) !important; border-color:var(--primary) !important; color:#fff !important; font-weight:700; }
@@ -281,7 +282,6 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
 
 <div id="topbar">
   <div class="tb-row">
-    <span class="tb-brand">OHT 월드모델<small>재생 · 예측</small></span>
     <div class="tb-group">
       <select id="fab-select" onchange="onFabChange()" title="FAB 선택"></select>
       <select id="layout-select" onchange="onLayoutChange()" title="Layout 선택"></select>
