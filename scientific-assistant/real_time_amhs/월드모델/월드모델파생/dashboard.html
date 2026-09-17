@@ -1502,6 +1502,7 @@ async function open3D() {
         coordScale: V3D_SCALE,
         flipY: false,
         projection: 'iso',                          // 단추 이름이 '아이소메트리' 다 — 등각으로 연다
+        walls: false,                               // 벽 없음 — 돌려 보면 안쪽을 가리기만 한다 (고객 지시)
         dark: mapSettings.mapTheme === 'dark',
         colors: { state: v3dColors(), background: pal.bg, accent: '#1f6feb' },
       });
