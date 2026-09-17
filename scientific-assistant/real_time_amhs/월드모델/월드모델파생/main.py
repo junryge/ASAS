@@ -231,8 +231,11 @@ async def logpresso_load(request: Request):
         "from_dt": "20260621000000",
         "to_dt"  : "20260621010000",
         "table"  : "oht_data_m16br",
-        "chunk_minutes": 10            (선택, 기본 10)
+        "chunk_minutes": 10,           (선택, 기본 10)
+        "profile": "agg30" | "raw"     (선택 — 안 보내면 logpresso_query.PROFILE)
       }
+    ★profile: 쿼리를 두 벌 들고 있다. agg30 = MSG_ID=2 만 30초로 묶은 것(기본),
+      raw = 예전 쿼리(원본 그대로). 되돌릴 일이 있어 둘 다 남겨 뒀다.
     """
     import time as _time
     body = await request.json()
@@ -240,6 +243,7 @@ async def logpresso_load(request: Request):
     to_dt   = (body.get('to_dt')   or '').strip()
     table   = (body.get('table')   or '').strip()
     chunk_minutes = int(body.get('chunk_minutes', 10))
+    profile = (body.get('profile') or '').strip() or None
 
     if not (from_dt and to_dt and table):
         return JSONResponse(
@@ -255,11 +259,12 @@ async def logpresso_load(request: Request):
             {"error": f"logpresso_query 모듈 임포트 실패 (requests/pandas 필요): {e}"},
             status_code=500)
 
-    print(f"[로그프레소] 조회 시작: {table}  {from_dt}~{to_dt}  chunk={chunk_minutes}분")
+    print(f"[로그프레소] 조회 시작: {table}  {from_dt}~{to_dt}  chunk={chunk_minutes}분"
+          + (f"  profile={profile}" if profile else ""))
     t0 = _time.perf_counter()
     try:
         df = query_oht_chunked(from_dt, to_dt, table=table,
-                                chunk_minutes=chunk_minutes)
+                                chunk_minutes=chunk_minutes, profile=profile)
     except Exception as e:
         print(f"[로그프레소] 조회 실패: {e}")
         return JSONResponse(

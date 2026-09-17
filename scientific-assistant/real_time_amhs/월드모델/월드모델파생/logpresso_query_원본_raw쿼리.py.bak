@@ -4,23 +4,6 @@
 logpresso_query.py — 로그프레소 OHT 조회 (시간 구간 → CSV DataFrame)
 
 쿼리 형식: 'remote icamcslogdt01 [ ... ]' 로 감싸 원격 노드에서 조회.
-
-쿼리가 **두 벌**이다 (QUERY_PROFILES). 지금 쓰는 것은 PROFILE 이 가리킨다.
-  · "agg30" (기본) — MSG_ID=2 만 걸러 30초로 묶는다. 고객이 준 쿼리.
-  · "raw"          — 예전 쿼리. 원본 그대로 다 가져온다.
-바꾸는 법 — 셋 중 아무거나:
-  ① 이 파일 맨 아래쪽 PROFILE = "raw"
-  ② 환경변수  LP_QUERY_PROFILE=raw
-  ③ /api/logpresso/load 본문에 {"profile": "raw"}  (화면이 안 보내면 ①②를 따른다)
-
-★agg30 은 컬럼이 줄어든다 — 받는 쪽(data_loader.parse_oht_data_m14a_row)이
-  읽는 것 중 이 둘이 안 온다:
-      STOCK_INFO   → isFull.      없으면 **전부 공차로 보인다** (적재 색이 안 뜬다)
-      DESTINATION  → destination. 없으면 목적지가 0
-  (FROM_RETURN_PORT · DEST_RETURN_PORT · RETURN_PRIORITY 도 안 오지만, 이 셋은
-   화면·엔진이 안 쓴다. 속도는 위치 변화로 따로 재므로 영향 없다 — velocity_tracker.)
-  필요하면 stats 줄에 first(STOCK_INFO) as STOCK_INFO 를 더하면 된다.
-★agg30 은 30초에 한 줄이라 재생이 그만큼 성큼성큼 간다 (raw 는 1초 단위).
 """
 
 import os
@@ -100,55 +83,21 @@ FMT = "%Y%m%d%H%M%S"
 MAX_BYTES = 30 * 1024 * 1024   # 30MB
 
 
-# ───────────────────────────────────────────────────────────
-# 쿼리 두 벌
-# ───────────────────────────────────────────────────────────
-def _q_raw(from_dt: str, to_dt: str, table: str) -> str:
-    """예전 쿼리 — 원본 그대로."""
-    return f'table from={from_dt} to={to_dt} {table} | sort _time'
-
-
-def _q_agg30(from_dt: str, to_dt: str, table: str) -> str:
-    """고객이 준 쿼리 — MSG_ID=2 만, 30초로 묶어 차량당 한 줄."""
-    return (
-        f'table from={from_dt} to={to_dt} {table}'
-        ' | search MSG_ID == "2"'
-        ' | sort _time'
-        ' | eval _time = datetrunc(_time, "30s")'
-        ' | stats first(ADDRESS) as ADDRESS, first(DISTANCE) as DISTANCE,'
-        ' first(NEXT_ADDRESS) as NEXT_ADDRESS, first(EDGE) as EDGE,'
-        ' first(CARRIER) as CARRIER, first(STATUS) as STATUS,'
-        ' first(OPERATION_STATUS) as OPERATION_STATUS'
-        ' by VEHICLE, _time'
-        ' | sort _time, VEHICLE'
-    )
-
-
-QUERY_PROFILES = {"agg30": _q_agg30, "raw": _q_raw}
-
-# 지금 쓰는 쿼리. "raw" 로 바꾸면 예전 쿼리로 돌아간다.
-PROFILE = os.environ.get("LP_QUERY_PROFILE", "").strip() or "agg30"
-
-
-def _build_query(from_dt: str, to_dt: str, table: str, profile: str = None) -> str:
-    name = (profile or PROFILE or "agg30").strip()
-    fn = QUERY_PROFILES.get(name)
-    if fn is None:
-        raise ValueError(f"모르는 쿼리 프로필 {name!r} (가능: {sorted(QUERY_PROFILES)})")
-    inner = fn(from_dt, to_dt, table)
+def _build_query(from_dt: str, to_dt: str, table: str) -> str:
+    inner = f'table from={from_dt} to={to_dt} {table} | sort _time'
     if REMOTE_NODE:
         return f'remote {REMOTE_NODE} [ {inner} ]'
     return inner
 
 
-def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
+def _fetch(from_dt: str, to_dt: str, table: str):
     if not API_KEY:
         raise RuntimeError(
             "로그프레소 API 키가 없습니다. 아래 중 하나로 넣으세요 —\n"
             "  · 환경변수 LP_API_KEY\n"
             "  · 이 폴더의 logpresso.json  {\"api_key\": \"…\"}\n"
             "  · 관제(real_time_amhs)의 config.json 또는 api_key.txt")
-    q = _build_query(from_dt, to_dt, table, profile)
+    q = _build_query(from_dt, to_dt, table)
     encoded = urllib.parse.quote(q, safe="")
     url = f"http://{HOST}:{PORT}/logpresso/httpexport/query.csv?_apikey={API_KEY}&_q={encoded}"
 
@@ -171,14 +120,10 @@ def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
 
 def query_oht_chunked(from_dt: str, to_dt: str,
                       table: str = "oht_data_m16br",
-                      chunk_minutes: int = 10,
-                      profile: str = None) -> pd.DataFrame:
+                      chunk_minutes: int = 10) -> pd.DataFrame:
     start = datetime.strptime(from_dt, FMT)
     end   = datetime.strptime(to_dt, FMT)
     step  = timedelta(minutes=chunk_minutes)
-
-    used = (profile or PROFILE or "agg30").strip()
-    print(f"[쿼리] 프로필 {used}  (raw 로 되돌리려면 LP_QUERY_PROFILE=raw)")
 
     frames = []
     cur = start
@@ -188,13 +133,13 @@ def query_oht_chunked(from_dt: str, to_dt: str,
         f_s = cur.strftime(FMT)
         t_s = nxt.strftime(FMT)
 
-        df, size = _fetch(f_s, t_s, table, profile)
+        df, size = _fetch(f_s, t_s, table)
 
         if size > MAX_BYTES and (nxt - cur) > timedelta(seconds=1):
             mid = cur + (nxt - cur) / 2
             print(f"[SPLIT] {f_s}~{t_s} = {size/1024/1024:.1f}MB 초과 → 분할")
-            sub = query_oht_chunked(f_s, mid.strftime(FMT), table, chunk_minutes, profile)
-            sub2 = query_oht_chunked(mid.strftime(FMT), t_s, table, chunk_minutes, profile)
+            sub = query_oht_chunked(f_s, mid.strftime(FMT), table, chunk_minutes)
+            sub2 = query_oht_chunked(mid.strftime(FMT), t_s, table, chunk_minutes)
             frames.extend([sub, sub2])
         else:
             print(f"[OK] {f_s}~{t_s}  {len(df):>6}건  {size/1024/1024:5.1f}MB")
