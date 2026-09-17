@@ -29,8 +29,8 @@ class 대응표(unittest.TestCase):
     TABLE = {
         "M14":    "oht_data_m14a",
         "M14B":   "oht_data_m14b",
-        "M16A":   "oht_data_m16A",
-        "M16B":   "oht_data_m16B",
+        "M16A":   "oht_data_m16a",
+        "M16B":   "oht_data_m16b",
         "M16HUB": "oht_data_m16br",
     }
     # OHT_MAP/cache 에 있는 레이아웃과 1:1 —
@@ -47,10 +47,23 @@ class 대응표(unittest.TestCase):
         for fab, tbl in self.TABLE.items():
             self.assertEqual(W.target(fab)["table"], tbl, fab)
 
-    def test_대소문자까지_그대로다(self):
-        """oht_data_m16A 는 A 가 대문자다 — 소문자로 바꾸면 안 된다."""
-        self.assertEqual(W.target("M16A")["table"], "oht_data_m16A")
-        self.assertEqual(W.target("M16B")["table"], "oht_data_m16B")
+    def test_테이블은_전부_소문자다(self):
+        """★예전엔 M16A·M16B 만 끝 글자가 대문자였다(oht_data_m16A). 현장 확인
+        결과 실제 테이블은 끝까지 소문자라, 그대로 두면 없는 테이블을 쳤다."""
+        for fab in W.fabs():
+            t = W.target(fab)["table"]
+            self.assertEqual(t, t.lower(), f"{fab}: {t} 에 대문자가 있다")
+
+    def test_레이아웃_이름으로_테이블을_지어내지_않는다(self):
+        """★M14B 는 레이아웃이 M14B/**A** 인데 테이블은 oht_data_m14b 다.
+        '레이아웃 이름 = 테이블 이름' 이 아니라서 이 표를 손으로 들고 있는 것이다
+        — 규칙으로 지어내려 하면 M14B 가 m14a 를 친다."""
+        import re
+        wf, pre = self.LAYOUT["M14B"]
+        num = re.search(r"(\d+)", wf).group(1)
+        self.assertNotEqual(W.target("M14B")["table"], f"oht_data_m{num}{pre}".lower(),
+                            "규칙으로 지어낸 이름과 같아졌다 — 표가 필요 없어졌는지 확인할 것")
+        self.assertEqual(W.target("M14B")["table"], "oht_data_m14b")
 
     def test_맵은_FAB_과_prefix_로_고른다(self):
         for fab, (wf, pre) in self.LAYOUT.items():

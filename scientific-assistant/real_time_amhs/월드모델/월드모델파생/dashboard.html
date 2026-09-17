@@ -710,7 +710,11 @@ async function logpressoLoad() {
 
   const from_dt = _toLP(fromEl.value);
   const to_dt   = _toLP(toEl.value);
-  const table   = (tblEl.value || '').trim();
+  // ★테이블 이름은 **소문자**로 보낸다. 관제에서 ?table= 로 넘어온 값이나 사람이
+  //   친 값에 대문자가 섞이면 없는 테이블을 쳐서 조회가 빈다 (실제로 oht_data_m16A
+  //   가 넘어와 그랬다). 화면에도 고쳐 넣어 무엇으로 쳤는지 보이게 한다.
+  const table   = (tblEl.value || '').trim().toLowerCase();
+  if (table && tblEl.value !== table) tblEl.value = table;
   if (!from_dt || !to_dt || !table) {
     alert('시작/끝 시각과 테이블명을 모두 입력하세요.\n예) oht_data_m16br');
     return;

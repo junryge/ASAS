@@ -30,14 +30,18 @@ import urllib.request
 from datetime import datetime, timedelta
 
 # 관제 FAB → (로그프레소 테이블, 월드모델 FAB, 월드모델 prefix)
-#   테이블 이름은 현장에서 받은 그대로다 (대소문자까지).
+#   ★테이블 이름은 **전부 소문자**다. 예전엔 M16A·M16B 만 끝 글자를 대문자로
+#     적어 뒀는데(oht_data_m16A), 현장 확인 결과 실제 테이블은 끝까지 소문자다
+#     — 그대로 두면 없는 테이블을 쳐서 조회가 빈다 (고객 지적).
+#     월드모델 쪽 규칙(config.py `_scan_date_folder`, dashboard `_logpressoTableFor`)
+#     도 f"m{번호}{prefix}".lower() 로 소문자다 — 이제 셋이 같다.
 #   FAB/prefix 는 OHT_MAP/cache 에 있는 레이아웃 이름과 1:1 이다:
 #       M14A_A · M14B_A · M16A_A · M16A_BR · M16A_E · M16B_B
 MAP = {
     "M14":    {"table": "oht_data_m14a",  "fab": "M14A", "prefix": "A"},
     "M14B":   {"table": "oht_data_m14b",  "fab": "M14B", "prefix": "A"},
-    "M16A":   {"table": "oht_data_m16A",  "fab": "M16A", "prefix": "A"},
-    "M16B":   {"table": "oht_data_m16B",  "fab": "M16B", "prefix": "B"},
+    "M16A":   {"table": "oht_data_m16a",  "fab": "M16A", "prefix": "A"},
+    "M16B":   {"table": "oht_data_m16b",  "fab": "M16B", "prefix": "B"},
     # ★허브룸. 레이아웃은 M16A 폴더 아래의 BR 이다 (M16BR).
     "M16HUB": {"table": "oht_data_m16br", "fab": "M16A", "prefix": "BR"},
 }
