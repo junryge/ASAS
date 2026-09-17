@@ -21,7 +21,6 @@
 | 행거를 노드마다가 아니라 **4 m 칸마다** | 실물 M14A 는 노드가 0.7 m 간격(9,403개)이라 노드마다 세우면 봉 9천 개가 숲이 되어 차량·설비가 안 보였다. |
 | `dark` / `background` / `stateColors` 옵션 + `setOptions` | 페이지 테마(body[data-theme])와 ⚙ 설정의 차량 색을 따라간다. 원본은 prefers-color-scheme 만 봤다. |
 | `setActive(false)` | 2D 로 돌아가 숨겨진 동안 루프가 헛돌지 않게. |
-| `walls: false` | 벽을 안 세운다. 돌려 보면 안쪽을 가리기만 하고 정보가 없다 (고객 지시). |
 
 ## 입력 (dashboard.html 의 `layout3D` / `vehicle3D` 가 만든다)
 
