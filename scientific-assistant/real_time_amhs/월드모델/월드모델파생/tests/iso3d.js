@@ -31,11 +31,15 @@ ok(state3D({ state: 2 }) === 2 && state3D({ state: 8 }) === 2 && state3D({ state
 ok(state3D({ state: 1, isFull: true }) === 1, '달리는데 적재면 1');
 ok(state3D({ state: 1, isFull: false }) === 0, '달리는데 공차면 0');
 ok(state3D({ state: 0 }) === 0, '모르는 코드 0 은 공차운행');
-/* 3D 색 순서 = 3D 상태 순서. 설정창 색이 그대로 간다 */
+/* 3D 색 순서 = 3D 상태 순서: 공차·적재·정지·JAM·OBS.
+   ★2026-09 — 2D 차량 색·모양이 현장 HMI 규칙(적재 = 검은 동그라미)으로 바뀌었는데
+     아이소메트리는 회의 뒤로 미뤘다. 그래서 3D 는 mapSettings 를 따라가지 않고
+     **예전 색을 그대로** 쓴다. 따라가게 두면 어두운 3D 바닥에서 적재 차가 검게 묻는다. */
 const col = v3dColors();
 ok(col.length === 5, '색 다섯');
-ok(col[0] === mapSettings.colorEmpty && col[1] === mapSettings.colorLoaded && col[2] === mapSettings.colorStop
-   && col[3] === mapSettings.colorJam && col[4] === mapSettings.colorObs, '색 순서 = 공차·적재·정지·JAM·OBS');
+ok(col.join(',') === '#22c55e,#22d3ee,#9ca3af,#ef4444,#f59e0b', '3D 는 예전 색 그대로 (공차·적재·정지·JAM·OBS)');
+ok(col[1] !== mapSettings.colorLoaded, '2D 의 새 적재 색(검정)이 3D 로 번지면 안 된다');
+ok(v3dColors() !== col, '부르는 쪽이 고쳐도 원본이 안 바뀌게 복사본을 준다');
 
 /* ── 차량 한 대 ── */
 const r = vehicle3D({ vid: 'V0001', x: 10.5, y: 20.5, state: 6, isFull: true, velocity: 123.4, currentNode: 4436, nextNode: 4437, ratio: 0.25 });

@@ -455,6 +455,14 @@ def parse_oht_message(line: str, t=None) -> Optional[dict]:
         return None
 
 
+def _to_int(v, default: int = 0) -> int:
+    """빈칸·None·숫자 아닌 값은 default. 컬럼이 빠진 조회(간소)에서도 안 터지게."""
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def parse_oht_data_m14a_row(row: dict, t=None) -> Optional[dict]:
     """oht_data_m14a (파싱된 버전) 행 → dict
     t: UDP 수신 시각(datetime). 결과 dict의 '_time'에 보존되어 속도 계산에 사용.
@@ -469,6 +477,9 @@ def parse_oht_data_m14a_row(row: dict, t=None) -> Optional[dict]:
             'distance': int(row.get('DISTANCE', 0)),
             'nextNode': int(row.get('NEXT_ADDRESS', 0)),
             'edge': row.get('EDGE', ''),
+            # 차량 실행 사이클 — 2=ACQUIRE_MOVING(짐 가지러 감) · 4=DEPOSIT_MOVING(짐 들고 감).
+            # 현장 HMI 가 ●(검은/흰 동그라미)로 구분해 그리는 그 값이다. 없으면 0.
+            'vhlCycle': _to_int(row.get('VEHICLE_EXECUTE_CYCLE')),
             'carrierId': row.get('CARRIER', ''),
             'destination': int(row.get('DESTINATION', 0)),
             'sourcePort': row.get('FROM_RETURN_PORT', ''),

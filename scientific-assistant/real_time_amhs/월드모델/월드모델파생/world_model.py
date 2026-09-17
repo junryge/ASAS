@@ -38,6 +38,7 @@ class PredVehicle:
     destination: int
     state: int              # 1=RUN, 2=STOP, 7=JAM
     isFull: int = 0
+    vhlCycle: int = 0       # 2=ACQUIRE_MOVING(가지러 감) · 4=DEPOSIT_MOVING(들고 감)
     path: List[int] = field(default_factory=list)
     pathIndex: int = 0
     stoppedTicks: int = 0
@@ -233,6 +234,7 @@ class WorldModel:
                 destination=vdata.get('destination', 0),
                 state=state,
                 isFull=vdata.get('isFull', 0),
+                vhlCycle=vdata.get('vhlCycle', 0),
             )
             self.vehicles[vid] = pv
             self.edge_vehicles[edge_key].append(vid)
@@ -364,6 +366,7 @@ class WorldModel:
                     'y': round(pos[1], 1),
                     'state': v.state,
                     'isFull': v.isFull,
+                    'vhlCycle': v.vhlCycle,
                     'velocity': round(v.velocity, 1) if v.velocity is not None else None,
                     'currentNode': v.currentNode,
                     'nextNode': v.nextNode,
