@@ -546,6 +546,11 @@ const DEFAULT_MAP_SETTINGS = {
   shapeObs:       'triangle',
   shapeStop:      'triangle',
   shapeJam:       'triangle',
+  // 3D 아이소메트리 — 크기 배수 (⚙ 설정 '3D 아이소메트리' 묶음)
+  v3dVehicle:     1,              // 차량
+  v3dPort:        1,              // 설비(포트) 상자
+  v3dText:        1,              // 글자 (차량 라벨·주소·라벨·존)
+  v3dRail:        1,              // 레일 굵기
 };
 // 테마 팔레트 — hmi 는 현장 캡처(밝은 회색 바탕·검은 레일·초록 ZC 상자)를 그대로 옮긴 것
 const MAP_THEMES = {
@@ -1066,6 +1071,7 @@ function toggleLayer(layer) {
   on('btn-name', showName); on('btn-hotspot', showHotspot);
   on('btn-station', showStation); on('btn-label', showLabel); on('btn-sensor', showSensor);
   on('btn-junction', showJunction); on('btn-iso', showIso); on('btn-2d', !showIso && !show3D); on('btn-3d', show3D);
+  syncLayers3D();                     // 3D 도 같은 토글을 본다
   railCacheCanvas = null;
   drawMap();
 }
@@ -1437,7 +1443,12 @@ function z3dId(z) { return z.name || ('HID ' + z.id); }
 // ★포트(설비): geom.st 의 종류 9(오른쪽)·8(왼쪽)만 — 레일 위(1/5)는 설비가 아니다.
 //   22,971 개를 다 세우면 0.5~1 m 간격이라 서로 파고든다. 1.6 m 칸으로 솎아 하나씩만.
 function layout3D(g, geom) {
-  const nodes = Object.entries(g.nodes || {}).map(([id, c]) => ({ id, x: c[0], y: c[1] }));
+  const meta = g.meta || {};
+  // 노드: 글자방향·합류·분기 (layout.xml 의 draw-text-direction / junction / branch — 2D 와 같은 재료)
+  const nodes = Object.entries(g.nodes || {}).map(([id, c]) => {
+    const m = meta[id] || [0, 0, 0];
+    return { id, x: c[0], y: c[1], dir: m[0] | 0, junction: !!m[1], branch: !!m[2] };
+  });
   const seen = new Set(), edges = [];
   for (const e of (g.edges || [])) {
     const a = String(e[0]), b = String(e[1]);
@@ -1465,7 +1476,15 @@ function layout3D(g, geom) {
     ports.push({ x: px, y: py, w: 1.3, d: 1.4, h: 2.3, rot: Math.atan2(-s[3] * sg, -s[2] * sg),
                  kind: 'eq', tone: ports.length % 3, loadport: false });
   }
-  return { nodes, edges, zones, ports };
+  // 센서(ZCU) 자리 그대로. 라벨은 앵커 노드 + (dx, dy) — 2D drawRailLayer 와 같은 자리
+  const sensors = (g.sensors || []).map(q => ({ x: q[0], y: q[1] }));
+  const labels = [];
+  for (const l of (g.labels || [])) {
+    const N = g.nodes[String(l[1])];
+    if (!N) continue;
+    labels.push({ x: N[0] + (+l[2] || 0), y: N[1] + (+l[3] || 0), text: l[0], kind: l[4] });
+  }
+  return { nodes, edges, zones, ports, sensors, labels };
 }
 
 // 레이아웃을 3D 에 넣는다 — 같은 맵이면 다시 안 세운다 (9,403 노드를 매번 세우면 느리다)
@@ -1482,12 +1501,35 @@ function sync3DLayout() {
 // 테마·차량 색을 3D 에 맞춘다 — applyPageTheme 이 부른다
 function sync3DTheme() {
   if (!v3d) return;
-  v3d.setOptions({ dark: mapSettings.mapTheme === 'dark', background: mapPal().bg, stateColors: v3dColors() });
+  v3d.setOptions({ dark: mapSettings.mapTheme === 'dark', background: mapPal().bg, stateColors: v3dColors(),
+                   vehicleScale: +mapSettings.v3dVehicle || 1, portScale: +mapSettings.v3dPort || 1,
+                   textScale: +mapSettings.v3dText || 1, railScale: +mapSettings.v3dRail || 1 });
+}
+// 위 '표시' 토글(Zone·차단·ID·주소·포트·라벨·합류·센서·체인)을 3D 에 그대로 — toggleLayer 가 부른다
+function syncLayers3D() {
+  if (!v3d) return;
+  v3d.setLayers({ zones: showZone, railcut: showRailCut, labels: showId, addrs: showName, ports: showStation,
+                  texts: showLabel, junctions: showJunction, sensors: showSensor, hotspots: showHotspot });
+}
+// 차단 엣지 — 2D 의 mapData.blockedEdges('from_to') 를 3D 엣지 id('from-to') 로. 레일은 양방향이라
+// 반대 방향 엣지도 같이 막는다 (물리적으로 같은 레일이다).
+function blocked3D() {
+  const out = [];
+  for (const be of Object.values(mapData.blockedEdges || {})) { out.push(be.from + '-' + be.to); out.push(be.to + '-' + be.from); }
+  return out;
+}
+// 데드락 핫스팟(체인) — 2D 의 링과 같은 뜻. 반지름은 정지 대수로 (2D: stopped×2.5px).
+function hotspots3D() {
+  return (mapData.hotspots || []).filter(h => typeof h.x === 'number' && typeof h.y === 'number').map(h => ({
+    x: h.x, y: h.y, r: Math.max(2, Math.min(14, 2 + (h.stopped || 0) * 0.6)), severity: h.severity,
+    text: `${h.stopped || 0}대${h.kind === 'chain' ? ' (체인)' : ''}` }));
 }
 // 지금 프레임을 3D 로 — updateUI 마다. 켜져 있을 때만 (안 보이는 화면에 매 프레임 넣지 않는다)
 function push3D(d) {
   if (!show3D || !v3d) return;
   v3d.setVehicles((mapData.vehicles || []).map(vehicle3D), { ts: (d && d.time) || undefined });
+  v3d.setBlocked(blocked3D());
+  v3d.setHotspots(hotspots3D());
 }
 
 async function open3D() {
@@ -1502,8 +1544,15 @@ async function open3D() {
         coordScale: V3D_SCALE,
         flipY: false,
         projection: 'iso',                          // 단추 이름이 '아이소메트리' 다 — 등각으로 연다
+        walls: false,                               // 벽 없음 — 돌려 보면 안쪽을 가리기만 한다 (고객 지시)
         dark: mapSettings.mapTheme === 'dark',
         colors: { state: v3dColors(), background: pal.bg, accent: '#1f6feb' },
+        // 바에서 'ID·속도' 는 뺀다 — 위 '표시' 의 ID 토글이 맡는다 (스위치가 둘이면 서로 어긋난다)
+        bar: ['hot', 'all', 'proj', 'heat', 'vs', 'png', 'panel'],
+        layers: { zones: showZone, railcut: showRailCut, labels: showId, addrs: showName, ports: showStation,
+                  texts: showLabel, junctions: showJunction, sensors: showSensor, hotspots: showHotspot },
+        vehicleScale: +mapSettings.v3dVehicle || 1, portScale: +mapSettings.v3dPort || 1,
+        textScale: +mapSettings.v3dText || 1, railScale: +mapSettings.v3dRail || 1,
       });
       // 3D 에서 고른 것 → 오른쪽 목록도 같이 (2D 의 selectZone/selectOHT 와 같은 상태)
       inst.on('zoneclick', e => {
@@ -1527,6 +1576,7 @@ async function open3D() {
   }
   v3d.setActive(true);
   sync3DLayout();
+  syncLayers3D();
   v3d.resize();
   push3D();
 }
@@ -3164,6 +3214,22 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
       </div>
       <div class="ms-row"><label>차량 크기</label>
         <span><input type="number" id="ms-vehicleRadius" step="0.5" min="1" max="10" title="전체 화면에서 4px 쯤, 확대해도 10px 를 넘지 않게 천천히 커진다"><small>배수 (3 = 기본)</small></span>
+      </div>
+    </section>
+
+    <section class="ms-sec">
+      <h4>3D 아이소메트리</h4>
+      <div class="ms-row"><label>차량 크기</label>
+        <span><input type="number" id="ms-v3dVehicle" step="0.25" min="0.5" max="4"><small>배수 (1 = 실물 크기)</small></span>
+      </div>
+      <div class="ms-row"><label>설비(포트) 크기</label>
+        <span><input type="number" id="ms-v3dPort" step="0.1" min="0.3" max="2"><small>배수</small></span>
+      </div>
+      <div class="ms-row"><label>글자 크기</label>
+        <span><input type="number" id="ms-v3dText" step="0.1" min="0.5" max="2.5"><small>배수 — 차량 라벨·주소·라벨·존</small></span>
+      </div>
+      <div class="ms-row"><label>레일 굵기</label>
+        <span><input type="number" id="ms-v3dRail" step="0.1" min="0.5" max="3"><small>배수</small></span>
       </div>
     </section>
 

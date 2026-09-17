@@ -91,6 +91,43 @@ class 뷰어에_보탠_것(unittest.TestCase):
         self.assertIn("setActive: on =>", self.s)
         self.assertIn("if (!this.G || !this.active) return;", self.s)
 
+    def test_벽을_뺄_수_있다(self):
+        self.assertIn("walls: true,", self.s, "기본은 원본대로 벽 있음")
+        self.assertIn("this.walls = this.o.walls === false ? [] :", self.s, "walls:false 면 외곽 벽도 안 세워야 한다")
+
+    def test_표시_토글_아홉이_모듈에_있다(self):
+        for need in ("setLayers: l => self.setLayers(l),", "setBlocked: ids => self.setBlocked(ids),",
+                     "setHotspots: hs => self.setHotspots(hs),", "getLayers: () =>",
+                     "zones: true, railcut: true, labels: o.labels, addrs: true, ports: true, texts: true,",
+                     "junctions: true, sensors: false, hotspots: true"):
+            self.assertIn(need, self.s, need)
+
+    def test_주소_라벨_스프라이트는_상한이_있다(self):
+        # 9,403 노드를 다 스프라이트로 만들면 텍스처만 수백 MB 다
+        self.assertIn("const TXT_MAX = 160;", self.s)
+        self.assertIn("const use = cand.slice(0, TXT_MAX);", self.s)
+        self.assertIn("if (this.txtCand && now - this.txtLast < 120) return;", self.s, "카메라가 움직일 때만 다시 뽑는다")
+
+    def test_차단은_레일_색으로(self):
+        self.assertIn("if (blk && blk.has(ei)) this._c.set(0xef4444);", self.s, "차단 엣지는 빨강 — 2D 의 빨간 점선과 같은 뜻")
+        self.assertIn("const blk = this.layers.railcut ? this.blocked : null;", self.s, "차단 토글을 끄면 색도 안 칠한다")
+
+    def test_차단_표식과_즉시_숨김(self):
+        self.assertIn("buildBlockMarks() {", self.s, "레일 판만 빨갛게 하면 합류 ✕ 와 섞여 안 보인다 — ⛔ 표식이 있어야 한다")
+        self.assertIn("if (!(P.kind === 'addr' ? L.addrs : L.texts)) P.sp.visible = false;", self.s,
+                      "주소·라벨은 토글 즉시 숨겨야 한다 (루프가 다음에 뽑을 때까지 남으면 안 된다)")
+        self.assertIn("this.r.shadowMap.needsUpdate = true;", self.s)
+
+    def test_크기_배수_셋과_다시_세우기(self):
+        for need in ("portScale: 1,", "textScale: 1,", "railScale: 1,", "buildRails() {", "buildPorts() {",
+                     "if (p.portScale != null", "if (p.railScale != null", "if (p.textScale != null"):
+            self.assertIn(need, self.s, need)
+        self.assertIn("const w = p.w * ps, d = p.d * ps, h = p.h * ps;", self.s, "설비 크기 배수")
+        self.assertIn("* (this.opt.ts || 1);", self.s, "글자 크기 배수는 fitSprite 에서")
+
+    def test_바_단추_목록을_고를_수_있다(self):
+        self.assertIn("const list = Array.isArray(o.bar) ? o.bar : Object.keys(BTN);", self.s)
+
     def test_네_색만_준_옛_호출도_산다(self):
         self.assertIn("if (o.colors.state.length < ST_NAME.length)", self.s)
 
@@ -170,9 +207,40 @@ class 화면(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIn("await import('/static/js/oht3d/oht3d.js')", m.group(0))
         self.assertIn("projection: 'iso'", m.group(0), "단추 이름이 아이소메트리다 — 등각으로 열어야 한다")
+        self.assertIn("walls: false,", m.group(0), "벽 없이 연다 (고객: 벽 필요없다)")
         self.assertIn("coordScale: V3D_SCALE", m.group(0))
         self.assertIn("const V3D_SCALE = 0.01;", self.h)
         self.assertIn("class=\"v3d-err\"", m.group(0), "못 받으면 왜인지 화면에 적어야 한다")
+
+    def test_표시_토글이_3D_에도_간다(self):
+        self.assertIn("  syncLayers3D();                     // 3D 도 같은 토글을 본다\n  railCacheCanvas = null;\n  drawMap();\n}", self.h,
+                      "toggleLayer 끝에서 3D 에 알려야 한다")
+        m = re.search(r"function syncLayers3D\(\) \{[\s\S]*?\n\}", self.h)
+        self.assertIsNotNone(m)
+        for need in ("zones: showZone", "railcut: showRailCut", "labels: showId", "addrs: showName", "ports: showStation",
+                     "texts: showLabel", "junctions: showJunction", "sensors: showSensor", "hotspots: showHotspot"):
+            self.assertIn(need, m.group(0), need)
+        # 열 때도 같은 토글로 시작한다
+        self.assertIn("  sync3DLayout();\n  syncLayers3D();\n  v3d.resize();", self.h)
+
+    def test_차단과_핫스팟이_프레임마다_간다(self):
+        m = re.search(r"function push3D\(d\) \{[\s\S]*?\n\}", self.h)
+        self.assertIn("v3d.setBlocked(blocked3D());", m.group(0))
+        self.assertIn("v3d.setHotspots(hotspots3D());", m.group(0))
+
+    def test_바에서_ID속도는_뺀다(self):
+        # 위 '표시' 의 ID 토글이 맡는다 — 스위치가 둘이면 서로 어긋난다
+        self.assertIn("bar: ['hot', 'all', 'proj', 'heat', 'vs', 'png', 'panel'],", self.h)
+
+    def test_설정창에_3D_크기_묶음(self):
+        for k in ("v3dVehicle", "v3dPort", "v3dText", "v3dRail"):
+            self.assertIn(f"  {k}:", self.h, k + " 기본값이 DEFAULT_MAP_SETTINGS 에 있어야 저장·복원이 된다")
+            self.assertIn(f'id="ms-{k}"', self.h, k + " 입력 칸")
+        self.assertIn("<h4>3D 아이소메트리</h4>", self.h)
+        m = re.search(r"function sync3DTheme\(\) \{[\s\S]*?\n\}", self.h)
+        for need in ("vehicleScale: +mapSettings.v3dVehicle || 1", "portScale: +mapSettings.v3dPort || 1",
+                     "textScale: +mapSettings.v3dText || 1", "railScale: +mapSettings.v3dRail || 1"):
+            self.assertIn(need, m.group(0), need)
 
     def test_절_표식(self):
         self.assertIn("// ===== 3D 아이소메트리 (시작) =====", self.h)

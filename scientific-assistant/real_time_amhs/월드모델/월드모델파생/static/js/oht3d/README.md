@@ -21,6 +21,13 @@
 | 행거를 노드마다가 아니라 **4 m 칸마다** | 실물 M14A 는 노드가 0.7 m 간격(9,403개)이라 노드마다 세우면 봉 9천 개가 숲이 되어 차량·설비가 안 보였다. |
 | `dark` / `background` / `stateColors` 옵션 + `setOptions` | 페이지 테마(body[data-theme])와 ⚙ 설정의 차량 색을 따라간다. 원본은 prefers-color-scheme 만 봤다. |
 | `setActive(false)` | 2D 로 돌아가 숨겨진 동안 루프가 헛돌지 않게. |
+| `walls: false` | 벽을 안 세운다. 돌려 보면 안쪽을 가리기만 하고 정보가 없다 (고객 지시). |
+| `setLayers({...})` · `layers` 옵션 | 2D '표시' 토글 아홉(Zone·차단·ID·주소·포트·라벨·합류·센서·체인)이 3D 에도 먹는다. 합류 ✕·분기 ○·센서 ●·주소·라벨(ZC/HID/베이/열/MTL) 을 새로 그린다. |
+| 주소·라벨 스프라이트 상한 `TXT_MAX = 160` | 9,403 노드를 다 스프라이트로 만들면 텍스처만 수백 MB. 화면에 가까운 것부터 160개, 카메라가 움직일 때만(120 ms) 다시 뽑는다. |
+| `setBlocked(엣지 id[])` | 차단 레일 — 레일 판을 빨강으로 (2D 의 빨간 점선). '차단' 토글을 끄면 안 칠한다. |
+| `setHotspots([{x,y,r,severity,text}])` | 데드락 핫스팟(체인) — 바닥의 색 링 + 글자. 2D 의 펄스 링과 같은 뜻. |
+| `portScale` · `textScale` · `railScale` + `setOptions` | ⚙ 설정 '3D 아이소메트리' 묶음(차량·설비·글자·레일 굵기). 설비·레일은 다시 세운다(buildPorts/buildRails). |
+| `bar: [...]` | 바에 놓을 단추 목록. 월드모델파생은 'ID·속도' 를 빼고 위 ID 토글이 맡게 한다. |
 
 ## 입력 (dashboard.html 의 `layout3D` / `vehicle3D` 가 만든다)
 
