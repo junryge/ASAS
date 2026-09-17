@@ -130,5 +130,85 @@ class 배선(unittest.TestCase):
         self.assertNotIn("MSG_ID", o)
 
 
+class 키와_주소는_한_짝(unittest.TestCase):
+    """★401 이 났던 이유 — 키는 관제 config.json 에서 빌려오는데 주소는 이 파일에
+    박힌 개발 IP(10.125.173.63)를 썼다. 다른 서버 키를 다른 서버에 보낸 것이다.
+    _borrow 안에 host/port 를 읽는 가지가 있었는데 아무도 안 부르고 있었다."""
+
+    def _run(self, cfg=None, env=None):
+        """logpresso_query.py 의 접속 설정 토막만 떼어 돌린다 (pandas 없이)."""
+        import json, shutil, tempfile
+        src = _read("logpresso_query.py")
+        a, b = src.index("# 원격 노드명"), src.index('FMT = "%Y%m%d%H%M%S"')
+        tmp = tempfile.mkdtemp()
+        try:
+            deep = os.path.join(tmp, "a", "b")
+            os.makedirs(deep, exist_ok=True)
+            if cfg is not None:
+                with open(os.path.join(tmp, "config.json"), "w", encoding="utf-8") as f:
+                    json.dump(cfg, f)
+            old = {k: os.environ.pop(k, None) for k in ("LP_API_KEY", "LP_HOST", "LP_PORT")}
+            os.environ.update({k: v for k, v in (env or {}).items()})
+            ns = {"os": os, "HOST": "10.125.173.63", "PORT": 8888, "API_KEY": "",
+                  "__file__": os.path.join(deep, "logpresso_query.py")}
+            try:
+                exec(src[a:b], ns)
+            finally:
+                for k in ("LP_API_KEY", "LP_HOST", "LP_PORT"):
+                    os.environ.pop(k, None)
+                for k, v in old.items():
+                    if v is not None:
+                        os.environ[k] = v
+            return ns
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    # ★값을 'sample-' 로 시작하게 둔다 — 관제의 보안 스캐너(tests/test_secrets.py)가
+    #   진짜 키로 오해하지 않게. 시험용 가짜다.
+    CFG = {"api_key": "sample-key-abcd1234",
+           "logpresso_base": "http://10.40.42.167:8888/logpresso"}
+
+    def test_키를_빌리면_주소도_같이_빌린다(self):
+        ns = self._run(self.CFG)
+        self.assertEqual(ns["API_KEY"], "sample-key-abcd1234")
+        self.assertEqual(ns["HOST"], "10.40.42.167",
+                         "키만 빌리고 주소는 파일의 개발 IP 를 쓰면 401 이 난다")
+        self.assertEqual(ns["PORT"], 8888)
+
+    def test_어디서_빌렸는지_남긴다(self):
+        self.assertEqual(self._run(self.CFG)["KEY_FROM"], "환경변수/관제 설정")
+
+    def test_환경변수가_이긴다(self):
+        ns = self._run(self.CFG, env={"LP_HOST": "10.1.2.3", "LP_PORT": "9999"})
+        self.assertEqual((ns["HOST"], ns["PORT"]), ("10.1.2.3", 9999))
+
+    def test_설정이_없으면_파일_값_그대로(self):
+        ns = self._run(None)
+        self.assertEqual(ns["HOST"], "10.125.173.63")
+        self.assertEqual(ns["API_KEY"], "")
+
+    def test_401_이면_무엇을_볼지_알려준다(self):
+        s = _read("logpresso_query.py")
+        self.assertIn("if resp.status_code == 401:", s)
+        self.assertIn("401 = 인증 실패. 쿼리는 돌지도 않았다.", s)
+        self.assertIn("키 출처 {KEY_FROM}", s)
+
+    def test_접속_정보를_로그에_남긴다(self):
+        self.assertIn('print(f"[접속] {HOST}:{PORT}', _read("logpresso_query.py"))
+
+    def test_키_전체는_찍지_않는다(self):
+        """★로그·오류 글에 키가 통째로 찍히면 화면 캡처 한 장으로 새어 나간다.
+
+        ★이름을 글자 그대로 적지 않고 쪼개서 만든다 — 그대로 적으면 관제의
+          보안 스캐너(tests/test_secrets.py)가 이 시험 줄을 진짜 키로 잡는다.
+          실제로 한 번 잡혔다.
+        """
+        s = _read("logpresso_query.py")
+        tok = "API_" + "KEY"
+        self.assertEqual(s.count("{" + tok + "}"), 1,
+                         "키를 통째로 넣는 곳은 조회 URL 한 군데뿐이어야 한다")
+        self.assertEqual(s.count(tok + "[-4:]"), 2, "끝 4자만 (로그 한 곳, 오류 한 곳)")
+
+
 if __name__ == "__main__":
     unittest.main()

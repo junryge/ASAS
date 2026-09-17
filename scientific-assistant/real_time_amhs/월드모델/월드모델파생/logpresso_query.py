@@ -91,8 +91,25 @@ def _borrow(name, key):
     return ""
 
 
+KEY_FROM = "파일"
 if not API_KEY:
     API_KEY = _borrow("LP_API_KEY", "api_key")
+    KEY_FROM = "환경변수/관제 설정"
+    # ★키를 관제에서 빌려 왔으면 **주소도 같은 곳에서** 빌린다.
+    #   키만 빌리고 주소는 이 파일에 박힌 값(개발 10.125.173.63)을 쓰면,
+    #   다른 서버 키를 개발 서버에 보내게 되어 **401** 이 난다. 실제로 났다 —
+    #   관제 config.json 의 logpresso_base 는 10.40.42.167 인데 여기는 .63 이었다.
+    #   _borrow 에 host/port 를 읽는 가지가 있었는데 아무도 안 부르고 있었다.
+    _h = _borrow("LP_HOST", "host")
+    _p = _borrow("LP_PORT", "port")
+    if _h:
+        HOST = _h
+    if _p:
+        try:
+            PORT = int(_p)
+        except ValueError:
+            pass
+# 환경변수는 언제나 이긴다 (키를 파일에 박아 두고 주소만 바꿔 쓸 수 있게)
 HOST = os.environ.get("LP_HOST", "").strip() or HOST
 PORT = int(os.environ.get("LP_PORT", "").strip() or PORT)
 
@@ -157,8 +174,17 @@ def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
     resp = requests.get(url, verify=False, timeout=300)
     if resp.status_code != 200:
         body = resp.text[:500]
+        # ★401 은 쿼리가 아니라 **키와 주소의 짝**이 문제다. 로그프레소는 키가
+        #   안 맞으면 로그인 화면 HTML 을 돌려줘서, 얼핏 쿼리 오류로 보인다.
+        hint = ""
+        if resp.status_code == 401:
+            hint = (f"\n  ▶ 401 = 인증 실패. 쿼리는 돌지도 않았다.\n"
+                    f"     지금 주소 {HOST}:{PORT} · 키 출처 {KEY_FROM} "
+                    f"(끝 4자 …{API_KEY[-4:] if len(API_KEY) >= 4 else '?'})\n"
+                    f"     이 주소용 키가 맞는지 보라. 주소를 바꾸려면 "
+                    f"LP_HOST/LP_PORT, 키는 LP_API_KEY.")
         raise RuntimeError(
-            f"HTTP {resp.status_code} from {HOST}:{PORT}\n"
+            f"HTTP {resp.status_code} from {HOST}:{PORT}{hint}\n"
             f"  실패 쿼리: {q}\n"
             f"  응답(앞 500자): {body}"
         )
@@ -179,6 +205,9 @@ def query_oht_chunked(from_dt: str, to_dt: str,
 
     used = (profile or PROFILE or "agg30").strip()
     print(f"[쿼리] 프로필 {used}  (raw 로 되돌리려면 LP_QUERY_PROFILE=raw)")
+    # ★어느 서버에 어느 키로 치는지 남긴다 — 401 이 나면 여기부터 본다
+    print(f"[접속] {HOST}:{PORT}  remote={REMOTE_NODE or '(없음)'}  "
+          f"키 출처 {KEY_FROM} (끝 4자 …{API_KEY[-4:] if len(API_KEY) >= 4 else '?'})")
 
     frames = []
     cur = start
