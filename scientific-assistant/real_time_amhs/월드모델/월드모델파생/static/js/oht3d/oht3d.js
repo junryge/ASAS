@@ -28,13 +28,6 @@
  *   · dark / background 옵션 — 페이지 테마(body[data-theme])를 따라간다.
  *     원본은 prefers-color-scheme 만 봤다.
  *   · setActive(false) — 숨겨진 동안 루프가 헛돌지 않게.
- *   · walls: false — 벽을 안 세운다 (고객: "벽 필요없다").
- *   · setLayers({zones, railcut, labels, addrs, ports, texts, junctions, sensors, hotspots})
- *     — 2D 화면의 '표시' 토글(Zone·차단·ID·주소·포트·라벨·합류·센서·체인)이 3D 에도
- *     그대로 먹는다. setBlocked(엣지 id 들) · setHotspots([{x,y,r,severity,text}]).
- *     주소·라벨 글자는 화면에 가까운 것부터 최대 160개만 스프라이트로 (9,403 노드를
- *     다 그리면 텍스처만 수백 MB 다).
- *   · bar: 바에 놓을 단추 목록 — 화면 쪽 토글과 겹치는 것(ID·속도)은 뺄 수 있다.
  * ============================================================================= */
 
 const ST_NAME = ['운행', '적재', '정지', 'JAM', 'OBS'];
@@ -50,7 +43,6 @@ const STATE_MAP = {
 // 모서리에서 원점을 보면 화면 오른쪽이 +x, 먼 쪽이 −y(2D 의 위쪽)가 된다.
 const ISO_AZ = Math.PI / 4, ISO_EL = Math.atan(1 / Math.SQRT2);
 const HALF_FOV = 16 * Math.PI / 180;                                     // 원근 fov 32° 의 반
-const TXT_MAX = 160;                                                     // 주소·라벨 스프라이트 상한
 
 const DEFAULTS = {
   threeUrl: './three.module.min.js', // oht3d.js 기준 상대경로
@@ -61,9 +53,6 @@ const DEFAULTS = {
   wallHeight: 7.5,
   wallCutHeight: 1.0,
   vehicleScale: 1,
-  portScale: 1,          // 설비(포트) 상자 크기 배수
-  textScale: 1,          // 글자(차량 라벨·주소·라벨·존) 크기 배수
-  railScale: 1,          // 레일 굵기 배수
   labels: true,
   heat: true,
   ui: true,        // 뷰어 내부 버튼/범례/툴팁
@@ -71,9 +60,6 @@ const DEFAULTS = {
   maxTweenMs: 3000,
   jamSec: 0,       // 0 이면 state 값 그대로 사용
   projection: 'persp',   // 'iso' = 아이소메트리(직교) · 'persp' = 원근
-  walls: true,           // false 면 벽(외곽·layout.walls)을 아예 안 세운다
-  bar: null,             // 바 단추 목록 (기본 전부). 예: ['hot','all','proj','heat','vs','png','panel']
-  layers: null,          // 처음 켤 레이어 {zones, railcut, labels, addrs, ports, texts, junctions, sensors, hotspots}
   dark: null,            // true/false 로 주면 그것, null 이면 prefers-color-scheme
   colors: {
     state: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#f97316'],   // 운행·적재·정지·JAM·OBS
@@ -181,21 +167,13 @@ class Viewer {
     this.orb = { tx: 0, ty: 1.5, tz: 0, az: -2.3, el: 0.8, dist: 60 };
     if (o.projection === 'iso') { this.orb.az = ISO_AZ; this.orb.el = ISO_EL; }
     this.fly = null;
-    this.opt = { labels: o.labels, heat: o.heat, vs: o.vehicleScale, proj: o.projection === 'iso' ? 'iso' : 'persp',
-                 ps: +o.portScale || 1, ts: +o.textScale || 1, rs: +o.railScale || 1 };
+    this.opt = { labels: o.labels, heat: o.heat, vs: o.vehicleScale, proj: o.projection === 'iso' ? 'iso' : 'persp' };
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
     this.needRender = true; this.camDirty = true; this.vehDirty = true; this.resized = true; this.domDirty = true;
     this.mouse = null; this.lastDom = 0;
     this.active = true;
     this.labelPool = new Map(); this.zoneLabels = []; this.map = [];
     this.sprites = new Set();   // 만든 스프라이트 전부 — 직교에서 크기를 다시 잡으려고
-    // 레이어 — 2D '표시' 토글과 같은 뜻. labels 는 차량 ID·속도(옵션 labels 와 같은 것).
-    this.layers = { zones: true, railcut: true, labels: o.labels, addrs: true, ports: true, texts: true,
-                    junctions: true, sensors: false, hotspots: true, ...(o.layers || {}) };
-    this.opt.labels = this.layers.labels;
-    this.blocked = new Set();   // 차단된 엣지 index
-    this.hotspots = []; this.hotSig = '';
-    this.txtPool = []; this.txtLast = 0; this.txtCand = null;
     this.chainCache = new Map();
     this._setupDom();
     this._setup3D();
@@ -213,11 +191,6 @@ class Viewer {
       viewAll: () => self.G && self.flyTo(self.allView()),
       setOptions: p => self.setOptions(p),
       setActive: on => { self.active = !!on; if (self.active) { self.resized = true; self.camDirty = true; self.needRender = true; } },
-      setLayers: l => self.setLayers(l),
-      getLayers: () => ({ ...self.layers }),
-      setBlocked: ids => self.setBlocked(ids),
-      setHotspots: hs => self.setHotspots(hs),
-      debugCounts: () => self.debugCounts(),
       getZoneStats: () => self.zoneStatsList(),
       snapshotPNG: name => self.snapshot(name),
       on: (ev, fn) => { if (!self.handlers.has(ev)) self.handlers.set(ev, new Set()); self.handlers.get(ev).add(fn); },
@@ -253,20 +226,16 @@ class Viewer {
     const sc = o.colors.state;
     const bar = document.createElement('div');
     bar.className = 'o3d-bar';
-    const BTN = {
-      hot: '<button class="o3d-btn" data-a="hot" title="JAM이 가장 몰린 곳으로 근접">정체 지점</button>',
-      all: '<button class="o3d-btn" data-a="all">전체</button>',
-      proj: `<button class="o3d-btn" data-a="proj" title="아이소메트리(직교) / 원근 전환">${o.projection === 'iso' ? '원근으로' : '아이소로'}</button>`,
-      labels: `<button class="o3d-btn ${this.layers.labels ? 'on' : ''}" data-a="labels">ID·속도</button>`,
-      heat: `<button class="o3d-btn ${o.heat ? 'on' : ''}" data-a="heat">히트맵</button>`,
-      vs: `<button class="o3d-btn" data-a="vs">차량 x${o.vehicleScale}</button>`,
-      png: '<button class="o3d-btn" data-a="png">이미지 저장</button>',
-      panel: o.panel ? '<button class="o3d-btn on" data-a="panel">패널</button>' : '',
-    };
-    const list = Array.isArray(o.bar) ? o.bar : Object.keys(BTN);
     bar.innerHTML = `<span class="o3d-ts"></span>
-      ${list.map(k => BTN[k] || '').join('\n      ')}
-      <button class="o3d-btn" data-a="follow" hidden>따라가기</button>`;
+      <button class="o3d-btn" data-a="hot" title="JAM이 가장 몰린 곳으로 근접">정체 지점</button>
+      <button class="o3d-btn" data-a="all">전체</button>
+      <button class="o3d-btn" data-a="follow" hidden>따라가기</button>
+      <button class="o3d-btn" data-a="proj" title="아이소메트리(직교) / 원근 전환">${o.projection === 'iso' ? '원근으로' : '아이소로'}</button>
+      <button class="o3d-btn ${o.labels ? 'on' : ''}" data-a="labels">ID·속도</button>
+      <button class="o3d-btn ${o.heat ? 'on' : ''}" data-a="heat">히트맵</button>
+      <button class="o3d-btn" data-a="vs">차량 x${o.vehicleScale}</button>
+      <button class="o3d-btn" data-a="png">이미지 저장</button>
+      ${o.panel ? '<button class="o3d-btn on" data-a="panel">패널</button>' : ''}`;
     r.appendChild(bar);
     const leg = document.createElement('div');
     leg.className = 'o3d-leg';
@@ -398,7 +367,7 @@ class Viewer {
   /* 스프라이트 화면 크기 — 원근: 기본 scale(NDC) 그대로 · 직교: × dist
      (원근에서 -z 를 곱해 주던 것을 손으로 한다. 반높이 = dist·tan(16°) 이므로 배율은 dist). */
   fitSprite(L) {
-    const k = (this.cam && this.cam.isOrthographicCamera ? this.orb.dist : 1) * (this.opt.ts || 1);
+    const k = this.cam && this.cam.isOrthographicCamera ? this.orb.dist : 1;
     L.sp.scale.set(L.bs[0] * k, L.bs[1] * k, 1);
   }
   fitSprites() { for (const L of this.sprites) if (L.sp.parent) this.fitSprite(L); }
@@ -412,7 +381,7 @@ class Viewer {
     if (!L || !Array.isArray(L.nodes) || !Array.isArray(L.edges)) throw new Error('setLayout: nodes / edges 배열 필요');
     const sc = this.o.coordScale, fy = this.o.flipY ? -1 : 1;
     const P = (x, y) => [+x * sc, +y * sc * fy];
-    const nodes = L.nodes.map(n => { const [x, y] = P(n.x, n.y); return { id: String(n.id), x, y, in: [], out: [], dir: n.dir | 0, junction: !!n.junction, branch: !!n.branch }; });
+    const nodes = L.nodes.map(n => { const [x, y] = P(n.x, n.y); return { id: String(n.id), x, y, in: [], out: [] }; });
     const nIdx = new Map(nodes.map((n, i) => [n.id, i]));
     const edges = [];
     for (const e of L.edges) {
@@ -452,20 +421,15 @@ class Viewer {
       return { ...p, x, y, w: +p.w || 3, d: +p.d || 4, h: +p.h || 2.4, rot: (+p.rot || 0) * fy, kind: p.kind || 'eq' };
     });
     const walls = (L.walls || []).map(w => { const [x0, y0] = P(w.x0, w.y0), [x1, y1] = P(w.x1, w.y1); return { x0, y0, x1, y1 }; });
-    const sensors = (L.sensors || []).map(q => { const [x, y] = P(q.x, q.y); return { x, y }; });
-    const texts = (L.labels || []).map(q => { const [x, y] = P(q.x, q.y); return { x, y, text: String(q.text ?? ''), kind: q.kind || 'eq' }; });
     for (const w of walls) b = [Math.min(b[0], w.x0, w.x1), Math.min(b[1], w.y0, w.y1), Math.max(b[2], w.x0, w.x1), Math.max(b[3], w.y0, w.y1)];
-    this.G = { nodes, edges, zones, ports, walls, sensors, texts, bounds: b, eIdx, ftIdx };
+    this.G = { nodes, edges, zones, ports, walls, bounds: b, eIdx, ftIdx };
     this.sprites.clear();
-    this.txtPool = []; this.txtCand = null; this.blocked = new Set(); this.hotSig = ''; this.hotspots = [];
-    if (this.blockGroup) { this.disposeGroup(this.blockGroup); this.world.remove(this.blockGroup); this.blockGroup = null; }
     this.chainCache.clear();
     this.slots = []; this.idx.clear(); this.cap = 0;
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
     this.stats = this.emptyStats();
     this.buildStatic();
     this.buildVehicleMeshes(64);
-    this.applyLayers();
     this.resizeNow();
     Object.assign(this.orb, this.allView());
     this.camDirty = true; this.vehDirty = true; this.domDirty = true;
@@ -500,15 +464,13 @@ class Viewer {
       W0.add(new T.LineSegments(gg, new T.LineBasicMaterial({ color: 0xc9cdd1, transparent: true, opacity: 0.7 })));
     }
 
-    // 벽 — walls:false 면 없다 (월드모델파생은 안 세운다: 등각으로 돌려 보면 벽이
-    //   안쪽을 가리고, 레일·차량 말고는 보여줄 정보가 없는 상자다).
-    this.walls = this.o.walls === false ? [] : G.walls.length ? G.walls : [
+    this.walls = G.walls.length ? G.walls : [
       { x0: ext[0] + 0.5, y0: ext[1] + 0.5, x1: ext[2] - 0.5, y1: ext[1] + 0.5 }, { x0: ext[2] - 0.5, y0: ext[1] + 0.5, x1: ext[2] - 0.5, y1: ext[3] - 0.5 },
       { x0: ext[2] - 0.5, y0: ext[3] - 0.5, x1: ext[0] + 0.5, y1: ext[3] - 0.5 }, { x0: ext[0] + 0.5, y0: ext[3] - 0.5, x1: ext[0] + 0.5, y1: ext[1] + 0.5 }];
     const wm = [this.mat(0xd9dcdf, { r: 0.85 }), this.mat(0xd9dcdf, { r: 0.85 }), this.mat(0xf7f8f9, { r: 0.9 }), this.mat(0xd9dcdf), this.mat(0xe1e4e7, { r: 0.85 }), this.mat(0xe1e4e7, { r: 0.85 })];
     this.wallMesh = this.IM(new T.BoxGeometry(1, 1, 1), wm, this.walls.length, { recv: true });
 
-    // 레일 — 굵기 배수(railScale)로 다시 세울 수 있게 따로 둔다
+    // 레일
     const segs = [];
     for (const e of G.edges) for (let j = 1; j < e.pts.length; j++) {
       const [x0, y0] = e.pts[j - 1], [x1, y1] = e.pts[j];
@@ -516,9 +478,15 @@ class Viewer {
       if (len > 0.01) segs.push([e.i, (x0 + x1) / 2, (y0 + y1) / 2, len, Math.atan2(y1 - y0, x1 - x0)]);
     }
     this.segs = segs;
-    this.railGroup = new T.Group();
-    W0.add(this.railGroup);
-    this.buildRails();
+    const bars = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xc7ccd2, { r: 0.35, m: 0.6 }), segs.length * 2);
+    this.plate = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xffffff, { r: 0.5, m: 0.2 }), segs.length);
+    for (const [, mx, my, len, a] of segs) {
+      this.base(X(mx), H, Z(my), -a);
+      this.local(0, 0, 0.21, len + 0.04, 0.13, 0.1); this.put(bars);
+      this.local(0, 0, -0.21, len + 0.04, 0.13, 0.1); this.put(bars);
+      this.local(0, 0.1, 0, len + 0.04, 0.05, 0.56); this.put(this.plate, 0x9aa1a9);
+    }
+    this.fin(bars); this.fin(this.plate);
 
     // 행거 — ★노드마다가 아니라 **4 m 칸마다 하나**. 실물 레이아웃(M14A)은 노드가
     //   0.7 m 간격이라(9,403개) 노드마다 세우면 1.8 m 봉 9천 개가 숲이 되어
@@ -543,51 +511,22 @@ class Viewer {
     }
     [clampM, blk, rod].forEach(m => this.fin(m));
 
-    // 설비 / 스토커 — 한 그룹에 넣어 '포트' 토글로 한 번에 켜고 끄고, 크기 배수로 다시 세운다
-    this.portGroup = new T.Group();
-    W0.add(this.portGroup);
-    this.buildPorts();
-
-    // 합류 ✕ · 분기 ○ · 센서 ● — 2D HMI 레이어와 같은 뜻. 토글로 켜고 끈다.
-    this.buildMarkers(X, Z, H);
-    this.hotGroup = new T.Group();
-    W0.add(this.hotGroup);
-  }
-  buildRails() {
-    const T = this.T, g = this.railGroup, H = this.o.railHeight, rs = this.opt.rs || 1;
-    const X = x => x - this.cx, Z = y => y - this.cy, segs = this.segs;
-    this.disposeGroup(g);
-    const pg = { parent: g };
-    const bars = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xc7ccd2, { r: 0.35, m: 0.6 }), segs.length * 2, pg);
-    this.plate = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xffffff, { r: 0.5, m: 0.2 }), segs.length, pg);
-    for (const [, mx, my, len, a] of segs) {
-      this.base(X(mx), H, Z(my), -a);
-      this.local(0, 0, 0.21 * rs, len + 0.04, 0.13 * rs, 0.1 * rs); this.put(bars);
-      this.local(0, 0, -0.21 * rs, len + 0.04, 0.13 * rs, 0.1 * rs); this.put(bars);
-      this.local(0, 0.1, 0, len + 0.04, 0.05 * rs, 0.56 * rs); this.put(this.plate, 0x9aa1a9);
-    }
-    this.fin(bars); this.fin(this.plate);
-  }
-  buildPorts() {
-    const T = this.T, G = this.G, ps = this.opt.ps || 1;
-    const X = x => x - this.cx, Z = y => y - this.cy;
-    this.disposeGroup(this.portGroup);
-    const pg = { parent: this.portGroup };
+    // 설비 / 스토커
     const ports = G.ports, n = ports.length, rb = this.rbox();
-    const eqBody = this.IM(rb, this.mat(0xffffff, { r: 0.55 }), n, { recv: true, ...pg });
-    const eqFront = this.IM(rb, this.mat(0xffffff, { r: 0.5 }), n, { recv: true, ...pg });
-    const eqCap = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xaeb3b9, { r: 0.5, m: 0.3 }), n, pg);
-    const screen = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0x7c4ddb }), n, { cast: false, ...pg });
-    const bezel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x2d3137), n, pg);
-    const lp = this.IM(rb, this.mat(0x8f969e, { r: 0.45, m: 0.3 }), n * 2, pg);
-    const sfoup = this.IM(rb, this.mat(0xefece6), n, pg);
-    const sfWin = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.2, transparent: true, opacity: 0.85 }), n, { cast: false, ...pg });
-    const lamp = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0xffffff }), n, { cast: false, ...pg });
-    const pole = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x6b7178), n, pg);
-    const panel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xa9afb6, { r: 0.4, m: 0.3 }), n * 12, { cast: false, ...pg });
+    const eqBody = this.IM(rb, this.mat(0xffffff, { r: 0.55 }), n, { recv: true });
+    const eqFront = this.IM(rb, this.mat(0xffffff, { r: 0.5 }), n, { recv: true });
+    const eqCap = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xaeb3b9, { r: 0.5, m: 0.3 }), n);
+    const screen = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0x7c4ddb }), n, { cast: false });
+    const bezel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x2d3137), n);
+    const lp = this.IM(rb, this.mat(0x8f969e, { r: 0.45, m: 0.3 }), n * 2);
+    const sfoup = this.IM(rb, this.mat(0xefece6), n);
+    const sfWin = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial({ color: 0x8b5cf6, roughness: 0.2, transparent: true, opacity: 0.85 }), n, { cast: false });
+    const lamp = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0xffffff }), n, { cast: false });
+    const pole = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0x6b7178), n);
+    const panel = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xa9afb6, { r: 0.4, m: 0.3 }), n * 12, { cast: false });
     const tones = [0xeceae5, 0xdcd9d2, 0xe5e3de], fronts = [0xf4f3f0, 0xcfccc6, 0xdedcd7], lampCol = [0x3ddc84, 0xffb020, 0xff4d4f];
     for (const p of ports) {
-      const w = p.w * ps, d = p.d * ps, h = p.h * ps;
+      const { w, d, h } = p;
       this.base(X(p.x), 0, Z(p.y), -(p.rot || 0));
       if (p.kind === 'stk') {
         this.local(0, h / 2, 0, w, h, d); this.put(eqBody, 0x2a2d32);
@@ -615,22 +554,6 @@ class Viewer {
       this.local(-0.38 * w, h + 0.46, 0.38 * d, 0.13, 0.16, 0.13); this.put(lamp, lampCol[p.lamp | 0] ?? lampCol[0]);
     }
     [eqBody, eqFront, eqCap, screen, bezel, lp, sfoup, sfWin, lamp, pole, panel].forEach(m => this.fin(m));
-    this.portGroup.visible = this.layers.ports;
-  }
-  buildMarkers(X, Z, H) {
-    const T = this.T, G = this.G, W0 = this.world;   // 아래 존 바닥·링·라벨 그룹도 여기서 만든다
-    const jn = G.nodes.filter(nd => nd.junction), bn = G.nodes.filter(nd => nd.branch && !nd.junction);
-    this.juncMesh = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0xd62828 }), jn.length * 2, { cast: false });
-    for (const nd of jn) {
-      for (const a of [Math.PI / 4, -Math.PI / 4]) { this.base(X(nd.x), H + 0.32, Z(nd.y), a); this.local(0, 0, 0, 1.1, 0.07, 0.09); this.put(this.juncMesh); }
-    }
-    this.fin(this.juncMesh);
-    this.branchMesh = this.IM(new T.TorusGeometry(0.45, 0.05, 6, 24), new T.MeshBasicMaterial({ color: 0x6b7280 }), bn.length, { cast: false });
-    for (const nd of bn) { this.base(X(nd.x), H + 0.32, Z(nd.y), 0); this._q.setFromAxisAngle(this._up, 0); this.local(0, 0, 0, 1, 1, 1); this._m.multiply(new T.Matrix4().makeRotationX(-Math.PI / 2)); this.put(this.branchMesh); }
-    this.fin(this.branchMesh);
-    this.sensorMesh = this.IM(new T.BoxGeometry(1, 1, 1), new T.MeshBasicMaterial({ color: 0x0284c7 }), G.sensors.length, { cast: false });
-    for (const q of G.sensors) { this.base(X(q.x), H - 0.35, Z(q.y), 0); this.local(0, 0, 0, 0.28, 0.28, 0.28); this.put(this.sensorMesh); }
-    this.fin(this.sensorMesh);
 
     // HID Zone 바닥/라벨
     this.zoneMeshes = [];
@@ -665,95 +588,6 @@ class Viewer {
     W0.add(this.labelGroup);
     this.vehGroup = new T.Group();
     W0.add(this.vehGroup);
-  }
-
-  /* 데드락 핫스팟(체인) — 바닥의 색 링 + 글자. 2D 의 펄스 링과 같은 뜻. 몇 개 안 된다. */
-  buildHotspots() {
-    const T = this.T, g = this.hotGroup;
-    if (!g) return;
-    this.disposeGroup(g);
-    for (const L of [...this.sprites]) if (L.kind === 'hot') this.sprites.delete(L);
-    const sc = this.o.coordScale, fy = this.o.flipY ? -1 : 1;
-    for (const h of this.hotspots) {
-      const x = h.x * sc - this.cx, z = h.y * sc * fy - this.cy;
-      const col = h.severity === 'CRITICAL' ? 0xef4444 : h.severity === 'DANGER' ? 0xf59e0b : 0xeab308;
-      const r = Math.max(2, Math.min(14, +h.r || 4));
-      const ring = new T.Mesh(new T.TorusGeometry(r, 0.18, 8, 48), new T.MeshBasicMaterial({ color: col, toneMapped: false }));
-      ring.rotation.x = -Math.PI / 2; ring.position.set(x, 0.12, z);
-      const disc = new T.Mesh(new T.CircleGeometry(r, 48), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.18, depthWrite: false, toneMapped: false }));
-      disc.rotation.x = -Math.PI / 2; disc.position.set(x, 0.1, z);
-      g.add(ring, disc);
-      if (h.text) {
-        const L = this.sprite(256, 84, 0.1, 0.033); L.kind = 'hot';
-        const c = L.cv.getContext('2d'); c.clearRect(0, 0, 256, 84);
-        c.fillStyle = 'rgba(0,0,0,.85)'; roundRect(c, 8, 8, 240, 60, 10); c.fill();
-        c.fillStyle = '#' + col.toString(16).padStart(6, '0'); c.font = '700 30px system-ui,"Malgun Gothic",sans-serif';
-        c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(h.text), 128, 38);
-        L.tex.needsUpdate = true;
-        L.sp.position.set(x, this.o.railHeight + 1.2, z);
-        g.add(L.sp);
-      }
-    }
-  }
-  /* 주소(노드 번호)·라벨(ZC/HID/베이/열/MTL) 글자 — 화면에 가까운 것부터 최대 TXT_MAX 개.
-     후보는 카메라가 움직일 때만 다시 뽑는다 (9,403 + 1,205 개 투영 — 120 ms 에 한 번). */
-  updateTexts(now) {
-    const G = this.G, L = this.layers;
-    if (!G) return;
-    const dist = this.orb.dist;
-    const wantAddr = L.addrs && dist < 75, wantTxt = L.texts && dist < 420;
-    if (!wantAddr && !wantTxt) { for (const P of this.txtPool) P.sp.visible = false; return; }
-    if (this.txtCand && now - this.txtLast < 120) return;
-    this.txtLast = now;
-    const w = this.cv.clientWidth || 1, h = this.cv.clientHeight || 1, H = this.o.railHeight, v = this._v;
-    const cand = [];
-    const push = (x, y, text, kind, pri) => {
-      v.set(x - this.cx, H + 0.3, y - this.cy).project(this.cam);
-      if (v.z > 1 || Math.abs(v.x) > 1.05 || Math.abs(v.y) > 1.05) return;
-      cand.push({ x, y, text, kind, d: v.x * v.x + v.y * v.y - pri });
-    };
-    if (wantTxt) for (const t of G.texts) {
-      const box = t.kind === 'zc' || t.kind === 'hid' || t.kind === 'eq';
-      if (box && dist > 150) continue;                       // 상자 라벨은 가까이서만 (2D 의 HMI_SC.box)
-      push(t.x, t.y, t.text, t.kind, t.kind === 'bay' || t.kind === 'col' ? 3 : 1);
-    }
-    if (wantAddr) for (const nd of G.nodes) push(nd.x, nd.y, nd.id, 'addr', 0);
-    cand.sort((a, b) => a.d - b.d);
-    const use = cand.slice(0, TXT_MAX);
-    while (this.txtPool.length < use.length) { const P = this.sprite(256, 72, 0.1, 0.028); P.kind = 'addr'; P.txt = ''; this.labelGroup.add(P.sp); this.txtPool.push(P); }
-    const dark = this.dark();
-    use.forEach((c, i) => {
-      const P = this.txtPool[i];
-      const key = `${c.text}|${c.kind}|${dark}`;
-      if (P.txt !== key) { P.txt = key; P.kind = c.kind; this.paintText(P, c.text, c.kind, dark); }
-      P.sp.position.set(c.x - this.cx, H + (c.kind === 'addr' ? 0.25 : 0.9), c.y - this.cy);
-      P.sp.visible = true;
-    });
-    for (let i = use.length; i < this.txtPool.length; i++) this.txtPool[i].sp.visible = false;
-    this.txtCand = use;
-    this.needRender = true;
-  }
-  paintText(P, text, kind, dark) {
-    const g = P.cv.getContext('2d');
-    g.clearRect(0, 0, 256, 72);
-    const box = { zc: ['#3ddc5a', '#062b10'], hid: ['#3ddc5a', '#062b10'], mtl: ['#1d4ed8', '#ffffff'], eq: ['#cbd5e1', '#1f2937'] }[kind];
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    if (kind === 'addr') {
-      g.font = '700 30px Consolas, ui-monospace, monospace';
-      const tw = g.measureText(text).width + 18;
-      g.fillStyle = dark ? 'rgba(10,14,23,.82)' : 'rgba(255,255,255,.85)'; roundRect(g, 128 - tw / 2, 14, tw, 44, 8); g.fill();
-      g.fillStyle = dark ? '#fde68a' : '#111827'; g.fillText(text, 128, 37);
-    } else if (box) {
-      g.font = '700 30px system-ui,"Malgun Gothic",sans-serif';
-      const tw = Math.min(250, g.measureText(text).width + 22);
-      g.fillStyle = box[0]; roundRect(g, 128 - tw / 2, 12, tw, 48, 6); g.fill();
-      g.fillStyle = box[1]; g.fillText(text, 128, 37);
-    } else {   // bay · col — 상자 없이 굵은 글자 (2D 와 같다)
-      g.font = '700 40px system-ui,"Malgun Gothic",sans-serif';
-      g.lineWidth = 6; g.strokeStyle = dark ? 'rgba(10,14,23,.9)' : 'rgba(255,255,255,.9)'; g.strokeText(text, 128, 37);
-      g.fillStyle = dark ? '#fde68a' : '#111827'; g.fillText(text, 128, 37);
-    }
-    P.tex.needsUpdate = true;
   }
 
   buildVehicleMeshes(cap) {
@@ -977,11 +811,9 @@ class Viewer {
     for (const [k, L] of this.labelPool) L.sp.visible = used.has(k);
     // 레일 히트맵
     const E = this.G.edges, S = this.stats;
-    const blk = this.layers.railcut ? this.blocked : null;
     this.segs.forEach(([ei], i) => {
       const ed = E[ei], cnt = S.ec[ei];
-      if (blk && blk.has(ei)) this._c.set(0xef4444);                                   // 차단 — 빨강 (2D 의 빨간 점선)
-      else if (this.opt.heat && cnt) this._c.set(heatRGB(1 - Math.min(1, (S.ev[ei] / cnt) / (ed.vmax * 60))));
+      if (this.opt.heat && cnt) this._c.set(heatRGB(1 - Math.min(1, (S.ev[ei] / cnt) / (ed.vmax * 60))));
       else this._c.set(0x9aa1a9);
       this.plate.setColorAt(i, this._c);
     });
@@ -1045,7 +877,7 @@ class Viewer {
       const L = this.zoneLabels[zi];
       if (!L) return;
       const s = S.zs[zi], sel = zi === this.sel, hov = zi === this.hover;
-      L.sp.visible = this.layers.zones && this.orb.dist > 45 && (this.orb.dist > 280 || sel || hov);
+      L.sp.visible = this.orb.dist > 45 && (this.orb.dist > 280 || sel || hov);
       const avg = s.n ? Math.round(s.vs / s.n) : 0;
       const txt = `${z.id}|${s.n}|${s.c[3]}|${avg}|${sel}|${hov}|${dark}`;
       if (txt === L.txt) return;
@@ -1166,9 +998,6 @@ class Viewer {
     if (p.heat != null) this.opt.heat = !!p.heat;
     if (p.vehicleScale != null) this.opt.vs = +p.vehicleScale || 1;
     if (p.projection != null) this.setProjection(p.projection);
-    if (p.textScale != null && +p.textScale > 0 && +p.textScale !== this.opt.ts) { this.opt.ts = +p.textScale; this.fitSprites(); }
-    if (p.portScale != null && +p.portScale > 0 && +p.portScale !== this.opt.ps) { this.opt.ps = +p.portScale; if (this.G) this.buildPorts(); }
-    if (p.railScale != null && +p.railScale > 0 && +p.railScale !== this.opt.rs) { this.opt.rs = +p.railScale; if (this.G) this.buildRails(); }
     if (p.dark !== undefined) { this.o.dark = p.dark; this.applyTheme(); this.domDirty = true; for (const L of this.labelPool.values()) L.txt = ''; }
     if (p.background) { this.o.colors.background = p.background; if (this.scene) this.scene.background.set(p.background); }
     if (Array.isArray(p.stateColors) && p.stateColors.length) {
@@ -1180,91 +1009,14 @@ class Viewer {
       for (const L of this.labelPool.values()) L.txt = '';
       this.domDirty = true;
     }
-    const bar = this.dom.bar, q = a => bar && bar.querySelector(`[data-a=${a}]`);
-    if (q('labels')) q('labels').classList.toggle('on', this.opt.labels);
-    if (q('heat')) q('heat').classList.toggle('on', this.opt.heat);
-    if (q('vs')) q('vs').textContent = '차량 x' + this.opt.vs;
-    if (q('proj')) q('proj').textContent = this.opt.proj === 'iso' ? '원근으로' : '아이소로';
-    this.layers.labels = this.opt.labels;
-    this.vehDirty = true; this.camDirty = true; this.needRender = true;
-  }
-  /* ── 레이어 (2D '표시' 토글과 같은 뜻) ── */
-  setLayers(l) {
-    if (!l) return;
-    for (const k of Object.keys(this.layers)) if (l[k] != null) this.layers[k] = !!l[k];
-    this.opt.labels = this.layers.labels;
-    const q = a => this.dom.bar && this.dom.bar.querySelector(`[data-a=${a}]`);
-    if (q('labels')) q('labels').classList.toggle('on', this.opt.labels);
-    this.applyLayers();
-    this.vehDirty = true; this.camDirty = true; this.domDirty = true; this.needRender = true;
-  }
-  applyLayers() {
-    if (!this.G) return;
-    const L = this.layers;
-    if (this.portGroup) this.portGroup.visible = L.ports;
-    if (this.juncMesh) this.juncMesh.visible = L.junctions;
-    if (this.branchMesh) this.branchMesh.visible = L.junctions;
-    if (this.sensorMesh) this.sensorMesh.visible = L.sensors;
-    for (const m of this.zoneMeshes || []) { m.visible = L.zones; m.userData.line.visible = L.zones; }
-    if (this.hotGroup) this.hotGroup.visible = L.hotspots;
-    if (this.blockGroup) this.blockGroup.visible = L.railcut;
-    // 글자는 루프가 다음에 뽑을 때까지 기다리지 않고 지금 숨긴다 (토글 반응이 바로 보여야 한다)
-    for (const P of this.txtPool) if (!(P.kind === 'addr' ? L.addrs : L.texts)) P.sp.visible = false;
-    this.txtCand = null;   // 주소·라벨 후보를 다시 뽑는다
-    if (this.r) this.r.shadowMap.needsUpdate = true;
-  }
-  setBlocked(ids) {
-    const nx = new Set();
-    for (const id of ids || []) { const ei = this.G && this.G.eIdx.get(String(id)); if (ei != null) nx.add(ei); }
-    let same = nx.size === this.blocked.size;
-    if (same) for (const e of nx) if (!this.blocked.has(e)) { same = false; break; }
-    if (same) return;
-    this.blocked = nx;
-    this.buildBlockMarks();
-    this.vehDirty = true; this.needRender = true;
-  }
-  /* 차단 표식 — 빨간 원판 + 흰 막대(⛔)를 엣지 가운데, 레일 위에 띄운다. 레일 판만
-     빨갛게 칠하면 합류 ✕ 와 섞여 안 보인다 (찍어 보고 알았다). */
-  buildBlockMarks() {
-    const T = this.T;
-    if (!this.blockGroup) { this.blockGroup = new T.Group(); this.world.add(this.blockGroup); }
-    const g = this.blockGroup;
-    this.disposeGroup(g);
-    const H = this.o.railHeight;
-    for (const ei of this.blocked) {
-      const ed = this.G.edges[ei], m = ed.cum[ed.cum.length - 1] / 2, [x, y] = pointOnPoly(ed.pts, ed.cum, m);
-      const disc = new T.Mesh(new T.CylinderGeometry(0.55, 0.55, 0.12, 24), new T.MeshBasicMaterial({ color: 0xef4444, toneMapped: false }));
-      disc.position.set(x - this.cx, H + 1.3, y - this.cy);
-      const bar = new T.Mesh(new T.BoxGeometry(0.7, 0.14, 0.16), new T.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
-      bar.position.set(x - this.cx, H + 1.37, y - this.cy);
-      const pole = new T.Mesh(new T.BoxGeometry(0.06, 1.2, 0.06), new T.MeshBasicMaterial({ color: 0xef4444, toneMapped: false }));
-      pole.position.set(x - this.cx, H + 0.7, y - this.cy);
-      g.add(disc, bar, pole);
+    const bar = this.dom.bar;
+    if (bar) {
+      bar.querySelector('[data-a=labels]').classList.toggle('on', this.opt.labels);
+      bar.querySelector('[data-a=heat]').classList.toggle('on', this.opt.heat);
+      bar.querySelector('[data-a=vs]').textContent = '차량 x' + this.opt.vs;
+      bar.querySelector('[data-a=proj]').textContent = this.opt.proj === 'iso' ? '원근으로' : '아이소로';
     }
-    g.visible = this.layers.railcut;
-  }
-  setHotspots(hs) {
-    const list = (hs || []).filter(h => typeof h.x === 'number' && typeof h.y === 'number');
-    const sig = list.map(h => `${h.x},${h.y},${h.r},${h.severity},${h.text}`).join('|');
-    if (sig === this.hotSig) return;
-    this.hotSig = sig;
-    this.hotspots = list;
-    this.buildHotspots();
-    this.needRender = true;
-  }
-  debugCounts() {
-    const vis = (g, k) => g ? (g.visible ? g.count ?? g.children.length : 0) : 0;
-    return { addrs: this.txtPool.filter(L => L.sp.visible && L.kind === 'addr').length,
-             texts: this.txtPool.filter(L => L.sp.visible && L.kind !== 'addr').length,
-             junctions: this.juncMesh && this.juncMesh.visible ? this.juncMesh.count : 0,
-             branches: this.branchMesh && this.branchMesh.visible ? this.branchMesh.count : 0,
-             sensors: this.sensorMesh && this.sensorMesh.visible ? this.sensorMesh.count : 0,
-             ports: this.portGroup && this.portGroup.visible ? this.G.ports.length : 0,
-             zones: (this.zoneMeshes || []).filter(m => m.visible).length,
-             blocked: this.layers.railcut ? this.blocked.size : 0,
-             blockMarks: this.blockGroup && this.blockGroup.visible ? this.blockGroup.children.length / 3 : 0,
-             hotspots: this.hotGroup && this.hotGroup.visible ? this.hotspots.length : 0,
-             vehLabels: [...this.labelPool.values()].filter(L => L.sp.visible).length };
+    this.vehDirty = true; this.camDirty = true; this.needRender = true;
   }
   /* 아이소메트리 ↔ 원근. 같은 orbit(tx·tz·dist)을 쓰므로 보던 자리는 그대로고,
      각도만 등각(45°·35.264°)으로 날아간다. 그 뒤 드래그로 돌리는 것은 자유다. */
@@ -1451,10 +1203,8 @@ class Viewer {
       this.applyCam();
       this.vehDirty = true;
       this.updateZones();
-      this.txtCand = null;
       this.needRender = true;
     }
-    if (this.txtCand === null || (this.layers.addrs || this.layers.texts)) this.updateTexts(now);
     if (this.vehDirty) {
       this.vehDirty = this.updateVehicles(now);   // 보간 중이면 다음 프레임도 갱신
       this.needRender = true;
