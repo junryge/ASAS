@@ -491,6 +491,13 @@ class Viewer {
     dome.position.y = 0.07;
     dome.renderOrder = 3;
     g.add(dome);
+    /* 이름표 — 어느 HID 구역인지 (고객: "어디 HID인지 위에 표시해줘; 구역을").
+       붉은 얼룩만 있으면 '저기가 어디냐' 를 다시 물어야 한다. 존 라벨과 같은
+       스프라이트 틀을 쓴다 — 줌에 따라 화면 크기가 일정하다. */
+    const L = this.sprite(512, 110, 0.19, 0.041);
+    L.sp.position.set(0, this.o.wallHeight + 4, 0);
+    g.add(L.sp);
+    this.hotLabel = L;
     this.world.add(g);
     this.hotMark = g;
   }
@@ -502,12 +509,43 @@ class Viewer {
     if (!h) { this.clearHot(); return false; }
     this.hotMark.position.set(h[0] - this.cx, 0, h[1] - this.cy);
     this.hotMark.visible = true;
+    this.drawHotLabel(h[3], h[2]);
     this.needRender = true;
     return true;
   }
 
+  /* 이름표 그리기 — 'HID-B19-1(026)' 같은 존 이름 + 몇 대인지.
+     ★구역을 모르면(레인에 안 걸린 자리) 그렇게 적는다. 빈 이름표를 띄우거나
+       엉뚱한 구역을 적으면 그게 더 나쁘다. */
+  drawHotLabel(zi, n) {
+    const L = this.hotLabel;
+    if (!L) return;
+    const z = (zi != null && zi >= 0 && this.G) ? this.G.zones[zi] : null;
+    const name = z ? String(z.id) : '구역 밖';
+    const txt = `${name}|${n}|${this.dark()}`;
+    if (txt === L.txt) return;
+    L.txt = txt;
+    const g = L.cv.getContext('2d'), dark = this.dark();
+    const bg = dark ? 'rgba(23,29,37,.94)' : 'rgba(255,255,255,.96)';
+    g.clearRect(0, 0, 512, 110);
+    g.fillStyle = bg; roundRect(g, 3, 3, 506, 84, 14); g.fill();
+    g.strokeStyle = '#ef4444'; g.lineWidth = 5; g.stroke();
+    g.beginPath(); g.moveTo(240, 86); g.lineTo(256, 108); g.lineTo(272, 86); g.closePath();
+    g.fillStyle = bg; g.fill();
+    g.textBaseline = 'middle';
+    g.fillStyle = dark ? '#e3e8ee' : '#1c2430';
+    g.font = '700 30px system-ui,"Malgun Gothic",sans-serif';
+    g.fillText(name, 20, 30);
+    g.font = '700 28px system-ui,"Malgun Gothic",sans-serif';
+    const t = `정체 ${n}대`, tw = g.measureText(t).width;
+    g.fillStyle = '#ef4444'; roundRect(g, 490 - tw - 20, 14, tw + 20, 36, 10); g.fill();
+    g.fillStyle = '#fff'; g.fillText(t, 490 - tw - 10, 33);
+    L.tex.needsUpdate = true;
+  }
+
   clearHot() {
     if (this.hotMark) this.hotMark.visible = false;
+    if (this.hotLabel) this.hotLabel.txt = '';   // 다음에 켤 때 다시 그리게
     this.needRender = true;
   }
 
@@ -572,6 +610,7 @@ class Viewer {
     this.sprites.clear();
     this.zoneMeshes = null;
     this.hotMark = null;            // world 를 비우면 같이 날아간다 — 다시 만들게
+    this.hotLabel = null;
     this.chainCache.clear();
     this.slots = []; this.idx.clear(); this.cap = 0;
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
@@ -1141,15 +1180,30 @@ class Viewer {
   }
   hotView(zi = -1) {
     const d = this.disp || [], jams = [];
-    this.slots.forEach((sl, k) => { if (sl.live && sl.st >= 3 && d[k] && (zi < 0 || sl.zone === zi)) jams.push(d[k]); });
-    let best = null, bc = 0;
+    // st >= 3 = JAM(3) · OBS(4). 아이소메트리는 이 기준 그대로 쓴다 —
+    // 2D·유사3D 의 ⚙ '정체로 볼 상태' 는 여기까지 오지 않는다 (고객: "아이소메트리 그냥 나둬라").
+    // ★어느 HID 구역인지도 같이 들고 다닌다 (sl.zone) — 표시 위에 그 이름을 적는다.
+    this.slots.forEach((sl, k) => {
+      if (sl.live && sl.st >= 3 && d[k] && (zi < 0 || sl.zone === zi))
+        jams.push({ p: d[k], z: sl.zone });
+    });
+    let best = null, bc = 0, bz = -1;
     for (const a of jams) {
       let c = 0, sx = 0, sy = 0;
-      for (const b of jams) if (Math.hypot(a.x - b.x, a.y - b.y) < 12) { c++; sx += b.x; sy += b.y; }
-      if (c > bc) { bc = c; best = [sx / c, sy / c]; }
+      const zc = new Map();
+      for (const b of jams) if (Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y) < 12) {
+        c++; sx += b.p.x; sy += b.p.y;
+        if (b.z != null && b.z >= 0) zc.set(b.z, (zc.get(b.z) || 0) + 1);
+      }
+      if (c > bc) {
+        bc = c; best = [sx / c, sy / c];
+        // 한 무리가 두 구역에 걸칠 수 있다 — **제일 많이 든 구역**을 이름으로 쓴다
+        bz = -1; let bn = 0;
+        for (const [z, n] of zc) if (n > bn) { bn = n; bz = z; }
+      }
     }
     // 정말 정체가 있었나 — 없으면 존 가운데(또는 맵 가운데)로 가되 **표시는 안 한다**
-    this.hotAt = best ? [best[0], best[1], bc] : null;
+    this.hotAt = best ? [best[0], best[1], bc, bz] : null;
     if (!best) {
       const z = zi >= 0 ? this.G.zones[zi].bb : null;
       best = z ? [(z[0] + z[2]) / 2, (z[1] + z[3]) / 2] : [this.cx, this.cy];

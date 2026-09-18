@@ -281,14 +281,20 @@ class 화면에서_정한_기본값(unittest.TestCase):
         self.assertNotIn("v3dSizeLoad()", self.h)
         self.assertNotIn("v3dSizeSave", self.h)
 
-    def test_패널은_닫힌_채로_연다(self):
-        self.assertRegex(self.j, r"panelOpen:\s*true")   # 뷰어 기본은 열림
-        self.assertIn("panelOpen: false,", self.h, "월드모델파생은 닫고 연다")
+    def test_뷰어_안_패널은_아예_안_만든다(self):
+        """고객: "아이소메트리 패널 빼라".
+
+        화면 오른쪽 사이드바에 같은 목록(OHT 상태 · HID Zone)이 이미 있다.
+        둘을 같이 띄우면 맵이 양쪽에서 잘리고, 같은 표가 둘이라 어느 쪽이
+        맞는지 헷갈린다 — 사이드바 하나로 2D · 유사3D · 아이소메트리를 다 본다."""
+        self.assertIn("panel: false,", self.h, "월드모델파생은 뷰어 패널을 안 만든다")
+        self.assertRegex(self.j, r"panelOpen:\s*true")   # 뷰어 자체 기본은 예전 그대로
         self.assertIn("o.panelOpen === false || r.clientWidth <= 700", self.j)
 
-    def test_패널_단추는_남는다(self):
-        """닫아 두되 못 열게 하면 안 된다 — 단추는 그대로."""
+    def test_뷰어에는_패널_길이_남아_있다(self):
+        """다른 데서 쓸 수 있게 코드는 남긴다 — 안 쓸 뿐이다."""
         self.assertIn("data-a=\"panel\"", self.j)
+        self.assertIn("_buildPanel(r, bar)", self.j)
 
 
 class 설비_끄고_켜기(unittest.TestCase):
@@ -354,7 +360,14 @@ class 정체_지점_표시(unittest.TestCase):
         i = self.j.index("markHot() {")
         body = self.j[i:i + 400]
         self.assertIn("if (!h) { this.clearHot(); return false; }", body)
-        self.assertIn("this.hotAt = best ? [best[0], best[1], bc] : null;", self.j)
+        # [x, y, 대수, 구역번호] — 구역은 이름표에 쓴다
+        self.assertIn("this.hotAt = best ? [best[0], best[1], bc, bz] : null;", self.j)
+
+    def test_어디인지_이름표를_띄운다(self):
+        """고객: "뿌연 빨간색에 어디 HID인지 위에 표시해줘; 구역을"."""
+        self.assertIn("this.hotLabel = L;", self.j)
+        self.assertIn("drawHotLabel(zi, n)", self.j)
+        self.assertIn("'구역 밖'", self.j, "구역을 모르면 그렇게 적는다")
 
     def test_정체_지점_단추가_표시까지_한다(self):
         i = self.j.index("if (a === 'hot') {")

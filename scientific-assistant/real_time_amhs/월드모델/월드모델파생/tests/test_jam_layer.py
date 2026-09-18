@@ -76,7 +76,7 @@ class 그리기(unittest.TestCase):
         """같은 상황을 두 화면이 다르게 '한 무리' 라고 하면 안 된다."""
         self.assertIn("const JAM_R = 1200;", self.h)          # 도면 1단위 = 10mm → 12 m
         j = _read("static", "js", "oht3d", "oht3d.js")
-        self.assertIn("Math.hypot(a.x - b.x, a.y - b.y) < 12", j, "3D 는 m 단위로 12")
+        self.assertIn("Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y) < 12", j, "3D 는 m 단위로 12")
 
     def test_뿌옇다(self):
         i = self.h.index("function drawJamBlobs(")
@@ -84,9 +84,65 @@ class 그리기(unittest.TestCase):
         self.assertIn("createRadialGradient", body)
         self.assertIn("rgba(239,68,68,0.00)", body, "가장자리는 투명이어야 한다")
 
-    def test_JAM_만_센다(self):
+    def test_무엇을_정체로_볼지_고를_수_있다(self):
+        """고객: "state === 7(JAM) 이거 설정 할 수 있는 거 만들어줄래 옵션" ·
+        "2D, 유사3D, 아이소메트리 설정 할 수 있는데 만들어주라".
+
+        ★예전에는 아이소메트리만 **늘 JAM+OBS**(st >= 3) 로 잡았다. 2D 는 JAM 만
+          봤으니 같은 순간을 두 화면이 다르게 잡았다 — 그게 "아이소메트리 정체
+          지점을 어떻게 잡는 거야" 의 답이다. 이제 설정 한 값이 셋을 같이 몬다."""
+        self.assertRegex(self.h, r"jamStates:\s*'7',", "기본은 JAM 만 (2D 가 보던 그대로)")
+        self.assertIn('id="ms-jamStates"', self.h, "⚙ 설정에 고르는 줄이 있어야 한다")
+        # 2D·유사3D
         i = self.h.index("function jamClusters(")
-        self.assertIn("if (v.state === 7) js.push(v);", self.h[i:i + 400])
+        self.assertIn("const hit = jamStateSet();", self.h[i:i + 500])
+        self.assertIn("if (hit.has(v.state)) js.push(v);", self.h[i:i + 500])
+    def test_아이소메트리는_안_따른다(self):
+        """고객: "아이소메트리 그냥 나둬라". 거기 '정체 지점' 은 예전대로
+        늘 JAM+OBS(st >= 3) 다 — ⚙ 설정이 거기까지 가지 않는다."""
+        self.assertNotIn("jamStates3D", self.h, "3D 로 넘기는 길이 남아 있다")
+        j = _read("static", "js", "oht3d", "oht3d.js")
+        self.assertIn("sl.st >= 3", j, "뷰어는 제 기준을 그대로 써야 한다")
+        self.assertNotIn("jamStates", j, "뷰어에 설정을 심지 않는다")
+        # 설정창에도 그렇게 적어야 한다 — 안 적으면 "왜 다르냐" 가 또 나온다
+        self.assertIn("아이소메트리는 이 설정을 안 따릅니다", self.h)
+
+
+class 어느_HID_구역인가(unittest.TestCase):
+    """고객: "2D, 유사3D 도 동일하게 설정 하고 있고 어디 HID인지 표시 해주라" ·
+    (아이소메트리) "뿌연 빨간색에 어디 HID인지 위에 표시해줘; 구역을"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("dashboard.html")
+        cls.j = _read("static", "js", "oht3d", "oht3d.js")
+
+    def test_2D_는_레인_좌표로_구역_상자를_만든다(self):
+        self.assertIn("function zoneBoxes()", self.h)
+        self.assertIn("function zoneAt(x, y)", self.h)
+        self.assertIn("_zoneBoxG === railGraph", self.h, "레이아웃마다 한 번만 만들어야 한다")
+
+    def test_2D_무리마다_구역을_붙인다(self):
+        self.assertIn("out.push({ x: bx, y: by, n: bc, zone: zoneAt(bx, by) });", self.h)
+        self.assertIn("c.zone ? z3dId(c.zone) : '구역 밖'", self.h,
+                      "모르면 '구역 밖' — 엉뚱한 이름을 적는 게 더 나쁘다")
+
+    def test_겹치면_안쪽_구역(self):
+        i = self.h.index("function zoneAt(x, y)")
+        self.assertIn("b.area < best.area", self.h[i:i + 400])
+
+    def test_3D_는_이름표를_띄운다(self):
+        self.assertIn("drawHotLabel(zi, n)", self.j)
+        self.assertIn("this.drawHotLabel(h[3], h[2]);", self.j)
+        self.assertIn("this.hotAt = best ? [best[0], best[1], bc, bz] : null;", self.j)
+        # 한 무리가 두 구역에 걸칠 수 있다 — 제일 많이 든 구역을 쓴다
+        self.assertIn("for (const [z, n] of zc) if (n > bn) { bn = n; bz = z; }", self.j)
+        self.assertIn("'구역 밖'", self.j)
+
+    def test_빈_기준은_없다(self):
+        """다 지워 놓으면 아무것도 안 잡는 화면이 된다 — JAM 만은 남긴다."""
+        i = self.h.index("function jamStateSet()")
+        self.assertIn("if (!out.size) out.add(7);", self.h[i:i + 400])
 
     def test_몇_군데든_다_그린다(self):
         """★도는 횟수를 임의로 자르면 정체가 많은 날 몇 군데가 말없이 빠진다."""
