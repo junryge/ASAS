@@ -74,6 +74,10 @@ const DEFAULTS = {
   panelOpen: true, // 처음부터 열어 둘까 (false 면 닫힌 채로 뜬다 — 단추로 연다)
   maxTweenMs: 3000,
   jamSec: 0,       // 0 이면 state 값 그대로 사용
+  /* 정체 판정 — [JAM, OBS, 멈춘 차] 각각 '몇 대 이상' 이면 정체로 볼지.
+     0 은 '그 종류는 안 봄'. null 이면 예전 규칙(JAM·OBS 를 대수 무관하게).
+     화면(월드모델파생)이 ⚙ 설정 값을 그대로 넘긴다 — 2D·유사3D 와 같은 기준. */
+  jamMin: null,
   projection: 'persp',   // 'iso' = 아이소메트리(직교) · 'persp' = 원근
   walls: true,           // false 면 벽(외곽·layout.walls)을 아예 안 세운다
   dark: null,            // true/false 로 주면 그것, null 이면 prefers-color-scheme
@@ -116,6 +120,34 @@ function pointOnPoly(pts, cum, t) {
   const p = pts[i - 1], q = pts[i];
   return [p[0] + (q[0] - p[0]) * a, p[1] + (q[1] - p[1]) * a, Math.atan2(q[1] - p[1], q[0] - p[0])];
 }
+/* ── 정체 세기(히트맵) ────────────────────────────────────────────────
+   몇 대가 몰렸나로 색과 진하기가 같이 간다 — 노랑(옅음) → 주황 → 빨강 →
+   짙은 적. 20대에서 꼭대기다 (고객: "20대이상이 제일 심하게 히트맵 비전").
+   ★★이 표는 **dashboard.html 의 JAM_RAMP 와 같은 값**이어야 한다. 2D·유사3D
+     와 아이소메트리가 다른 색을 쓰면 같은 정체를 보고 두 사람이 다른 말을
+     한다. (tests/test_jam_layer.py 가 두 파일의 숫자를 맞춰 본다.) */
+const JAM_HOT_N = 20;
+const JAM_RAMP = [
+  [0.00, 250, 204,  21, 0.30],
+  [0.45, 249, 115,  22, 0.46],
+  [0.75, 239,  68,  68, 0.62],
+  [1.00, 153,  27,  27, 0.78],
+];
+function jamHeat(cnt) {
+  const n = Math.max(1, +cnt || 1);
+  const t = clamp((n - 1) / (JAM_HOT_N - 1), 0, 1);
+  let i = 1;
+  while (i < JAM_RAMP.length - 1 && JAM_RAMP[i][0] < t) i++;
+  const p = JAM_RAMP[i - 1], q = JAM_RAMP[i];
+  const f = (t - p[0]) / ((q[0] - p[0]) || 1e-9);
+  const v = j => p[j] + (q[j] - p[j]) * f;
+  return { r: Math.round(v(1)), g: Math.round(v(2)), b: Math.round(v(3)), a: v(4), t };
+}
+/* 정체로 볼 상태 — 3D 상태 코드다 (0 운행 · 1 적재 · 2 정지 · 3 JAM · 4 OBS).
+   차례는 화면 설정과 같다: JAM · OBS · 멈춘 차. */
+const JAM_ST = [3, 4, 2];
+const JAM_NAME = ['JAM', 'OBS', '멈춘 차'];
+
 function heatRGB(level) {
   const st = [[154, 161, 169], [240, 160, 40], [226, 70, 70]];
   const t = clamp(level, 0, 1) * 2, i = Math.min(1, Math.floor(t)), f = t - i;
@@ -458,15 +490,18 @@ class Viewer {
        헷갈린다 — 그래서 경계를 흐린다.
      ★깊이 쓰기를 끈다(depthWrite:false). 안 그러면 레일·설비가 이 반투명
        덩어리에 가려 사라진다. */
+  /* ★무늬는 **흰색**으로 굽는다 — 색은 재료(material.color)에서 입힌다.
+     대수마다 색과 진하기가 달라야 하는데, 붉은색을 무늬에 구워 버리면
+     무리 하나 바뀔 때마다 캔버스를 다시 그려야 한다(느리고, 텍스처가 쌓인다). */
   _hotTex() {
     if (this._hotT) return this._hotT;
     const c = document.createElement('canvas');
     c.width = c.height = 256;
     const g = c.getContext('2d').createRadialGradient(128, 128, 0, 128, 128, 128);
-    g.addColorStop(0.00, 'rgba(239,68,68,0.85)');
-    g.addColorStop(0.35, 'rgba(239,68,68,0.45)');
-    g.addColorStop(0.70, 'rgba(239,68,68,0.16)');
-    g.addColorStop(1.00, 'rgba(239,68,68,0.00)');
+    g.addColorStop(0.00, 'rgba(255,255,255,1.00)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.53)');
+    g.addColorStop(0.70, 'rgba(255,255,255,0.19)');
+    g.addColorStop(1.00, 'rgba(255,255,255,0.00)');
     const cx = c.getContext('2d');
     cx.fillStyle = g;
     cx.fillRect(0, 0, 256, 256);
@@ -487,6 +522,7 @@ class Viewer {
     disc.position.y = 0.06;                        // 존 바닥판(0.02)·격자(0.005) 위
     disc.renderOrder = 3;
     g.add(disc);
+    this.hotDisc = disc;        // 대수마다 색·진하기를 바꾼다 (markHot)
     // 옅은 반구 — 위에서 봐도, 옆에서 봐도 '그 자리' 가 보이게
     const dome = new T.Mesh(new T.SphereGeometry(R * 0.30, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
       new T.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.10,
@@ -494,6 +530,7 @@ class Viewer {
     dome.position.y = 0.07;
     dome.renderOrder = 3;
     g.add(dome);
+    this.hotDome = dome;
     /* 이름표 — 어느 HID 구역인지 (고객: "어디 HID인지 위에 표시해줘; 구역을").
        붉은 얼룩만 있으면 '저기가 어디냐' 를 다시 물어야 한다. 존 라벨과 같은
        스프라이트 틀을 쓴다 — 줌에 따라 화면 크기가 일정하다. */
@@ -512,20 +549,31 @@ class Viewer {
     if (!h) { this.clearHot(); return false; }
     this.hotMark.position.set(h[0] - this.cx, 0, h[1] - this.cy);
     this.hotMark.visible = true;
-    this.drawHotLabel(h[3], h[2]);
+    /* 대수대로 색과 진하기 — 2D·유사3D 와 같은 눈금(JAM_RAMP)이다.
+       고객: "대수마다 뿌연도 다르게 해야되...20대이상이 제일 심하게". */
+    const hc = jamHeat(h[2]);
+    const col = (hc.r << 16) | (hc.g << 8) | hc.b;
+    if (this.hotDisc) { this.hotDisc.material.color.setHex(col); this.hotDisc.material.opacity = hc.a; }
+    if (this.hotDome) { this.hotDome.material.color.setHex(col); this.hotDome.material.opacity = 0.06 + 0.12 * hc.t; }
+    this.drawHotLabel(h[3], h[2], h[4]);
     this.needRender = true;
     return true;
   }
 
   /* 이름표 그리기 — 'HID-B19-1(026)' 같은 존 이름 + 몇 대인지.
      ★구역을 모르면(레인에 안 걸린 자리) 그렇게 적는다. 빈 이름표를 띄우거나
-       엉뚱한 구역을 적으면 그게 더 나쁘다. */
-  drawHotLabel(zi, n) {
+       엉뚱한 구역을 적으면 그게 더 나쁘다.
+     ★종류가 섞였으면 무엇이 몇 대인지 적는다 (JAM 4 · OBS 2) — 2D 와 같은 표기.
+       'JAM 몇 대' 와 '멈춘 차 몇 대' 는 봐야 할 것이 다르다. */
+  drawHotLabel(zi, n, kinds) {
     const L = this.hotLabel;
     if (!L) return;
     const z = (zi != null && zi >= 0 && this.G) ? this.G.zones[zi] : null;
     const name = z ? String(z.id) : '구역 밖';
-    const txt = `${name}|${n}|${this.dark()}`;
+    const kk = Array.isArray(kinds)
+      ? kinds.map((v, i) => v ? `${JAM_NAME[i]} ${v}` : '').filter(Boolean) : [];
+    const num = kk.length > 1 ? kk.join(' · ') : `정체 ${n}대`;
+    const txt = `${name}|${num}|${this.dark()}`;
     if (txt === L.txt) return;
     L.txt = txt;
     const g = L.cv.getContext('2d'), dark = this.dark();
@@ -540,7 +588,7 @@ class Viewer {
     g.font = '700 30px system-ui,"Malgun Gothic",sans-serif';
     g.fillText(name, 20, 30);
     g.font = '700 28px system-ui,"Malgun Gothic",sans-serif';
-    const t = `정체 ${n}대`, tw = g.measureText(t).width;
+    const t = num, tw = g.measureText(t).width;
     g.fillStyle = '#ef4444'; roundRect(g, 490 - tw - 20, 14, tw + 20, 36, 10); g.fill();
     g.fillStyle = '#fff'; g.fillText(t, 490 - tw - 10, 33);
     L.tex.needsUpdate = true;
@@ -1181,32 +1229,45 @@ class Viewer {
     const R = Math.hypot(this.W, this.D) / 2, asp = this.camP.aspect || 1.6;
     return { tx: 0, ty: 0, tz: 0, dist: R / Math.tan(16 * Math.PI / 180) * (asp < 1 ? 1.05 / asp : 0.8), ...this.ang(0.9) };
   }
+  /* 이 차가 정체로 볼 종류인가 — 0 JAM · 1 OBS · 2 멈춘 차, 아니면 -1.
+     ★jamMin 을 안 받았으면(null) 예전 규칙이다: JAM·OBS 를 대수 무관하게 본다.
+       다른 화면에서 이 뷰어를 그냥 열었을 때 갑자기 아무것도 안 잡히면 안 된다. */
+  jamKind(st) {
+    const m = this.o.jamMin;
+    if (!Array.isArray(m)) return st >= 3 ? 0 : -1;
+    for (let i = 0; i < JAM_ST.length; i++) if (st === JAM_ST[i] && m[i] > 0) return i;
+    return -1;
+  }
   hotView(zi = -1) {
     const d = this.disp || [], jams = [];
-    // st >= 3 = JAM(3) · OBS(4). 아이소메트리는 이 기준 그대로 쓴다 —
-    // 2D·유사3D 의 ⚙ '정체로 볼 상태' 는 여기까지 오지 않는다 (고객: "아이소메트리 그냥 나둬라").
-    // ★어느 HID 구역인지도 같이 들고 다닌다 (sl.zone) — 표시 위에 그 이름을 적는다.
+    const mins = Array.isArray(this.o.jamMin) ? this.o.jamMin : null;
+    /* ★2D·유사3D 와 **같은 기준**이다 — ⚙ 설정의 '몇 대 이상' 세 칸이
+         jamMin 으로 넘어온다 (고객: "아이소메트리 정체 판정 만들어야되").
+       ★어느 HID 구역인지도 같이 들고 다닌다 (sl.zone) — 표시 위에 이름을 적는다. */
     this.slots.forEach((sl, k) => {
-      if (sl.live && sl.st >= 3 && d[k] && (zi < 0 || sl.zone === zi))
-        jams.push({ p: d[k], z: sl.zone });
+      const ki = (sl.live && d[k]) ? this.jamKind(sl.st) : -1;
+      if (ki >= 0 && (zi < 0 || sl.zone === zi)) jams.push({ p: d[k], z: sl.zone, k: ki });
     });
-    let best = null, bc = 0, bz = -1;
+    let best = null, bc = 0, bz = -1, bk = null;
     for (const a of jams) {
       let c = 0, sx = 0, sy = 0;
-      const zc = new Map();
+      const zc = new Map(), cnt = [0, 0, 0];
       for (const b of jams) if (Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y) < 12) {
-        c++; sx += b.p.x; sy += b.p.y;
+        c++; sx += b.p.x; sy += b.p.y; cnt[b.k]++;
         if (b.z != null && b.z >= 0) zc.set(b.z, (zc.get(b.z) || 0) + 1);
       }
+      /* '몇 대 이상' 은 무리를 만든 **뒤에** 따진다 — 어느 한 종류라도 그 수를
+         넘으면 정체다 (3 5 0 = JAM 3대 이상 **또는** OBS 5대 이상). 2D 와 같다. */
+      if (mins && !cnt.some((v, i) => mins[i] > 0 && v >= mins[i])) continue;
       if (c > bc) {
-        bc = c; best = [sx / c, sy / c];
+        bc = c; best = [sx / c, sy / c]; bk = cnt.slice();
         // 한 무리가 두 구역에 걸칠 수 있다 — **제일 많이 든 구역**을 이름으로 쓴다
         bz = -1; let bn = 0;
         for (const [z, n] of zc) if (n > bn) { bn = n; bz = z; }
       }
     }
     // 정말 정체가 있었나 — 없으면 존 가운데(또는 맵 가운데)로 가되 **표시는 안 한다**
-    this.hotAt = best ? [best[0], best[1], bc, bz] : null;
+    this.hotAt = best ? [best[0], best[1], bc, bz, bk] : null;
     if (!best) {
       const z = zi >= 0 ? this.G.zones[zi].bb : null;
       best = z ? [(z[0] + z[2]) / 2, (z[1] + z[3]) / 2] : [this.cx, this.cy];
@@ -1247,6 +1308,16 @@ class Viewer {
     if (p.portScale != null && +p.portScale > 0 && +p.portScale !== this.opt.ps) { this.opt.ps = +p.portScale; if (this.G) this.buildPorts(); }
     if (p.railScale != null && +p.railScale > 0 && +p.railScale !== this.opt.rs) { this.opt.rs = +p.railScale; if (this.G) this.buildRails(); }
     if (p.ports != null) { this.opt.ports = !!p.ports; this.applyPorts(); }
+    /* 정체 기준 — 화면 ⚙ 설정이 바뀌면 여기로 온다. 이미 찍어 둔 표시는
+       옛 기준으로 그린 것이라 지운다 ('정체 지점' 을 다시 누르면 새 기준이다). */
+    if (p.jamMin !== undefined) {
+      this.o.jamMin = Array.isArray(p.jamMin)
+        ? p.jamMin.map(v => { const x = parseInt(v, 10); return (isNaN(x) || x < 0) ? 0 : x; })
+        : null;
+      this.clearHot();
+      const hb = this.dom.bar && this.dom.bar.querySelector('[data-a=hot]');
+      if (hb) hb.classList.remove('on');
+    }
     if (p.dark !== undefined) { this.o.dark = p.dark; this.applyTheme(); this.domDirty = true; for (const L of this.labelPool.values()) L.txt = ''; }
     if (p.background) { this.o.colors.background = p.background; if (this.scene) this.scene.background.set(p.background); }
     if (Array.isArray(p.stateColors) && p.stateColors.length) {

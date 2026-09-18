@@ -1556,8 +1556,40 @@ function vehicleHeading(v, g, toS) {
      12 m 와 같은 크기로 맞췄다 — 두 화면이 같은 것을 '한 무리' 라고 해야 한다. */
 const JAM_R = 1200;                 // 도면 단위 (= 12 m)
 
+/* ── 정체 세기(히트맵) ────────────────────────────────────────────────
+   고객: "대수마다 뿌연도 다르게 해야되...20대이상이 제일 심하게 히트맵 비전
+   알지 그걸로 해야되."
+   몇 대가 몰렸나로 **색과 진하기가 같이** 간다 — 노랑(옅음) → 주황 → 빨강 →
+   짙은 적(제일 심함). 예전에는 대수와 상관없이 늘 같은 붉은 얼룩이라,
+   2대 몰린 곳과 30대 몰린 곳이 똑같아 보였다.
+   ★20대에서 꼭대기다. 그보다 많아도 더 진해지지 않는다 — 눈금이 있어야
+     '여기가 저기보다 심하다' 를 말할 수 있고, 위가 없으면 비교가 안 된다.
+   ★★이 표는 **oht3d.js 의 JAM_RAMP 와 같은 값**이어야 한다. 2D·유사3D 와
+     아이소메트리가 다른 색을 쓰면 같은 정체를 보고 두 사람이 다른 말을 한다.
+     (tests/test_jam_layer.py 가 두 파일의 숫자를 맞춰 본다.) */
+const JAM_HOT_N = 20;               // 이 대수부터 제일 심하다
+const JAM_RAMP = [                  // [대수비율, R, G, B, 가운데 진하기]
+  [0.00, 250, 204,  21, 0.30],      // 노랑 — 갓 걸린 무리
+  [0.45, 249, 115,  22, 0.46],      // 주황
+  [0.75, 239,  68,  68, 0.62],      // 빨강
+  [1.00, 153,  27,  27, 0.78],      // 짙은 적 — 20대 이상
+];
+function jamHeat(cnt) {
+  const n = Math.max(1, +cnt || 1);
+  const t = Math.min(1, Math.max(0, (n - 1) / (JAM_HOT_N - 1)));
+  let i = 1;
+  while (i < JAM_RAMP.length - 1 && JAM_RAMP[i][0] < t) i++;
+  const p = JAM_RAMP[i - 1], q = JAM_RAMP[i];
+  const f = (t - p[0]) / ((q[0] - p[0]) || 1e-9);
+  const v = j => p[j] + (q[j] - p[j]) * f;
+  return { r: Math.round(v(1)), g: Math.round(v(2)), b: Math.round(v(3)), a: v(4), t };
+}
+
 /* 정체 판정 — ⚙ 설정의 '몇 대 이상' 세 칸에서 나온다.
-   ★2D 와 유사3D 만 쓴다. 아이소메트리는 제 기준(JAM+OBS)을 그대로 쓴다.
+   ★2D · 유사3D · 아이소메트리가 **다 같이** 쓴다. 아이소메트리는 한동안
+     제 기준(JAM+OBS·대수 무관)을 썼는데, 고객이 "아이소메트리 정체 판정
+     만들어야되;;;있어야겠네" 해서 같은 설정을 따라가게 했다 — 뷰어에는
+     jamMin 으로 넘긴다(sync3DTheme).
    ★순서가 화면 순서다 — 멈춘 차가 제일 마지막. */
 const JAM_KIND = [
   { key: 'jamMinJam',  name: 'JAM',     has: st => st === 7 },
@@ -1678,11 +1710,15 @@ function drawJamBlobs(ctx, toS, sc) {
     // 많이 몰린 곳일수록 조금 더 크게 (1대 = 기본, 10대 = 1.6배쯤)
     const R = Math.max(18, base * (0.9 + 0.22 * Math.log2(1 + c.n)));
     if (sx < -R || sy < -R || sx > ctx.canvas.width + R || sy > ctx.canvas.height + R) continue;
+    /* 색·진하기는 대수로 정한다 (jamHeat). 20대 이상이 제일 짙다.
+       가장자리로 흐려지는 비율(1 : 0.52 : 0.18 : 0)은 그대로 두고 가운데
+       진하기만 눈금을 탄다 — 테두리가 또렷해지면 '구역' 처럼 보인다. */
+    const hc = jamHeat(c.n), rgb = `${hc.r},${hc.g},${hc.b}`;
     const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, R);
-    g.addColorStop(0.00, 'rgba(239,68,68,0.50)');
-    g.addColorStop(0.35, 'rgba(239,68,68,0.26)');
-    g.addColorStop(0.70, 'rgba(239,68,68,0.09)');
-    g.addColorStop(1.00, 'rgba(239,68,68,0.00)');
+    g.addColorStop(0.00, `rgba(${rgb},${hc.a.toFixed(3)})`);
+    g.addColorStop(0.35, `rgba(${rgb},${(hc.a * 0.52).toFixed(3)})`);
+    g.addColorStop(0.70, `rgba(${rgb},${(hc.a * 0.18).toFixed(3)})`);
+    g.addColorStop(1.00, `rgba(${rgb},0)`);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(sx, sy, R, 0, 6.283); ctx.fill();
     // 몇 대인지 · 어디인지 — 숫자와 이름이 없으면 '붉은 얼룩' 일 뿐이다
@@ -1786,7 +1822,7 @@ function drawCarryDot(ctx, sx, sy, rr, kind, ang) {
 // 도면 길이) 중앙값 9.99, p10~p90 9.98~10.00 — 1 단위 = 10 mm 다.
 const V3D_SCALE = 0.01;
 // 3D 뷰어 판 번호 — oht3d.js 를 고쳐 올릴 때 같이 올린다 (브라우저 캐시 우회)
-const V3D_BUILD = '20260918b';
+const V3D_BUILD = '20260918c';
 
 // 2D 차량 상태 코드 → 3D 상태(0 운행 · 1 적재 · 2 정지 · 3 JAM · 4 OBS).
 // ★2D 의 색 규칙(drawMap)과 **같은 순서**로 판정한다. 7=JAM, 6=OBS, 2/8/9=정지,
@@ -1868,10 +1904,13 @@ function sync3DLayout() {
   v3d.setLayout(L);
   console.log('3D 레이아웃:', L.nodes.length, '노드,', L.edges.length, '엣지,', L.zones.length, '존,', L.ports.length, '설비');
 }
-// 테마·차량 색을 3D 에 맞춘다 — applyPageTheme 이 부른다
+/* 테마·차량 색·**정체 기준**을 3D 에 맞춘다 — applyPageTheme 이 부른다.
+   ★⚙ 설정을 저장하면 applyMapSettings → applyPageTheme → 여기로 온다.
+     그래서 '몇 대 이상' 을 고치면 2D 와 아이소메트리가 같이 바뀐다. */
 function sync3DTheme() {
   if (!v3d) return;
-  v3d.setOptions({ dark: mapSettings.mapTheme === 'dark', background: mapPal().bg, stateColors: v3dColors() });
+  v3d.setOptions({ dark: mapSettings.mapTheme === 'dark', background: mapPal().bg,
+                   stateColors: v3dColors(), jamMin: jamMins() });
 }
 // 지금 프레임을 3D 로 — updateUI 마다. 켜져 있을 때만 (안 보이는 화면에 매 프레임 넣지 않는다)
 function push3D(d) {
@@ -1910,6 +1949,11 @@ async function open3D() {
            둘을 같이 띄우면 맵이 양쪽에서 잘리고, 같은 표가 둘이라 어느 쪽이
            맞는지 헷갈린다. 사이드바 하나로 2D · 유사3D · 아이소메트리를 다 본다. */
         panel: false,
+        /* 정체 판정 — ⚙ 설정의 '몇 대 이상' 을 그대로 넘긴다 (고객:
+           "아이소메트리 정체 판정 만들어야되;;;있어야겠네").
+           [JAM, OBS, 멈춘 차] 순서는 2D 의 JAM_KIND 와 같다. 0 은 '안 봄'.
+           설정을 바꾸면 sync3DTheme 이 다시 넘긴다. */
+        jamMin: jamMins(),
       });
       // 3D 에서 고른 것 → 오른쪽 목록도 같이 (2D 의 selectZone/selectOHT 와 같은 상태)
       inst.on('zoneclick', e => {
@@ -3643,7 +3687,7 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
     </section>
 
     <section class="ms-sec">
-      <h4>정체 판정 <small>2D · 유사 3D</small></h4>
+      <h4>정체 판정 <small>2D · 유사 3D · 아이소메트리</small></h4>
       <p class="ms-note">한자리에 <b>몇 대 이상</b> 모이면 정체로 볼지 직접 적습니다.
         <b>0 은 그 종류를 안 봅니다.</b> 셋 다 0 이면 아무것도 안 잡습니다.<br>
         한 무리 안에서 <b>어느 한 종류라도</b> 그 수를 넘으면 정체입니다 —
@@ -3658,8 +3702,12 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
         <span><input type="number" id="ms-jamMinStop" step="1" min="0" max="999"><small>대 이상</small></span>
       </div>
       <p class="ms-note">아래 <b>저장 + 적용</b> 을 누르면 이 브라우저에 남아 다음에 열어도 그대로입니다.<br>
-        ★<b>아이소메트리는 이 설정을 안 따릅니다.</b> 거기 <b>정체 지점</b> 단추는
-        예전부터 <b>JAM + OBS</b> 를 잡고 그대로 둡니다.</p>
+        ★<b>세 화면이 같은 기준</b>입니다 — 2D · 유사 3D 의 <b>정체</b> 단추와
+        아이소메트리의 <b>정체 지점</b> 단추가 다 이 값을 봅니다.<br>
+        ★붉은 표시는 <b>몇 대가 몰렸나</b>에 따라 색과 진하기가 달라집니다 —
+        <b style="color:#eab308">노랑</b>(옅음) → <b style="color:#f97316">주황</b>
+        → <b style="color:#ef4444">빨강</b> → <b style="color:#991b1b">짙은 적</b>
+        (<b>20대 이상</b>이 제일 심합니다).</p>
     </section>
 
     <section class="ms-sec">

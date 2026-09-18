@@ -82,7 +82,7 @@ class 그리기(unittest.TestCase):
         i = self.h.index("function drawJamBlobs(")
         body = self.h[i:i + 2000]
         self.assertIn("createRadialGradient", body)
-        self.assertIn("rgba(239,68,68,0.00)", body, "가장자리는 투명이어야 한다")
+        self.assertIn("rgba(${rgb},0)", body, "가장자리는 투명이어야 한다")
 
     def test_몇_대_이상인지_직접_적는다(self):
         """고객: "정체 판정 직접 숫자로 기입하게 해야지 · 니가 정하면 우짜노 ·
@@ -124,15 +124,105 @@ class 그리기(unittest.TestCase):
         self.assertIn("typeof DEFAULT_MAP_SETTINGS[k] === 'number'", body,
                       "숫자 칸은 숫자로 읽어야 한다")
         self.assertIn("saveMapSettings();", body)
-    def test_아이소메트리는_안_따른다(self):
-        """고객: "아이소메트리 그냥 나둬라". 거기 '정체 지점' 은 예전대로
-        늘 JAM+OBS(st >= 3) 다 — ⚙ 설정이 거기까지 가지 않는다."""
-        self.assertNotIn("jamStates3D", self.h, "3D 로 넘기는 길이 남아 있다")
+    def test_아이소메트리도_같은_설정을_따른다(self):
+        """고객: "아이소메트리 정체 판정 만들어야되;;;있어야겠네;;"
+
+        한동안은 뷰어가 제 기준(JAM+OBS·대수 무관)을 썼다. 이제 ⚙ 설정의
+        '몇 대 이상' 세 칸이 jamMin 으로 넘어간다 — 세 화면이 한 기준이다."""
+        self.assertIn("jamMin: jamMins()", self.h, "뷰어를 열 때 넘겨야 한다")
+        i = self.h.index("function sync3DTheme()")
+        self.assertIn("jamMin: jamMins()", self.h[i:i + 500],
+                      "설정을 바꿨을 때도 다시 넘겨야 한다 (안 그러면 새로고침해야 먹는다)")
         j = _read("static", "js", "oht3d", "oht3d.js")
-        self.assertIn("sl.st >= 3", j, "뷰어는 제 기준을 그대로 써야 한다")
-        self.assertNotIn("jamStates", j, "뷰어에 설정을 심지 않는다")
+        self.assertIn("jamMin: null,", j, "뷰어 기본은 null — 다른 데서 열면 예전 규칙")
+        self.assertIn("const JAM_ST = [3, 4, 2];", j,
+                      "3D 상태 코드로 JAM·OBS·멈춘 차 (0 운행·1 적재·2 정지·3 JAM·4 OBS)")
+        self.assertIn("if (p.jamMin !== undefined)", j, "설정이 바뀌면 받아야 한다")
         # 설정창에도 그렇게 적어야 한다 — 안 적으면 "왜 다르냐" 가 또 나온다
-        self.assertIn("아이소메트리는 이 설정을 안 따릅니다", self.h)
+        self.assertIn("2D · 유사 3D · 아이소메트리", self.h)
+        self.assertNotIn("아이소메트리는 이 설정을 안 따릅니다", self.h)
+
+    def test_한_종류라도_넘으면_정체_규칙이_아이소메트리에도_있다(self):
+        j = _read("static", "js", "oht3d", "oht3d.js")
+        i = j.index("hotView(zi = -1)")
+        body = j[i:i + 2200]
+        self.assertIn("mins && !cnt.some((v, i) => mins[i] > 0 && v >= mins[i])", body,
+                      "어느 한 종류라도 넘으면 정체 — 2D 와 같은 규칙")
+        self.assertIn("continue", body, "못 넘긴 무리는 버려야 한다")
+
+    def test_설정을_바꾸면_찍어_둔_표시를_지운다(self):
+        """옛 기준으로 그려 둔 붉은 표시가 남아 있으면 '설정을 바꿨는데 그대로'
+        가 된다. 다시 누르면 새 기준으로 잡힌다."""
+        j = _read("static", "js", "oht3d", "oht3d.js")
+        i = j.index("if (p.jamMin !== undefined)")
+        self.assertIn("this.clearHot()", j[i:i + 400])
+
+
+class 대수마다_세기가_다르다(unittest.TestCase):
+    """고객: "2D,유사3D,아이소메트리 전부다 뿌연 빨간색인데 대수마다 뿌연도
+    다르게 해야되...20대이상이 제일 심하게 히트맵 비전 알지 그걸로 해야되."
+
+    몇 대가 몰렸나로 **색과 진하기가 같이** 간다 — 노랑(옅음) → 주황 → 빨강 →
+    짙은 적. 20대에서 꼭대기고 그 위로는 더 진해지지 않는다(눈금이 있어야
+    '여기가 저기보다 심하다' 를 말할 수 있다).
+    ★세 화면이 **같은 숫자**를 써야 한다. 한 화면만 다르면 같은 정체를 보고
+      두 사람이 다른 말을 한다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("dashboard.html")
+        cls.j = _read("static", "js", "oht3d", "oht3d.js")
+
+    @staticmethod
+    def _ramp(src):
+        m = re.search(r"const JAM_RAMP = \[[\s\S]*?\n\];", src)
+        if not m:
+            return None
+        body = re.sub(r"//[^\n]*", "", m.group(0))          # 주석은 달라도 된다
+        return [float(x) for x in re.findall(r"-?\d+(?:\.\d+)?", body)]
+
+    def test_두_파일의_눈금이_같다(self):
+        a, b = self._ramp(self.h), self._ramp(self.j)
+        self.assertIsNotNone(a, "dashboard.html 에 JAM_RAMP 가 없다")
+        self.assertIsNotNone(b, "oht3d.js 에 JAM_RAMP 가 없다")
+        self.assertEqual(a, b, "2D 와 아이소메트리의 세기 눈금이 다르다")
+
+    def test_20대에서_꼭대기(self):
+        for src, nm in ((self.h, "dashboard.html"), (self.j, "oht3d.js")):
+            self.assertIn("const JAM_HOT_N = 20;", src, nm)
+
+    def test_눈금은_옅은_데서_짙은_데로(self):
+        r = self._ramp(self.h)
+        rows = [r[i:i + 5] for i in range(0, len(r), 5)]
+        self.assertGreaterEqual(len(rows), 3, "단이 너무 적다")
+        self.assertEqual(rows[0][0], 0.0)
+        self.assertEqual(rows[-1][0], 1.0)
+        for i in range(1, len(rows)):
+            self.assertGreater(rows[i][0], rows[i - 1][0], "비율이 거꾸로다")
+            self.assertGreater(rows[i][4], rows[i - 1][4], "뒤로 갈수록 진해야 한다")
+            self.assertLess(rows[i][2], rows[i - 1][2], "노랑(초록 성분)이 줄며 붉어져야 한다")
+
+    def test_2D_는_대수로_색을_정한다(self):
+        i = self.h.index("function drawJamBlobs(")
+        body = self.h[i:i + 2000]
+        self.assertIn("jamHeat(c.n)", body, "무리의 대수로 색을 정해야 한다")
+        self.assertNotIn("rgba(239,68,68,0.50)", body, "고정 붉은색이 남아 있다")
+
+    def test_아이소메트리도_대수로_색을_정한다(self):
+        i = self.j.index("markHot() {")
+        body = self.j[i:i + 900]
+        self.assertIn("jamHeat(h[2])", body, "무리의 대수로 색을 정해야 한다")
+        self.assertIn("this.hotDisc.material.color", body)
+        self.assertIn("this.hotDisc.material.opacity", body, "진하기도 같이 가야 한다")
+
+    def test_무늬는_흰색으로_굽는다(self):
+        """★색을 무늬에 구워 버리면 무리 하나 바뀔 때마다 캔버스를 다시
+        그려야 한다. 흰색으로 굽고 재료에서 색을 입힌다."""
+        i = self.j.index("_hotTex() {")
+        body = self.j[i:i + 700]
+        self.assertIn("rgba(255,255,255,1.00)", body)
+        self.assertNotIn("rgba(239,68,68", body, "붉은색이 무늬에 구워져 있다")
 
 
 class 어느_HID_구역인가(unittest.TestCase):
@@ -159,9 +249,10 @@ class 어느_HID_구역인가(unittest.TestCase):
         self.assertIn("b.area < best.area", self.h[i:i + 400])
 
     def test_3D_는_이름표를_띄운다(self):
-        self.assertIn("drawHotLabel(zi, n)", self.j)
-        self.assertIn("this.drawHotLabel(h[3], h[2]);", self.j)
-        self.assertIn("this.hotAt = best ? [best[0], best[1], bc, bz] : null;", self.j)
+        self.assertIn("drawHotLabel(zi, n, kinds)", self.j)
+        self.assertIn("this.drawHotLabel(h[3], h[2], h[4]);", self.j,
+                      "구역 · 대수 · 종류별 대수를 다 넘겨야 한다")
+        self.assertIn("this.hotAt = best ? [best[0], best[1], bc, bz, bk] : null;", self.j)
         # 한 무리가 두 구역에 걸칠 수 있다 — 제일 많이 든 구역을 쓴다
         self.assertIn("for (const [z, n] of zc) if (n > bn) { bn = n; bz = z; }", self.j)
         self.assertIn("'구역 밖'", self.j)

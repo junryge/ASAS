@@ -372,11 +372,17 @@ class 정체_지점_표시(unittest.TestCase):
     def setUpClass(cls):
         cls.j = _read("static", "js", "oht3d", "oht3d.js")
 
-    def test_빨갛다(self):
+    def test_색은_대수가_정한다(self):
+        """★2026-09 고객: "대수마다 뿌연도 다르게 해야되...20대이상이 제일
+        심하게 히트맵 비전". 무늬는 **흰색**으로 굽고 재료에서 색을 입힌다 —
+        붉은색을 무늬에 구워 두면 무리마다 캔버스를 다시 그려야 한다.
+        (눈금 자체는 tests/test_jam_layer.py 의 대수마다_세기가_다르다)"""
         i = self.j.index("_hotTex() {")
         tex = self.j[i:i + 900]
-        self.assertIn("rgba(239,68,68,0.85)", tex, "가운데는 진한 빨강")
-        self.assertIn("rgba(239,68,68,0.00)", tex, "가장자리는 투명")
+        self.assertIn("rgba(255,255,255,1.00)", tex, "가운데는 불투명")
+        self.assertIn("rgba(255,255,255,0.00)", tex, "가장자리는 투명")
+        i2 = self.j.index("markHot() {")
+        self.assertIn("jamHeat(h[2])", self.j[i2:i2 + 900], "대수로 색을 정해야 한다")
 
     def test_뿌옇다(self):
         """테두리가 또렷하면 '구역' 처럼 보여 존 바닥판과 헷갈린다."""
@@ -391,13 +397,13 @@ class 정체_지점_표시(unittest.TestCase):
         i = self.j.index("markHot() {")
         body = self.j[i:i + 400]
         self.assertIn("if (!h) { this.clearHot(); return false; }", body)
-        # [x, y, 대수, 구역번호] — 구역은 이름표에 쓴다
-        self.assertIn("this.hotAt = best ? [best[0], best[1], bc, bz] : null;", self.j)
+        # [x, y, 대수, 구역번호, 종류별 대수] — 구역·종류는 이름표에, 대수는 색에 쓴다
+        self.assertIn("this.hotAt = best ? [best[0], best[1], bc, bz, bk] : null;", self.j)
 
     def test_어디인지_이름표를_띄운다(self):
         """고객: "뿌연 빨간색에 어디 HID인지 위에 표시해줘; 구역을"."""
         self.assertIn("this.hotLabel = L;", self.j)
-        self.assertIn("drawHotLabel(zi, n)", self.j)
+        self.assertIn("drawHotLabel(zi, n, kinds)", self.j)
         self.assertIn("'구역 밖'", self.j, "구역을 모르면 그렇게 적는다")
 
     def test_정체_지점_단추가_표시까지_한다(self):

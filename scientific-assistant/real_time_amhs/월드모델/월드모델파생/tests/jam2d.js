@@ -22,7 +22,7 @@ function z3dId(z) { return z.name || ('HID ' + z.id); }
 eval(grab(/const DEFAULT_MAP_SETTINGS = \{[\s\S]*?\n\};/).replace(/\bconst DEFAULT_MAP_SETTINGS\b/, 'var DEFAULT_MAP_SETTINGS'));
 var mapSettings = { ...DEFAULT_MAP_SETTINGS };
 eval(grab(/const JAM_R = 1200;[\s\S]*?\nfunction jamClusters\(radius\) \{[\s\S]*?\n\}/)
-     .replace(/\bconst (JAM_R|JAM_KIND)\b/g, 'var $1'));
+     .replace(/\bconst (JAM_R|JAM_KIND|JAM_HOT_N|JAM_RAMP)\b/g, 'var $1'));
 eval(grab(/function drawJamBlobs\(ctx, toS, sc\) \{[\s\S]*?\n\}/));
 
 /* ── 정체 판정 — 종류마다 '몇 대 이상' 을 직접 적는다 ── */
@@ -146,9 +146,15 @@ drawJamBlobs(ctx, toS, 0.01);
 const grads = ctx.log.calls.filter(x => x[0] === 'grad');
 ok(grads.length === 1, '무리 하나에 무리 하나 (실제 ' + grads.length + ')');
 ok(ctx.log.grads[0].stops.length === 4, '네 단으로 흐려진다');
-ok(/^rgba\(239,68,68,0\.(5|50)0?\)$/.test(ctx.log.grads[0].stops[0][1]),
-   '가운데는 진한 빨강 (실제 ' + ctx.log.grads[0].stops[0][1] + ')');
-ok(ctx.log.grads[0].stops[3][1] === 'rgba(239,68,68,0.00)', '가장자리는 투명 — 테두리가 또렷하면 구역처럼 보인다');
+/* ★색·진하기는 **대수**가 정한다 (고객: "대수마다 뿌연도 다르게 해야되...
+   20대이상이 제일 심하게 히트맵 비전"). 여섯 대 무리면 눈금 중간쯤이다. */
+const rgbaOf = s => (s.match(/^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/) || []).slice(1).map(Number);
+const c6 = rgbaOf(ctx.log.grads[0].stops[0][1]), h6 = jamHeat(6);
+ok(c6.length === 4, '가운데 색을 못 읽었다: ' + ctx.log.grads[0].stops[0][1]);
+ok(c6[0] === h6.r && c6[1] === h6.g && c6[2] === h6.b, '가운데 색이 눈금과 다르다');
+ok(Math.abs(c6[3] - h6.a) < 0.002, '가운데 진하기가 눈금과 다르다');
+ok(/,0\)$/.test(ctx.log.grads[0].stops[3][1]), '가장자리는 투명 — 테두리가 또렷하면 구역처럼 보인다');
+ok(rgbaOf(ctx.log.grads[0].stops[1][1])[3] < c6[3], '가장자리로 갈수록 옅어져야 한다');
 ok(!ctx.log.calls.some(x => x[0] === 'fillText'),
    '작게 그려질 때는 글자를 안 적는다 (무리 반지름 18px — 숫자가 무리보다 커진다)');
 /* 크게 그려질 때는 몇 대인지 적는다 */
@@ -197,4 +203,40 @@ const dm = grab(/if \(showJam\) drawJamBlobs\(mapCtx, toS, sc\);[\s\S]{0,400}/);
 ok(dm.indexOf('for (const vid in vehicleDisplay)') > 0, '차량 그리기 **앞**에 와야 한다 (위에 덮으면 세모가 묻힌다)');
 
 if (bad) { console.log(bad + ' 건 실패'); process.exit(1); }
+/* ── 세기 눈금 — 몇 대가 몰렸나로 색·진하기가 간다 ─────────────────
+   고객: "대수마다 뿌연도 다르게 해야되...20대이상이 제일 심하게 히트맵 비전
+   알지 그걸로 해야되." */
+ok(JAM_HOT_N === 20, '꼭대기는 20대');
+{
+  const h1 = jamHeat(1), h20 = jamHeat(20), h99 = jamHeat(99), hm = jamHeat(10);
+  ok(h1.t === 0, '1대는 눈금 바닥');
+  ok(h20.t === 1, '20대에서 꼭대기');
+  ok(h99.t === 1 && h99.a === h20.a && h99.r === h20.r,
+     '20대를 넘어도 더 진해지지 않는다 — 위가 없으면 비교가 안 된다');
+  ok(h1.a < hm.a && hm.a < h20.a, '대수가 늘수록 진해져야 한다 (' + [h1.a, hm.a, h20.a] + ')');
+  /* 히트맵 — 노랑에서 붉게. 초록은 안 쓴다(정체에 '괜찮다' 는 색을 두면 안 된다) */
+  ok(h1.g > h1.b && h1.r > 200 && h1.g > 180, '바닥은 노랑쪽 (' + [h1.r, h1.g, h1.b] + ')');
+  ok(h20.r > h20.g * 3 && h20.g < 60, '꼭대기는 짙은 적 (' + [h20.r, h20.g, h20.b] + ')');
+  /* 대수가 늘면 초록이 줄어든다 = 노랑 → 빨강 */
+  let prev = 999;
+  for (let n = 1; n <= 20; n++) { const h = jamHeat(n); ok(h.g <= prev + 0.5, n + '대에서 색이 거꾸로 갔다'); prev = h.g; }
+  ok(jamHeat(0).t === 0 && jamHeat(-3).t === 0 && jamHeat(null).t === 0, '0·음수·빈 값도 안 터진다');
+}
+
+/* ── 아이소메트리도 같은 눈금을 쓴다 ── */
+{
+  const J = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'oht3d', 'oht3d.js'), 'utf8');
+  /* 주석은 달라도 된다 — **숫자**가 같아야 한다 */
+  const tbl = t => {
+    const m = t.match(/const JAM_RAMP = \[[\s\S]*?\n\];/);
+    if (!m) return null;
+    return (m[0].replace(/\/\/[^\n]*/g, '').match(/-?\d+(?:\.\d+)?/g) || []).join(',');
+  };
+  ok(tbl(H) && tbl(J), '두 파일에서 JAM_RAMP 를 못 찾았다');
+  ok(tbl(H) === tbl(J),
+     '2D 와 아이소메트리의 세기 눈금이 다르다 — 같은 정체를 보고 다른 말을 하게 된다\n' +
+     '    2D  : ' + tbl(H) + '\n    아이소: ' + tbl(J));
+  ok(/const JAM_HOT_N = 20;/.test(J), '아이소메트리도 20대에서 꼭대기');
+}
+
 console.log('jam2d.js OK');
