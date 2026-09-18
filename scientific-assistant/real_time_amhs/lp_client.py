@@ -227,6 +227,12 @@ def sys_cfg(cfg: dict, sys: str | None) -> dict:
     st["daily_csv_dir"] = sub                      # 날짜 CSV·LLM 판단·raw
     st["dir"] = sub                                # 분석(analysis) 저장
     st["cases"] = os.path.join(sub, "cases.json")  # 케이스
+    # ★보관(30일 넘은 케이스)도 시스템별로 갈라 둔다 — 규칙 ② 그대로.
+    #   한 폴더에 모으면 M14 와 M16HUB 의 옛 케이스가 같은 파일에 섞이고,
+    #   여섯 시스템이 그 파일 하나를 같이 쓰게 된다.
+    #   ※보관 **기간**은 policy 라 여섯이 똑같다 (아래 ① — 얕은 사본이라
+    #     policy 는 같은 객체를 가리킨다). 가르는 것은 '어디에 두느냐' 뿐이다.
+    st["cases_archive"] = os.path.join(sub, "cases_old")
     st["reports"] = os.path.join(sub, "reports")   # 하루 리포트
     st["raw_snapshots"] = os.path.join(sub, "snapshots")
     c["storage"] = st

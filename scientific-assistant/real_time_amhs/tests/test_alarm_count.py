@@ -888,3 +888,50 @@ class 오래된_케이스는_보관으로(unittest.TestCase):
         i = src.index("def ingest(")
         self.assertIn("self.prune(", src[i:i + 400],
                       "감지 경로에서 안 부르면 서버가 뜬 뒤로는 안 줄어든다")
+
+
+class 보관_설정은_여섯이_같다(unittest.TestCase):
+    """고객: "정책은 모두 동일하게 사용해야 하는데".
+
+    맞다. 보관 **기간**은 policy 에 있고, sys_cfg 는 **얕은 사본**이라
+    policy 를 갈아끼우지 않는다 — ALL·M14·M14B·M16A·M16B·M16HUB 가 같은
+    객체를 가리키므로 값이 갈릴 수가 없다 (수집 주기가 그런 것과 같은 이유).
+
+    가르는 것은 '어디에 두느냐' 뿐이다 — 케이스 파일이 data/{sys}/ 로
+    갈려 있으니 보관 파일도 같이 갈려야 한다. 한 폴더에 모으면 M14 와
+    M16HUB 의 옛 케이스가 같은 파일에 섞이고, 여섯이 그 파일 하나를
+    같이 쓰게 된다.
+    """
+
+    SYSTEMS = ("ALL", "M14", "M14B", "M16A", "M16B", "M16HUB")
+
+    def setUp(self):
+        self.cfg = deepcopy(load_config())
+        self.cfg.setdefault("policy", {})["case_retention_days"] = 45
+
+    def test_기간은_여섯_다_같다(self):
+        from lp_client import sys_cfg
+        got = {s: sys_cfg(self.cfg, s).get("policy", {}).get("case_retention_days")
+               for s in self.SYSTEMS}
+        self.assertEqual(set(got.values()), {45}, got)
+
+    def test_기간을_바꾸면_여섯_다_따라온다(self):
+        """★얕은 사본이어야 한다. 깊은 복사면 FAB 쪽이 옛 값에 얼어붙는다."""
+        from lp_client import sys_cfg
+        views = [sys_cfg(self.cfg, s) for s in self.SYSTEMS]
+        self.cfg["policy"]["case_retention_days"] = 7        # 나중에 바꿔도
+        for v, s in zip(views, self.SYSTEMS):
+            self.assertEqual(v.get("policy", {}).get("case_retention_days"), 7, s)
+
+    def test_보관_폴더는_시스템마다_갈린다(self):
+        from lp_client import sys_cfg
+        seen = {}
+        for s in self.SYSTEMS:
+            c = sys_cfg(self.cfg, s)
+            arc = c.get("storage", {}).get("cases_archive", "data/cases_old")
+            cases = c.get("storage", {}).get("cases")
+            seen[s] = arc
+            # 케이스 파일과 같은 폴더 아래여야 한다
+            self.assertEqual(os.path.dirname(arc), os.path.dirname(cases), s)
+        self.assertEqual(len(set(seen.values())), len(self.SYSTEMS),
+                         "두 시스템이 같은 보관 폴더를 쓴다: %s" % seen)
