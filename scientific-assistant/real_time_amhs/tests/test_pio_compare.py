@@ -71,34 +71,60 @@ class 등급으로_센다(unittest.TestCase):
 
 
 class 좋아졌다고_부르는_기준(unittest.TestCase):
-    """★'좋아졌다' 는 **못 보던 것을 보게 됐다** 는 뜻이다.
-    이미 9분 잡히던 구간이 10분이 된 것은 운전원에게 아무 차이가 없다."""
+    """고객: "지금 경계값에 몰려있는데 위험이 있어야 돼. 그게 핵심이야.
+            전보다 좋아졌는지 안 좋아졌는지 그게 핵심이야."
+
+    ★그래서 기준은 **위험 이상 분이 늘었나** 다. 점수가 오른 것도, 경계가
+      늘어난 것도 답이 아니다 — 경계만 늘면 "또 경계네" 가 되어 오히려 덜 본다.
+    """
 
     def _doc(self, rows):
         return P.build([P.parse(_csv("m14", "t", rows))])
 
-    def test_컷을_못_넘으면_초록으로_안_쓴다(self):
-        h = self._doc([("2026-09-13 11:%02d" % m, 21, 29) for m in range(38, 58)])
-        i = h.index("0. 한 줄로")
-        self.assertIn("note miss", h[i:i + 400], "화면이 안 바뀌었는데 초록이다")
-        self.assertIn("화면은 거의 그대로", h)
+    def test_컷(self):
+        """★M14 는 36/52/72 다. 저장소 기본값(60/71/85)으로 재면 결론이 통째로
+        틀린다 — 실제로 무언정지가 '경계 0분' 으로 나왔다(진짜는 23분)."""
+        self.assertEqual(P.cuts_of("M14"), (36, 52, 72))
+        self.assertEqual(P.cuts_of("M16HUBROOM"), (40, 55, 75), "M16HUBROOM → M16HUB")
+        self.assertEqual(P.cuts_of("ALL"), (48, 60, 80))
 
-    def test_이미_잡히던_구간이_1분_늘어도_초록이_아니다(self):
-        rows = [("2026-09-13 05:%02d" % m, 90, 90) for m in range(16, 26)]   # 이미 초위험
-        rows.append(("2026-09-13 05:30", 53, 60))                            # 한 분 더
+    def test_경계만_늘면_좋아진_게_아니다(self):
+        """경계는 늘었지만 위험은 그대로 — 화면은 '또 경계네' 가 된다."""
+        rows = [("2026-09-13 11:%02d" % m, 30, 40) for m in range(10, 40)]   # 36 넘김
         h = self._doc(rows)
         i = h.index("0. 한 줄로")
-        self.assertIn("note miss", h[i:i + 400],
-                      "이미 보이던 구간이 1분 늘었는데 좋아졌다고 쓴다")
+        self.assertIn("note miss", h[i:i + 500], "경계만 늘었는데 초록이다")
+        self.assertIn("위험이 늘지 않았습니다", h)
 
-    def test_0에서_1로_올라가면_초록이다(self):
-        """못 보던 사건이 보이기 시작한 것 — 이건 진짜 좋아진 것이다."""
-        rows = [("2026-09-13 11:%02d" % m, 30, 30) for m in range(38, 58)]
-        rows.append(("2026-09-13 12:00", 55, 62))
+    def test_위험이_늘면_좋아진_것이다(self):
+        rows = [("2026-09-13 11:%02d" % m, 40, 40) for m in range(10, 30)]
+        rows += [("2026-09-13 12:%02d" % m, 45, 55) for m in range(0, 10)]   # 52 넘김
         h = self._doc(rows)
         i = h.index("0. 한 줄로")
-        self.assertIn("note good", h[i:i + 400])
-        self.assertIn("못 보던 사건을 보기 시작", h)
+        self.assertIn("note good", h[i:i + 500])
+        self.assertIn("위험으로 올라갔습니다", h)
+
+    def test_경계_쏠림도_같이_본다(self):
+        """★경계가 같이 늘면 쏠림은 안 내려간다 — '전체를 끌어올린 것' 이지
+        '경계를 위험으로 올린 것' 이 아니다. 둘을 가르려고 비율을 같이 본다."""
+        c = (36, 52, 72)
+        from datetime import datetime
+        t = datetime(2026, 9, 13, 11, 0)
+        rows = [(t, 40.0, 40.0)] * 9 + [(t, 40.0, 55.0)]      # 10분 중 1분만 위험
+        pr = P.promote(rows, c)
+        self.assertEqual(pr["before"]["danger"], 0)
+        self.assertEqual(pr["after"]["danger"], 1)
+        self.assertEqual(len(pr["up"]), 1)
+        self.assertGreater(pr["before"]["share"], pr["after"]["share"],
+                           "위험이 생기면 쏠림은 내려가야 한다")
+
+    def test_위험_문턱_바로_아래도_센다(self):
+        """조금만 더 올리면 위험이 되는 분이 몇인지 — 배점을 얼마나 올릴지의 근거."""
+        from datetime import datetime
+        t = datetime(2026, 9, 13, 11, 0)
+        pr = P.promote([(t, 40.0, 50.0), (t, 40.0, 41.0)], (36, 52, 72))
+        self.assertEqual(pr["near5"], 1, "52까지 2점 남은 분")
+        self.assertEqual(pr["near10"], 1)
 
 
 class 문서(unittest.TestCase):

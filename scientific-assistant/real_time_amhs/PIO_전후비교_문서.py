@@ -32,12 +32,49 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUT_DEFAULT = os.path.join(BASE_DIR, "docs", "PIO_ERROR_전후비교.html")
 
-# 등급 컷 — config.grade.bands 의 min 셋. by_sys 가 비어 있어 여섯 시스템이 같다.
-CUTS = (60, 71, 85)
+# ── 등급 컷 ──────────────────────────────────────────────────────
+# ★★현장은 **시스템마다 컷이 다르다** (정책 탭 → config.grade.by_sys).
+#   저장소의 config.json 에는 by_sys 가 비어 있어서, 처음에 기본 밴드
+#   (60·71·85)로 계산했다가 결론이 통째로 틀렸다 — M14 무언정지 구간이
+#   "경계 0분" 으로 나왔는데 실제 컷(36)으로는 23분이었다.
+#   컷이 틀리면 이 문서의 모든 숫자가 틀린다. 그래서 여기 박아 두고,
+#   config 에 by_sys 가 있으면 그것을 먼저 쓴다.
+CUTS_DEFAULT = (60, 71, 85)
+CUTS_BY_SYS = {            # 2026-09-18 고객이 알려 준 운영 값
+    "ALL":    (48, 60, 80),
+    "M14":    (36, 52, 72),
+    "M14B":   (36, 52, 72),
+    "M16A":   (36, 52, 72),
+    "M16B":   (36, 52, 72),
+    "M16HUB": (40, 55, 75),
+}
+# 받은 자료의 컬럼명 → 관제 시스템 코드
+SYS_OF = {"M16HUBROOM": "M16HUB", "M14A": "M14"}
+
+
+def cuts_of(fab: str) -> tuple:
+    """그 FAB 의 등급 컷. config.grade.by_sys 가 있으면 그것이 먼저다."""
+    code = SYS_OF.get(fab.upper(), fab.upper())
+    try:
+        from lp_client import load_config
+        g = (load_config().get("grade") or {})
+        o = (g.get("by_sys") or {}).get(code)
+        if o and all(k in o for k in ("warn", "danger", "critical")):
+            return (int(o["warn"]), int(o["danger"]), int(o["critical"]))
+    except Exception:                                    # noqa: BLE001
+        pass
+    return CUTS_BY_SYS.get(code, CUTS_DEFAULT)
+
+
+CUTS = CUTS_DEFAULT        # 아래 함수들이 기본값으로 쓴다 (FAB 을 알면 cuts_of)
 LEVELS = ("정상", "경계", "위험", "초위험")
 
 # 알려진 사건 — 장애분석 문서(docs/M14_20260913_장애분석.html)에서 가져왔다.
 # 그때 화면은 이 구간에서 '정상 31점' 이었다. 새 룰이 그걸 고쳤는지가 핵심이다.
+# 같은 곳을 두 이름으로 부른다 — 받은 자료의 컬럼명(m14)과 현장·장애분석
+# 문서의 이름(M14A). 문서에는 둘 다 적어 어느 쪽을 봐도 알아보게 한다.
+ALIAS = {"M14": "M14A"}
+
 KNOWN = [
     {"fab": "M14", "day": "2026-09-13", "from": "11:38", "to": "14:30",
      "what": "OHT 무언정지", "doc": "M14_20260913_장애분석.html"},
@@ -46,14 +83,21 @@ KNOWN = [
 ]
 
 
-def level(v: float) -> str:
-    if v >= CUTS[2]:
+def level(v: float, cuts=None) -> str:
+    c = cuts or CUTS
+    if v >= c[2]:
         return "초위험"
-    if v >= CUTS[1]:
+    if v >= c[1]:
         return "위험"
-    if v >= CUTS[0]:
+    if v >= c[0]:
         return "경계"
     return "정상"
+
+
+def fabname(fab: str) -> str:
+    """받은 컬럼명 + 현장 이름. 둘이 다르면 둘 다 적는다 (M14 ↔ M14A)."""
+    other = ALIAS.get(fab.upper())
+    return f"{fab} ({other})" if other else fab
 
 
 def esc(s) -> str:
@@ -109,16 +153,17 @@ def parse(src: str) -> dict | None:
 
 
 # ────────────────────────────── 세기 ──────────────────────────────
-def stats(rows) -> dict:
+def stats(rows, cuts=None) -> dict:
+    c = cuts or CUTS
     ch = [(t, b, a) for t, b, a in rows if b != a]
     dif = [a - b for _, b, a in ch]
     cnt = {k: [0, 0] for k in LEVELS}
     for _, b, a in rows:
-        cnt[level(b)][0] += 1
-        cnt[level(a)][1] += 1
+        cnt[level(b, c)][0] += 1
+        cnt[level(a, c)][1] += 1
     moved = {}
     for _, b, a in rows:
-        lb, la = level(b), level(a)
+        lb, la = level(b, c), level(a, c)
         if lb != la:
             moved[(lb, la)] = moved.get((lb, la), 0) + 1
     days = {}
@@ -127,8 +172,8 @@ def stats(rows) -> dict:
                                        "hb": 0.0, "ha": 0.0})
         d["n"] += 1
         d["ch"] += (b != a)
-        d["wb"] += (b >= CUTS[0])
-        d["wa"] += (a >= CUTS[0])
+        d["wb"] += (b >= c[0])
+        d["wa"] += (a >= c[0])
         d["hb"] = max(d["hb"], b)
         d["ha"] = max(d["ha"], a)
     return {
@@ -143,17 +188,43 @@ def stats(rows) -> dict:
     }
 
 
+def promote(rows, cuts) -> dict:
+    """★이 문서의 핵심 지표 — 고객: "지금 경계값에 몰려있는데 위험이 있어야 돼.
+    그게 핵심이야. 전보다 좋아졌는지 안 좋아졌는지 그게 핵심이야."
+
+    점수가 오른 것도, 경계가 늘어난 것도 답이 아니다. 경계에 몰려 있던 것이
+    **위험으로 올라갔는가** 가 답이다. 그래서 셋을 센다:
+      · 위험 이상 분      — 전 → 후 (많아져야 좋다)
+      · 경계 쏠림 비율    — 경계이상 중 경계에 머문 비율 (낮아져야 좋다)
+      · 경계 → 위험 승격  — 실제로 올라간 분
+    ★경계도 같이 늘면 쏠림 비율은 안 내려간다. 그건 '전체를 끌어올린 것' 이지
+      '경계를 위험으로 올린 것' 이 아니다 — 그 둘을 가르려고 비율을 같이 본다.
+    """
+    def one(i):
+        w = sum(1 for r in rows if cuts[0] <= r[i] < cuts[1])
+        d = sum(1 for r in rows if r[i] >= cuts[1])
+        return {"warn": w, "danger": d, "any": w + d,
+                "share": (100.0 * w / (w + d)) if (w + d) else 0.0}
+    up = [(t, b, a) for t, b, a in rows
+          if cuts[0] <= b < cuts[1] <= a]
+    near = [a for _, _, a in rows if cuts[0] <= a < cuts[1]]
+    return {"before": one(1), "after": one(2), "up": up,
+            "near5": sum(1 for a in near if cuts[1] - a <= 5),
+            "near10": sum(1 for a in near if cuts[1] - a <= 10)}
+
+
 def window(rows, day: str, t0: str, t1: str):
     return [(t, b, a) for t, b, a in rows
             if t.strftime("%Y-%m-%d") == day and t0 <= t.strftime("%H:%M") <= t1]
 
 
-def scale_table(rows, ev=None):
+def scale_table(rows, ev=None, cuts=None):
     """배점을 N 배로 키웠다면 경계 이상이 몇 분이 되나 — '얼마나 모자란가' 를 본다."""
+    c = cuts or CUTS
     out = []
     for mul in (1, 1.5, 2, 3, 4, 5):
-        n = sum(1 for _, b, a in rows if b + (a - b) * mul >= CUTS[0])
-        e = sum(1 for _, b, a in (ev or []) if b + (a - b) * mul >= CUTS[0])
+        n = sum(1 for _, b, a in rows if b + (a - b) * mul >= c[0])
+        e = sum(1 for _, b, a in (ev or []) if b + (a - b) * mul >= c[0])
         out.append((mul, n, e))
     return out
 
@@ -203,49 +274,71 @@ def build(sets: list[dict]) -> str:
          f'<body><div class=wrap>']
     a.append('<h1>PIO_ERROR 룰 추가 — 전 / 후 비교</h1>')
     a.append('<p class="sub">받은 자료 · ' + esc(" · ".join(
-        f'{s["fab"]} {min(t for t,_,_ in s["rows"]):%Y-%m-%d}~{max(t for t,_,_ in s["rows"]):%m-%d}'
+        f'{fabname(s["fab"])} {min(t for t,_,_ in s["rows"]):%Y-%m-%d}~{max(t for t,_,_ in s["rows"]):%m-%d}'
         f' {len(s["rows"])}분' for s in sets))
-        + f' · 등급 컷 경계 {CUTS[0]} · 위험 {CUTS[1]} · 초위험 {CUTS[2]}</p>')
+        + '</p>')
+    a.append('<p class=sub>등급 컷은 <b>시스템마다 다릅니다</b> (정책 탭) — '
+             + esc(' · '.join(f'{fabname(s["fab"])} {"/".join(map(str, cuts_of(s["fab"])))}'
+                              for s in sets)) + '</p>')
 
     # ── 0. 한 줄로 ──────────────────────────────────────────────
-    tot_ch = sum(stats(s["rows"])["ch"] for s in sets)
-    tot_n = sum(len(s["rows"]) for s in sets)
-    tot_mv = sum(sum(stats(s["rows"])["moved"].values()) for s in sets)
     a.append('<h2>0. 한 줄로</h2>')
-    # ★'좋아졌다' 는 점수가 올랐다가 아니라 **못 보던 것을 보게 됐다** 는 뜻이다.
-    #   그래서 기준을 0 → 1 이상으로 잡는다. 이미 9분 잡히던 구간이 10분이 된 것은
-    #   운전원에게 아무 차이가 없다 — 그걸 '좋아졌다' 고 쓰면 거짓말이 된다.
-    won = []
-    for s in sets:
-        for e in KNOWN:
-            if e["fab"] != s["fab"]:
-                continue
-            w = window(s["rows"], e["day"], e["from"], e["to"])
-            if not w:
-                continue
-            cb = sum(1 for _, b, _ in w if b >= CUTS[0])
-            ca = sum(1 for _, _, av in w if av >= CUTS[0])
-            if cb == 0 and ca > 0:
-                won.append(f'{e["fab"]} {e["what"]}')
-    head = ("<b>못 보던 사건을 보기 시작했습니다 — " + esc(", ".join(won)) + "</b>" if won else
-            "<b>룰은 먹었습니다 — 그런데 화면은 거의 그대로입니다.</b>")
-    a.append(f'<div class="note {"good" if won else "miss"}">{head}<br>'
-             f'점수가 오른 분은 <b>{tot_ch:,}분</b> / {tot_n:,}분 '
-             f'({100*tot_ch/tot_n:.1f}%) 인데, 그 때문에 <b>등급이 바뀐 분은 '
-             f'{tot_mv}분</b> 입니다. 운전원이 보는 것은 점수가 아니라 등급이라,'
-             f' 지금 배점으로는 관제 화면이 사실상 달라지지 않습니다.</div>')
-    a.append('<p>그래서 이 문서는 셋을 나눠서 봅니다 — '
-             '<b>① 룰이 먹었나</b> · <b>② 화면이 달라졌나</b> · '
-             '<b>③ 잡고 싶던 것을 잡았나</b>. ①만 보고 좋아졌다고 하면 안 됩니다.</p>')
+    # ★기준은 **위험이 늘었나** 다.
+    #   고객: "지금 경계값에 몰려있는데 위험이 있어야 돼. 그게 핵심이야.
+    #          전보다 좋아졌는지 안 좋아졌는지 그게 핵심이야."
+    #   점수가 올랐다도, 경계가 늘었다도 답이 아니다. 경계만 늘면 "또 경계네" 가
+    #   되어 오히려 덜 보게 된다.
+    pres = [(fabname(s["fab"]), cuts_of(s["fab"]),
+             promote(s["rows"], cuts_of(s["fab"]))) for s in sets]
+    wins = [(nm, p) for nm, _, p in pres if p["after"]["danger"] > p["before"]["danger"]]
+    flats = [(nm, p) for nm, _, p in pres if p["after"]["danger"] <= p["before"]["danger"]]
+    if wins and not flats:
+        head, box = "<b>좋아졌습니다 — 경계에 몰려 있던 것이 위험으로 올라갔습니다.</b>", "good"
+    elif wins:
+        head = ("<b>한쪽만 좋아졌습니다.</b> "
+                + esc(" · ".join(f'{nm} 위험 {p["before"]["danger"]}→{p["after"]["danger"]}분'
+                                 for nm, p in wins))
+                + " 는 올라갔고, " + esc(" · ".join(nm for nm, _ in flats))
+                + " 는 그대로입니다.")
+        box = "miss"
+    else:
+        head, box = "<b>위험이 늘지 않았습니다 — 여전히 경계에 몰려 있습니다.</b>", "miss"
+    a.append(f'<div class="note {box}">{head}<br>'
+             f'운전원이 보는 것은 점수가 아니라 등급입니다. 점수가 올라도 컷을 '
+             f'안 넘으면 화면에는 아무 일도 일어나지 않고, 경계만 늘면 '
+             f'“또 경계네” 가 되어 오히려 덜 보게 됩니다.</div>')
+    # ★FAB 을 합치지 않는다. 컷도 다르고(정책 탭) 성격도 전혀 다르다.
+    a.append('<table><tr><th>FAB</th><th class=n>위험 이상 (전 → 후)</th>'
+             '<th class=n>경계 쏠림</th><th class=n>경계→위험</th>'
+             '<th>좋아졌나</th></tr>')
+    for nm, c, pr in pres:
+        db, da = pr["before"]["danger"], pr["after"]["danger"]
+        if da > db and len(pr["up"]) >= 5:
+            one = f'<b class=okc>좋아졌다</b> — 위험이 {db} → {da}분'
+        elif da > db:
+            one = f'<b class=warn>조금</b> — 위험이 {db} → {da}분'
+        else:
+            one = '<b class=bad>그대로</b>'
+        a.append(f'<tr><td><b>{esc(nm)}</b> '
+                 f'<span class=dim>컷 {c[0]}/{c[1]}/{c[2]}</span></td>'
+                 f'<td class=n>{db} → <b>{da}</b></td>'
+                 f'<td class=n>{pr["before"]["share"]:.0f}% → {pr["after"]["share"]:.0f}%</td>'
+                 f'<td class=n>{len(pr["up"])}</td><td>{one}</td></tr>')
+    a.append('</table>')
+    a.append('<p class=dim>위험 이상 = 위험 + 초위험 · 경계 쏠림 = 경계 이상 가운데 '
+             '경계에 머문 비율(<b>낮아져야</b> 좋다). '
+             '★경계가 같이 늘면 쏠림은 안 내려간다 — 그건 “전체를 끌어올린 것” 이지 '
+             '“경계를 위험으로 올린 것” 이 아니다. 둘을 가르려고 같이 본다.</p>')
 
     # ── 1. 한눈에 ───────────────────────────────────────────────
     a.append('<h2>1. 한눈에</h2><table><tr><th>FAB</th><th class=n>분</th>'
              '<th class=n>점수 오른 분</th><th class=n>올린 폭(평균/최대)</th>'
              '<th class=n>등급 바뀐 분</th><th>화면이 달라졌나</th></tr>')
     for s in sets:
-        st = stats(s["rows"])
+        c = cuts_of(s["fab"])
+        st = stats(s["rows"], c)
         mv = sum(st["moved"].values())
-        a.append(f'<tr><td><b>{esc(s["fab"])}</b></td><td class=n>{st["n"]:,}</td>'
+        a.append(f'<tr><td><b>{esc(fabname(s["fab"]))}</b></td><td class=n>{st["n"]:,}</td>'
                  f'<td class=n>{st["ch"]:,} <span class=dim>({100*st["ch"]/st["n"]:.1f}%)</span></td>'
                  f'<td class=n>{st["avg"]:+.1f} / {st["max"]:+.0f}</td>'
                  f'<td class=n>{"<b class=okc>" if mv else "<b class=bad>"}{mv}</b></td>'
@@ -254,8 +347,10 @@ def build(sets: list[dict]) -> str:
 
     # ── 2. FAB 마다 ─────────────────────────────────────────────
     for s in sets:
-        st, rows = stats(s["rows"]), s["rows"]
-        a.append(f'<h2>2. {esc(s["fab"])} <span class=dim>— {esc(s["label"])}</span></h2>')
+        c = cuts_of(s["fab"])
+        st, rows = stats(s["rows"], c), s["rows"]
+        pr = promote(rows, c)
+        a.append(f'<h2>2. {esc(fabname(s["fab"]))} <span class=dim>— {esc(s["label"])}</span></h2>')
         if s.get("skew"):
             a.append(f'<div class="note miss"><b>주의:</b> 두 열의 시각이 어긋난 행이 '
                      f'{s["skew"]}개 있어 뺐습니다.</div>')
@@ -311,14 +406,14 @@ def build(sets: list[dict]) -> str:
                      '<table><tr><th class=n>점수대</th><th class=n>분</th><th></th></tr>')
             for k in sorted(buck):
                 w = int(300 * buck[k] / mx)
-                over = ' <b class=okc>← 경계 위</b>' if k >= CUTS[0] else ''
+                over = ' <b class=okc>← 경계 위</b>' if k >= c[0] else ''
                 a.append(f'<tr><td class=n>{k}~{k+9}</td><td class=n>{buck[k]:,}</td>'
                          f'<td><span class="bar" style="width:{w}px"></span>{over}</td></tr>')
             a.append('</table>')
             top = max(av for _, _, av in st["changed"])
-            if top < CUTS[0]:
+            if top < c[0]:
                 a.append(f'<div class="note miss">제일 높이 올라간 분도 <b>{top:.0f}점</b> — '
-                         f'경계({CUTS[0]})까지 <b>{CUTS[0]-top:.0f}점</b> 모자랍니다.</div>')
+                         f'경계({c[0]})까지 <b>{c[0]-top:.0f}점</b> 모자랍니다.</div>')
 
         # ③ 알려진 사건
         evs = [e for e in KNOWN if e["fab"] == s["fab"]]
@@ -326,13 +421,13 @@ def build(sets: list[dict]) -> str:
             a.append('<h3>③ 잡고 싶던 것을 잡았나 <span class=dim>— 알려진 사건 구간</span></h3>')
             a.append('<table><tr><th>사건</th><th class=n>구간</th><th class=n>분</th>'
                      '<th class=n>오른 분</th><th class=n>구간 최고 (전 → 후)</th>'
-                     '<th class=n>경계 이상 (전 → 후)</th></tr>')
+                     '<th class=n><b>위험 이상</b> (전 → 후)</th></tr>')
             for e in evs:
                 w = window(rows, e["day"], e["from"], e["to"])
                 if not w:
                     continue
-                cb = sum(1 for _, b, _ in w if b >= CUTS[0])
-                ca = sum(1 for _, _, av in w if av >= CUTS[0])
+                cb = sum(1 for _, b, _ in w if b >= c[1])
+                ca = sum(1 for _, _, av in w if av >= c[1])
                 a.append(f'<tr><td>{esc(e["what"])}<br><span class=dim>{esc(e["day"])}</span></td>'
                          f'<td class=n>{esc(e["from"])}~{esc(e["to"])}</td>'
                          f'<td class=n>{len(w)}</td>'
@@ -346,10 +441,10 @@ def build(sets: list[dict]) -> str:
                 if not w:
                     continue
                 hi = max(av for _, _, av in w)
-                if hi < CUTS[0]:
+                if hi < c[1]:
                     a.append(f'<div class="note miss"><b>{esc(e["what"])}</b> — 새 룰을 넣은 뒤에도 '
                              f'구간 최고가 <b>{hi:.0f}점</b>이라 여전히 '
-                             f'<b>정상</b>입니다 (경계까지 {CUTS[0]-hi:.0f}점). '
+                             f'<b>위험 아래</b>입니다 (위험까지 {c[1]-hi:.0f}점). '
                              f'이 사건에 대해서는 PIO_ERROR 가 신호가 아닙니다.</div>')
 
         # 배점을 키웠다면
@@ -359,7 +454,7 @@ def build(sets: list[dict]) -> str:
         a.append('<h3>배점을 키웠다면 <span class=dim>— 지금 올린 폭의 N 배였을 때 경계 이상 분</span></h3>'
                  '<table><tr><th class=n>배수</th><th class=n>경계 이상 분</th>'
                  + ('<th class=n>그중 사건 구간</th>' if ev else '') + '</tr>')
-        for mul, n, e in scale_table(rows, ev):
+        for mul, n, e in scale_table(rows, ev, c):
             a.append(f'<tr{" class=hi" if mul==1 else ""}><td class=n>×{mul}</td>'
                      f'<td class=n>{n:,}</td>'
                      + (f'<td class=n>{e}</td>' if ev else '') + '</tr>')
@@ -388,7 +483,9 @@ def build(sets: list[dict]) -> str:
              '<li>사건 구간은 <code>docs/M14_20260913_장애분석.html</code> 에서 가져왔습니다. '
              '다른 사건이 더 있었다면 이 문서에는 없습니다.</li>'
              '<li>등급 컷은 <code>config.grade.bands</code> 의 지금 값입니다 '
-             f'(경계 {CUTS[0]} · 위험 {CUTS[1]} · 초위험 {CUTS[2]}). 컷을 바꾸면 결론도 바뀝니다.</li>'
+             '— 시스템마다 다릅니다(정책 탭). 컷을 바꾸면 결론도 바뀝니다. '
+             '실제로 처음엔 저장소 기본값(60·71·85)으로 계산했다가 M14 무언정지가 '
+             '“경계 0분” 으로 나왔는데, 실제 컷(36)으로는 23분이었습니다.</li>'
              '</ul>')
     a.append('</div></body></html>')
     return "".join(a)
@@ -407,9 +504,13 @@ def main(argv=None):
     os.makedirs(os.path.dirname(ns.out), exist_ok=True)
     io.open(ns.out, "w", encoding="utf-8").write(build(sets))
     for s in sets:
-        st = stats(s["rows"])
-        print(f'  {s["fab"]:<10} {st["n"]:>5}분 · 오른 분 {st["ch"]:>5} '
-              f'· 등급 바뀐 분 {sum(st["moved"].values())}')
+        c = cuts_of(s["fab"])
+        st = stats(s["rows"], c)
+        pr = promote(s["rows"], c)
+        print(f'  {fabname(s["fab"]):<18} 컷 {c[0]}/{c[1]}/{c[2]} · 오른 분 {st["ch"]:>4}'
+              f' · 등급 바뀐 분 {sum(st["moved"].values()):>3}'
+              f' · 위험이상 {pr["before"]["danger"]} → {pr["after"]["danger"]}'
+              f' · 경계→위험 {len(pr["up"])}')
     print(f'→ {ns.out}')
     return 0
 
