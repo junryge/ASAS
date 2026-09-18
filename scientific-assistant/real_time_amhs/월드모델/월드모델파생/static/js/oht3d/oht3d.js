@@ -57,14 +57,20 @@ const DEFAULTS = {
   railHeight: 4.6,
   wallHeight: 7.5,
   wallCutHeight: 1.0,
-  vehicleScale: 1,
-  railScale: 0.45,       // 레일 굵기 배수 — 평행 레일이 붙어 보이지 않는 값 (위 주석)
-  portScale: 1,          // 설비(포트) 상자 크기 배수
-  textScale: 1,          // 글자(차량 라벨·존) 크기 배수
+  /* 크기 기본값 — 2026-09 고객이 화면에서 맞춰 보고 정한 값이다.
+     이 값으로 열리고, '크기' 패널은 닫아 둔다(sizeUI:false). 바꿀 일이 생기면
+     sizeUI:true 로 열어 슬라이더로 다시 맞추면 된다. */
+  vehicleScale: 0.40,    // 차량
+  railScale: 0.20,       // 레일 굵기 — 평행 레일이 붙어 보이지 않아야 한다 (위 주석)
+  portScale: 0.40,       // 설비(포트) 상자
+  textScale: 0.80,       // 글자(차량 라벨·존)
+  sizeUI: false,         // '크기' 단추·패널을 띄울까 (기본 안 띄움 — 값은 위로 고정)
+  floor: true,           // 바닥판·격자를 깔까 ('바닥' 단추로 끌 수 있다)
   labels: true,
   heat: true,
   ui: true,        // 뷰어 내부 버튼/범례/툴팁
-  panel: true,     // 오른쪽 HID Zone 패널
+  panel: true,     // 오른쪽 HID Zone 패널 (단추를 둘까)
+  panelOpen: true, // 처음부터 열어 둘까 (false 면 닫힌 채로 뜬다 — 단추로 연다)
   maxTweenMs: 3000,
   jamSec: 0,       // 0 이면 state 값 그대로 사용
   projection: 'persp',   // 'iso' = 아이소메트리(직교) · 'persp' = 원근
@@ -186,7 +192,8 @@ class Viewer {
     if (o.projection === 'iso') { this.orb.az = ISO_AZ; this.orb.el = ISO_EL; }
     this.fly = null;
     this.opt = { labels: o.labels, heat: o.heat, vs: o.vehicleScale, proj: o.projection === 'iso' ? 'iso' : 'persp',
-                 rs: +o.railScale || 0.45, ps: +o.portScale || 1, ts: +o.textScale || 1 };
+                 rs: +o.railScale || DEFAULTS.railScale, ps: +o.portScale || DEFAULTS.portScale,
+                 ts: +o.textScale || DEFAULTS.textScale, floor: o.floor !== false };
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
     this.needRender = true; this.camDirty = true; this.vehDirty = true; this.resized = true; this.domDirty = true;
     this.mouse = null; this.lastDom = 0;
@@ -252,9 +259,11 @@ class Viewer {
       <button class="o3d-btn" data-a="proj" title="아이소메트리(직교) / 원근 전환">${o.projection === 'iso' ? '원근으로' : '아이소로'}</button>
       <button class="o3d-btn ${o.labels ? 'on' : ''}" data-a="labels">ID·속도</button>
       <button class="o3d-btn ${o.heat ? 'on' : ''}" data-a="heat">히트맵</button>
-      <button class="o3d-btn" data-a="size" title="레일 굵기·차량·설비·글자 크기">크기</button>
+      ${o.sizeUI ? '<button class="o3d-btn" data-a="size" title="레일 굵기·차량·설비·글자 크기">크기</button>' : ''}
       <button class="o3d-btn" data-a="png">이미지 저장</button>
-      ${o.panel ? '<button class="o3d-btn on" data-a="panel">패널</button>' : ''}`;
+      <button class="o3d-btn ${o.floor === false ? '' : 'on'}" data-a="floor"
+        title="바닥판과 1.2 m 격자 — 끄면 레일·설비·차량만 남는다">바닥</button>
+      ${o.panel ? `<button class="o3d-btn ${o.panelOpen === false ? '' : 'on'}" data-a="panel">패널</button>` : ''}`;
     r.appendChild(bar);
     const leg = document.createElement('div');
     leg.className = 'o3d-leg';
@@ -262,6 +271,18 @@ class Viewer {
       '<span>레일 원활<i class="o3d-hb"></i>정체</span>';
     r.appendChild(leg);
     // 크기 패널 — 3D 안에서만 쓰는 값이라 2D 설정과 섞지 않는다 (고객: "따로 가야지")
+    // ★기본은 **안 만든다**. 크기는 DEFAULTS 에 고객이 정한 값으로 박혀 있고,
+    //   패널을 열어 두면 사람마다 다르게 만져 화면이 제각각이 된다.
+    //   다시 맞출 일이 생기면 sizeUI:true 로 열면 된다.
+    if (o.sizeUI) this._buildSizePanel(r, o);
+    this.dom.bar = bar;
+    this.dom.ts = bar.querySelector('.o3d-ts');
+    this._wireBar(bar);
+    if (!o.panel) return;
+    this._buildPanel(r, bar);
+  }
+
+  _buildSizePanel(r, o) {
     const SZ = [['rs', '레일 굵기', 0.1, 1.5, 0.05], ['vs', '차량', 0.2, 4, 0.1],
                 ['ps', '설비', 0.2, 3, 0.1], ['ts', '글자', 0.4, 2.5, 0.1]];
     const sz = document.createElement('div');
@@ -271,7 +292,8 @@ class Viewer {
       + '<button class="o3d-btn" data-s="reset">기본값</button>';
     r.appendChild(sz);
     this.dom.size = sz;
-    this.szDefault = { rs: +o.railScale || 0.45, vs: +o.vehicleScale || 1, ps: +o.portScale || 1, ts: +o.textScale || 1 };
+    this.szDefault = { rs: +o.railScale || DEFAULTS.railScale, vs: +o.vehicleScale || DEFAULTS.vehicleScale,
+                       ps: +o.portScale || DEFAULTS.portScale, ts: +o.textScale || DEFAULTS.textScale };
     const SKEY = { rs: 'railScale', vs: 'vehicleScale', ps: 'portScale', ts: 'textScale' };
     sz.addEventListener('input', ev => {
       const k = ev.target.dataset.s;
@@ -279,23 +301,38 @@ class Viewer {
     });
     sz.querySelector('[data-s=reset]').addEventListener('click', () =>
       this.setOptions(Object.fromEntries(Object.entries(this.szDefault).map(([k, v]) => [SKEY[k], v]))));
-    this.dom.bar = bar;
-    this.dom.ts = bar.querySelector('.o3d-ts');
+  }
+
+  _wireBar(bar) {
     bar.addEventListener('click', ev => {
       const b = ev.target.closest('button');
       if (!b || !this.G) return;
       const a = b.dataset.a;
-      if (a === 'hot') this.flyTo(this.withPanel(this.hotView(this.sel)));
-      if (a === 'all') { this.selectZone(-1, false); this.flyTo(this.allView()); }
+      if (a === 'hot') {
+        const v = this.hotView(this.sel);      // 여기서 this.hotAt 이 정해진다
+        const on = this.markHot();             // 붉게 뿌옇게 — 정체가 있을 때만
+        b.classList.toggle('on', on);
+        this.flyTo(this.withPanel(v));
+      }
+      // '전체' 는 보기를 되돌리는 단추다 — 표시도 같이 지운다
+      if (a === 'all') { this.selectZone(-1, false); this.clearHot();
+                         bar.querySelector('[data-a=hot]')?.classList.remove('on');
+                         this.flyTo(this.allView()); }
       if (a === 'proj') this.setOptions({ projection: this.opt.proj === 'iso' ? 'persp' : 'iso' });
       if (a === 'labels') this.setOptions({ labels: !this.opt.labels });
       if (a === 'heat') this.setOptions({ heat: !this.opt.heat });
-      if (a === 'size') { const z = this.dom.size; z.classList.toggle('on'); b.classList.toggle('on', z.classList.contains('on')); }
+      if (a === 'size' && this.dom.size) { const z = this.dom.size; z.classList.toggle('on'); b.classList.toggle('on', z.classList.contains('on')); }
+      // 바닥 — 바닥판 + 격자. HID Zone 바닥판은 **건드리지 않는다** (그게 존을
+      //   클릭하는 과녁이라, 숨기면 존 선택이 안 된다).
+      if (a === 'floor') { this.setOptions({ floor: !(this.opt.floor !== false) }); }
       if (a === 'png') this.snapshot();
       if (a === 'follow') { this.follow = !this.follow; b.classList.toggle('on', this.follow); if (this.follow && this.orb.dist > 40) this.flyTo({ dist: 20 }); }
       if (a === 'panel') { const p = this.dom.panel; p.hidden = !p.hidden; b.classList.toggle('on', !p.hidden); }
     });
-    if (!o.panel) return;
+  }
+
+  _buildPanel(r, bar) {
+    const o = this.o;
     const p = document.createElement('div');
     p.className = 'o3d-panel';
     p.innerHTML = `<div class="o3d-card o3d-zc"><div class="o3d-h">HID Zone</div><div class="o3d-sc"><table>
@@ -306,7 +343,12 @@ class Viewer {
     r.appendChild(p);
     Object.assign(this.dom, { panel: p, ztb: p.querySelector('.o3d-ztb'), vtb: p.querySelector('.o3d-vtb'), dc: p.querySelector('.o3d-dc'),
       dt: p.querySelector('.o3d-dt'), st: p.querySelector('.o3d-st') });
-    if (r.clientWidth <= 700) { p.hidden = true; bar.querySelector('[data-a=panel]')?.classList.remove('on'); }
+    // ★처음엔 닫아 둔다(panelOpen:false). 단추는 그대로라 언제든 열 수 있다.
+    //   좁은 화면(≤700px)에서도 닫는다 — 맵을 다 가린다.
+    if (o.panelOpen === false || r.clientWidth <= 700) {
+      p.hidden = true;
+      bar.querySelector('[data-a=panel]')?.classList.remove('on');
+    }
     this.dom.ztb.addEventListener('click', ev => { const tr = ev.target.closest('tr'); if (tr) this.selectZone(+tr.dataset.z); });
     this.dom.vtb.addEventListener('click', ev => { const tr = ev.target.closest('tr'); if (tr) this.focusVehicle(+tr.dataset.k); });
     p.querySelector('[data-x]').addEventListener('click', () => this.selectZone(-1, false));
@@ -408,6 +450,73 @@ class Viewer {
     L.sp.scale.set(L.bs[0] * k, L.bs[1] * k, 1);
   }
   fitSprites() { for (const L of this.sprites) if (L.sp.parent) this.fitSprite(L); }
+  /* 정체 지점 표시 — 붉고 뿌옇게 (고객: "빨간색 뿌옇게 보기 편하게")
+     ★가운데가 진하고 가장자리로 흐려지는 원을 바닥에 깔고, 그 위에 옅은 붉은
+       반구를 씌운다. 테두리가 또렷한 원을 그리면 '구역' 처럼 보여 존 바닥판과
+       헷갈린다 — 그래서 경계를 흐린다.
+     ★깊이 쓰기를 끈다(depthWrite:false). 안 그러면 레일·설비가 이 반투명
+       덩어리에 가려 사라진다. */
+  _hotTex() {
+    if (this._hotT) return this._hotT;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d').createRadialGradient(128, 128, 0, 128, 128, 128);
+    g.addColorStop(0.00, 'rgba(239,68,68,0.85)');
+    g.addColorStop(0.35, 'rgba(239,68,68,0.45)');
+    g.addColorStop(0.70, 'rgba(239,68,68,0.16)');
+    g.addColorStop(1.00, 'rgba(239,68,68,0.00)');
+    const cx = c.getContext('2d');
+    cx.fillStyle = g;
+    cx.fillRect(0, 0, 256, 256);
+    const t = new this.T.CanvasTexture(c);
+    t.colorSpace = this.T.SRGBColorSpace;
+    this._hotT = t;
+    return t;
+  }
+
+  buildHotMark() {
+    const T = this.T, g = new T.Group();
+    g.visible = false;
+    const R = 26;                                  // 바닥 무리 지름(m) — 멀리서도 눈에 든다
+    const disc = new T.Mesh(new T.PlaneGeometry(R, R),
+      new T.MeshBasicMaterial({ map: this._hotTex(), transparent: true,
+                                depthWrite: false, toneMapped: false }));
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 0.06;                        // 존 바닥판(0.02)·격자(0.005) 위
+    disc.renderOrder = 3;
+    g.add(disc);
+    // 옅은 반구 — 위에서 봐도, 옆에서 봐도 '그 자리' 가 보이게
+    const dome = new T.Mesh(new T.SphereGeometry(R * 0.30, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+      new T.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.10,
+                                depthWrite: false, toneMapped: false }));
+    dome.position.y = 0.07;
+    dome.renderOrder = 3;
+    g.add(dome);
+    this.world.add(g);
+    this.hotMark = g;
+  }
+
+  /* 정체 지점에 표시를 놓는다. 정체가 없으면(hotAt 없음) 지운다. */
+  markHot() {
+    if (!this.hotMark) this.buildHotMark();
+    const h = this.hotAt;
+    if (!h) { this.clearHot(); return false; }
+    this.hotMark.position.set(h[0] - this.cx, 0, h[1] - this.cy);
+    this.hotMark.visible = true;
+    this.needRender = true;
+    return true;
+  }
+
+  clearHot() {
+    if (this.hotMark) this.hotMark.visible = false;
+    this.needRender = true;
+  }
+
+  /* 바닥판·격자 보이기/숨기기 — 다시 세우지 않고 visible 만 바꾼다 (즉시 바뀐다) */
+  applyFloor() {
+    const on = this.opt.floor !== false;
+    for (const m of (this.floorParts || [])) m.visible = on;
+  }
   applyTheme() {
     this.root.classList.toggle('o3d-dark', this.o.dark === true);
     this.root.classList.toggle('o3d-light', this.o.dark === false);
@@ -462,6 +571,7 @@ class Viewer {
     this.G = { nodes, edges, zones, ports, walls, bounds: b, eIdx, ftIdx };
     this.sprites.clear();
     this.zoneMeshes = null;
+    this.hotMark = null;            // world 를 비우면 같이 날아간다 — 다시 만들게
     this.chainCache.clear();
     this.slots = []; this.idx.clear(); this.cap = 0;
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
@@ -500,14 +610,21 @@ class Viewer {
     else floor.position.y = -0.4;
     floor.receiveShadow = true;
     W0.add(floor);
+    // ★바닥판과 격자를 붙잡아 둔다 — '바닥' 단추로 끄고 켠다.
+    //   (HID Zone 바닥판은 여기 안 들어간다. 그게 존을 클릭하는 과녁이라
+    //    숨기면 존 선택이 안 된다.)
+    this.floorParts = [floor];
     const gp = [], step = 1.2;
     if (W / step < 1500 && D / step < 1500) {
       for (let x = -W / 2 + step; x < W / 2; x += step) gp.push(x, 0.005, -D / 2, x, 0.005, D / 2);
       for (let z = -D / 2 + step; z < D / 2; z += step) gp.push(-W / 2, 0.005, z, W / 2, 0.005, z);
       const gg = new T.BufferGeometry();
       gg.setAttribute('position', new T.Float32BufferAttribute(gp, 3));
-      W0.add(new T.LineSegments(gg, new T.LineBasicMaterial({ color: 0xc9cdd1, transparent: true, opacity: 0.7 })));
+      const grid = new T.LineSegments(gg, new T.LineBasicMaterial({ color: 0xc9cdd1, transparent: true, opacity: 0.7 }));
+      W0.add(grid);
+      this.floorParts.push(grid);
     }
+    this.applyFloor();
 
     // 벽 — walls:false 면 없다 (월드모델파생은 안 세운다: 등각으로 돌려 보면 벽이
     //   안쪽을 가리고, 레일·차량 말고는 보여줄 정보가 없는 상자다).
@@ -1036,6 +1153,8 @@ class Viewer {
       for (const b of jams) if (Math.hypot(a.x - b.x, a.y - b.y) < 12) { c++; sx += b.x; sy += b.y; }
       if (c > bc) { bc = c; best = [sx / c, sy / c]; }
     }
+    // 정말 정체가 있었나 — 없으면 존 가운데(또는 맵 가운데)로 가되 **표시는 안 한다**
+    this.hotAt = best ? [best[0], best[1], bc] : null;
     if (!best) {
       const z = zi >= 0 ? this.G.zones[zi].bb : null;
       best = z ? [(z[0] + z[2]) / 2, (z[1] + z[3]) / 2] : [this.cx, this.cy];
@@ -1075,6 +1194,7 @@ class Viewer {
     if (p.textScale != null && +p.textScale > 0 && +p.textScale !== this.opt.ts) { this.opt.ts = +p.textScale; this.fitSprites(); }
     if (p.portScale != null && +p.portScale > 0 && +p.portScale !== this.opt.ps) { this.opt.ps = +p.portScale; if (this.G) this.buildPorts(); }
     if (p.railScale != null && +p.railScale > 0 && +p.railScale !== this.opt.rs) { this.opt.rs = +p.railScale; if (this.G) this.buildRails(); }
+    if (p.floor != null) { this.opt.floor = !!p.floor; this.applyFloor(); }
     if (p.dark !== undefined) { this.o.dark = p.dark; this.applyTheme(); this.domDirty = true; for (const L of this.labelPool.values()) L.txt = ''; }
     if (p.background) { this.o.colors.background = p.background; if (this.scene) this.scene.background.set(p.background); }
     if (Array.isArray(p.stateColors) && p.stateColors.length) {
@@ -1090,6 +1210,7 @@ class Viewer {
     if (q('labels')) q('labels').classList.toggle('on', this.opt.labels);
     if (q('heat')) q('heat').classList.toggle('on', this.opt.heat);
     if (q('proj')) q('proj').textContent = this.opt.proj === 'iso' ? '원근으로' : '아이소로';
+    if (q('floor')) q('floor').classList.toggle('on', this.opt.floor !== false);
     // 크기 패널 슬라이더·숫자를 지금 값으로 (기본값 단추·바깥에서 부른 setOptions 도 따라온다)
     const sz2 = this.dom.size;
     if (sz2) for (const k of ['rs', 'vs', 'ps', 'ts']) {

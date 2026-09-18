@@ -100,14 +100,26 @@ class 뷰어에_보탠_것(unittest.TestCase):
         self.assertIn("? new T.Mesh(new T.PlaneGeometry(W, D), this.mat(0xd6d9dc, { r: 0.9 }))", self.s)
 
     def test_레일이_평행_간격보다_좁다(self):
-        """실물 M14A: 평행 레일 사이 중앙값 0.30 m. 판 0.56 m 를 그대로 쓰면 83% 가 겹친다."""
-        self.assertIn("railScale: 0.45,", self.s, "기본이 1.0 이면 레일이 한 덩어리로 뭉친다")
+        """실물 M14A: 평행 레일 사이 중앙값 0.30 m. 판 0.56 m 를 그대로 쓰면 83% 가 겹친다.
+
+        ★숫자를 못박지 않는다 — 고객이 화면에서 맞춰 정한다(지금 0.20).
+          지켜야 할 것은 '판 0.56 m × 배수 < 0.30 m' 하나다.
+        """
+        m = re.search(r"railScale:\s*([\d.]+)", self.s)
+        self.assertIsNotNone(m, "railScale 기본값이 없다")
+        rs = float(m.group(1))
+        self.assertLess(0.56 * rs, 0.30,
+                        f"판 폭 {0.56 * rs:.2f} m 가 평행 간격 0.30 m 보다 넓다 — 한 줄로 뭉쳐 보인다")
         self.assertIn("this.local(0, 0.1 * rs, 0, len + 0.04, 0.05 * rs, 0.56 * rs);", self.s,
                       "판·바 둘 다 배수를 타야 한다")
         self.assertIn("buildRails() {", self.s, "굵기를 바꾸면 다시 세워야 한다")
 
-    def test_크기_패널이_3D_안에_있다(self):
-        # 고객: "아이소메트리 [안에] 만들어야되" — 2D 설정과 섞지 않는다
+    def test_크기_패널은_코드에_남아_있다(self):
+        """고객: "아이소메트리 [안에] 만들어야되" — 2D 설정과 섞지 않는다.
+
+        ★2026-09: 크기를 정하고 나서 패널은 **안 띄운다**(sizeUI:false). 코드는
+          남겨 둔다 — 다시 맞출 때 sizeUI 만 켜면 슬라이더가 그대로 나온다.
+        """
         self.assertIn('data-a="size"', self.s)
         self.assertIn("class = 'o3d-size'", self.s.replace('className', 'class'))
         for k in ("['rs', '레일 굵기'", "['vs', '차량'", "['ps', '설비'", "['ts', '글자'"):
@@ -115,10 +127,14 @@ class 뷰어에_보탠_것(unittest.TestCase):
         self.assertIn("[data-s=reset]", self.s, "기본값 단추")
         self.assertIn("this.emit('sizechange'", self.s, "화면이 저장할 수 있게 알려야 한다")
 
-    def test_크기_저장은_2D_와_따로(self):
-        self.assertIn("const V3D_SIZE_KEY = 'oht_world_v3d_size_v1';", self.h)
-        self.assertIn("inst.on('sizechange', v3dSizeSave);", self.h)
-        self.assertIn("...v3dSizeLoad(),", self.h, "다음에 열 때 그 크기로")
+    def test_크기는_2D_설정과_섞지_않는다(self):
+        """★2026-09: 크기를 고객이 정하고 패널을 닫으면서 '이 브라우저에 저장'
+        도 그만뒀다. 저장해 둔 옛 값이 정해 준 기본값을 덮으면 안 되기 때문이다
+        (자세한 것은 화면에서_정한_기본값). 여기서는 2D 설정(⚙)과 섞이지
+        않았다는 것만 본다 — 2D 는 px 배수, 3D 는 m 배수라 뜻이 다르다."""
+        self.assertNotIn("mapSettings.vehicleRadius", self.h.split("createOHT3D(box, {")[1][:900],
+                         "3D 에 2D 의 px 크기를 넘기면 안 된다")
+        self.assertIn("sizeUI: false,", self.h)
 
     def test_네_색만_준_옛_호출도_산다(self):
         self.assertIn("if (o.colors.state.length < ST_NAME.length)", self.s)
@@ -228,6 +244,124 @@ class 데이터층_실행(unittest.TestCase):
             self.skipTest("node 가 없다 (폐쇄망)")
         p = subprocess.run([node, os.path.join(HERE, "iso3d.js")], capture_output=True, text=True, timeout=120)
         self.assertEqual(p.returncode, 0, (p.stdout + p.stderr)[-1200:])
+
+
+class 화면에서_정한_기본값(unittest.TestCase):
+    """2026-09 고객이 화면에서 맞춰 보고 정한 값 — 이 값으로 열려야 한다.
+
+        레일 굵기 0.20 · 차량 0.40 · 설비 0.40 · 글자 0.80
+    '크기' 패널은 안 띄운다. 값이 사람마다 달라지면 같은 화면을 봤다고 말할 수
+    없다 — 다시 맞출 일이 생기면 sizeUI:true 로 슬라이더를 꺼내면 된다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.j = _read("static", "js", "oht3d", "oht3d.js")
+        cls.h = _read("dashboard.html")
+
+    def test_크기_기본값(self):
+        for k, v in (("railScale", "0.20"), ("vehicleScale", "0.40"),
+                     ("portScale", "0.40"), ("textScale", "0.80")):
+            self.assertRegex(self.j, r"%s:\s*%s\s*," % (k, re.escape(v)), k)
+
+    def test_크기_패널은_안_띄운다(self):
+        self.assertRegex(self.j, r"sizeUI:\s*false")
+        self.assertIn("if (o.sizeUI) this._buildSizePanel(r, o);", self.j)
+        # 단추도 sizeUI 일 때만
+        self.assertIn("${o.sizeUI ? '<button class=\"o3d-btn\" data-a=\"size\"", self.j)
+        self.assertIn("sizeUI: false,", self.h, "화면에서도 끈 채로 연다")
+
+    def test_옛_저장값이_기본값을_덮지_않는다(self):
+        """★'정책을 바꿨는데 화면이 그대로' 와 같은 결. 패널을 없앴으니
+        예전에 그 패널로 저장해 둔 값은 지우고 다시 안 읽는다."""
+        self.assertIn("localStorage.removeItem(V3D_SIZE_KEY)", self.h)
+        self.assertNotIn("v3dSizeLoad()", self.h)
+        self.assertNotIn("v3dSizeSave", self.h)
+
+    def test_패널은_닫힌_채로_연다(self):
+        self.assertRegex(self.j, r"panelOpen:\s*true")   # 뷰어 기본은 열림
+        self.assertIn("panelOpen: false,", self.h, "월드모델파생은 닫고 연다")
+        self.assertIn("o.panelOpen === false || r.clientWidth <= 700", self.j)
+
+    def test_패널_단추는_남는다(self):
+        """닫아 두되 못 열게 하면 안 된다 — 단추는 그대로."""
+        self.assertIn("data-a=\"panel\"", self.j)
+
+
+class 바닥_끄고_켜기(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.j = _read("static", "js", "oht3d", "oht3d.js")
+
+    def test_단추가_있다(self):
+        self.assertIn('data-a="floor"', self.j)
+        self.assertRegex(self.j, r"floor:\s*true")
+
+    def test_바닥판과_격자를_같이_끈다(self):
+        self.assertIn("this.floorParts = [floor];", self.j)
+        self.assertIn("this.floorParts.push(grid);", self.j)
+        i = self.j.index("applyFloor() {")
+        self.assertIn("m.visible = on", self.j[i:i + 260])
+
+    def test_존_바닥판은_안_건드린다(self):
+        """★존 바닥판이 존을 클릭하는 과녁이다 — 숨기면 존 선택이 안 된다."""
+        i = self.j.index("applyFloor() {")
+        self.assertNotIn("zoneMeshes", self.j[i:i + 260])
+
+    def test_다시_세우면_참조를_비운다(self):
+        """world 를 비우면 바닥도 같이 날아간다 — 옛 참조를 쥐고 있으면 안 된다."""
+        self.assertIn("this.hotMark = null;", self.j)
+
+    def test_setOptions_로도_된다(self):
+        self.assertIn("if (p.floor != null) { this.opt.floor = !!p.floor; this.applyFloor(); }", self.j)
+
+
+class 정체_지점_표시(unittest.TestCase):
+    """고객: "정체지점 클릭하면 위치좀 빨간색으로 표시좀 해주라 — 빨간색 뿌옇게"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.j = _read("static", "js", "oht3d", "oht3d.js")
+
+    def test_빨갛다(self):
+        i = self.j.index("_hotTex() {")
+        tex = self.j[i:i + 900]
+        self.assertIn("rgba(239,68,68,0.85)", tex, "가운데는 진한 빨강")
+        self.assertIn("rgba(239,68,68,0.00)", tex, "가장자리는 투명")
+
+    def test_뿌옇다(self):
+        """테두리가 또렷하면 '구역' 처럼 보여 존 바닥판과 헷갈린다."""
+        i = self.j.index("_hotTex() {")
+        self.assertIn("createRadialGradient", self.j[i:i + 900])
+        b = self.j[self.j.index("buildHotMark() {"):]
+        self.assertIn("transparent: true", b[:1400])
+        self.assertIn("depthWrite: false", b[:1400], "이게 없으면 레일·설비가 가려진다")
+
+    def test_정체가_있을_때만_표시한다(self):
+        """없는데 표시하면 '여기가 정체' 라고 거짓말하는 것이다."""
+        i = self.j.index("markHot() {")
+        body = self.j[i:i + 400]
+        self.assertIn("if (!h) { this.clearHot(); return false; }", body)
+        self.assertIn("this.hotAt = best ? [best[0], best[1], bc] : null;", self.j)
+
+    def test_정체_지점_단추가_표시까지_한다(self):
+        i = self.j.index("if (a === 'hot') {")
+        body = self.j[i:i + 400]
+        self.assertIn("this.hotView(this.sel)", body)
+        self.assertIn("this.markHot()", body)
+        self.assertLess(body.index("markHot"), body.index("flyTo"),
+                        "표시를 먼저 놓고 날아가야 도착했을 때 이미 보인다")
+
+    def test_전체를_누르면_지운다(self):
+        i = self.j.index("if (a === 'all')")
+        self.assertIn("this.clearHot()", self.j[i:i + 250])
+
+    def test_바닥판_위에_뜬다(self):
+        """존 바닥판(0.02)·격자(0.005) 아래 깔리면 안 보인다."""
+        i = self.j.index("buildHotMark() {")
+        self.assertIn("disc.position.y = 0.06;", self.j[i:i + 1400])
+
+
 
 
 if __name__ == "__main__":
