@@ -44,15 +44,18 @@ class 화면(unittest.TestCase):
                   encoding="utf-8") as f:
             cls.html = f.read()
 
-    def test_카드가_ALL_옆에_온다(self):
-        """위 줄(lead) 안, ALL 바로 다음이다 — 아래 FAB 묶음(rest) 이 아니다."""
-        lead = self.html.index('<div class="lead">')
-        hero = self.html.index('class="sys hero"')
-        j = self.html.index('id="sys-avatar"')
-        rest = self.html.index('<div class="rest">')
-        self.assertLess(lead, hero, "lead 묶음 밖으로 나갔다")
-        self.assertLess(hero, j, "ALL 보다 앞에 있다")
-        self.assertLess(j, rest, "아래 FAB 묶음으로 내려갔다")
+    def test_지금은_오프닝에_카드가_없다(self):
+        """★2026-09 — 오프닝을 새 시안으로 바꾸면서 뺐다
+        (고객: "아바타 2D는 일단 빼둬라").
+
+        관제 시스템이 아니라 새 탭으로 뜨는 다른 앱이라, 고르는 자리에 같이
+        두면 무엇을 고르는 화면인지가 흐려진다. '일단' 이라고 하셨으므로
+        서버 설정(/api/avatar)과 배선(wireAvatar)은 그대로 남겨 둔다 —
+        되살릴 때는 renderOpen 의 lead 에 카드를 넣고 wireAvatar() 를 부르면 된다.
+        """
+        self.assertNotIn('id="sys-avatar"', self.html, "카드가 아직 그려진다")
+        self.assertIn("async function wireAvatar()", self.html, "배선까지 지우면 안 된다")
+        self.assertIn('<div class="lead solo">', self.html, "ALL 이 혼자 한 줄을 쓴다")
 
     def test_아바타를_끄면_ALL_이_줄을_다_쓴다(self):
         """★숨기기만 하면 옆칸이 빈 채로 남아 ALL 이 반쪽 폭으로 쪼그라든다."""
@@ -61,12 +64,13 @@ class 화면(unittest.TestCase):
 
     def test_관제_전환을_타지_않는다(self):
         """★pickSystem 은 수집·화면을 통째로 그 시스템으로 바꾼다.
-        아바타는 앱이라 그 경로를 타면 안 된다 — 그래서 data-sys 가 없고,
-        클릭 배선도 data-sys 가 있는 것만 건다."""
+        아바타는 앱이라 그 경로를 타면 안 된다 — 클릭 배선이 data-sys 가
+        있는 것만 걸어야 한다. 카드를 되살려도 이 규칙은 그대로다."""
         self.assertIn("#sysgrid .sys[data-sys]", self.html)
-        card = self.html[self.html.index('id="sys-avatar"'):]
-        card = card[:card.index("</button>")]
-        self.assertNotIn("data-sys", card)
+        i = self.html.index("async function wireAvatar()")
+        body = self.html[i:i + 2000]
+        self.assertNotIn("pickSystem", body, "아바타가 관제 전환을 타면 안 된다")
+        self.assertIn("window.open(AVATAR.url", body, "새 탭으로 연다")
 
     def test_꺼져_있으면_알려_준다(self):
         """★안 그러면 눌렀을 때 빈 화면만 나오고 관제가 고장난 줄 안다."""

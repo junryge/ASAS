@@ -129,5 +129,95 @@ class OpeningScreen(unittest.TestCase):
         self.assertNotIn("amos_warn", self.html)
 
 
+
+class 새_오프닝_시안(unittest.TestCase):
+    """고객이 준 시안(LLM ANOMALY WATCH)으로 오프닝을 바꿨다.
+
+    눈썹 한 줄 · 큰 표제 · 설명 · 지표 띠 · 오른쪽 발광 구 · 테마 고르기.
+    ★시안은 검은 배경 한 벌이지만 이 화면은 테마가 넷이다 — 색을 박지 않고
+      토큰(--bg·--tx·--cy…)에서 꺼내 쓴다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _html()
+
+    def test_시안의_글이_그대로_있다(self):
+        for t in ("FAB OPERATIONS INTELLIGENCE", "LLM ANOMALY WATCH",
+                  "실시간 이상감지", "관제", "플랫폼"):
+            self.assertIn(t, self.h, t)
+
+    def test_발광_구가_있다(self):
+        self.assertIn('class="oorb"', self.h)
+        for c in ("core", "ring r1", "ring r2", "scan"):
+            self.assertIn(c, self.h, c)
+        # 클릭을 먹으면 그 아래 단추가 안 눌린다
+        self.assertIn("pointer-events:none;opacity:var(--oorb,1)", self.h)
+
+    def test_밝은_테마에서는_구를_옅게(self):
+        """어두운 시안 그대로 두면 밝은 바탕에 얼룩처럼 보인다."""
+        self.assertRegex(self.h, r':root\[data-theme="light"\]\{--oorb:\.\d+;')
+        self.assertRegex(self.h, r':root\[data-theme="contrast"\]\{--oorb:\.\d+;')
+
+    def test_가로_스크롤을_막았다(self):
+        """구가 상자 밖으로 나가 있어 안 막으면 아래에 가로 막대가 생긴다."""
+        i = self.h.index(".open{position:fixed")
+        self.assertIn("overflow-y:auto;overflow-x:hidden", self.h[i - 200:i + 200])
+
+    def test_지표는_실제_값으로_채운다(self):
+        """시안의 1,284 · 240ms · 3 은 그림에 박힌 숫자다 — 그대로 두면 거짓말이다."""
+        for i in ("opk-sys", "opk-lat", "opk-alert"):
+            self.assertIn('id="%s"' % i, self.h, i)
+        # 시안의 가짜 숫자가 **화면에** 남으면 안 된다 (주석에 적힌 설명은 괜찮다)
+        body = self.h.split("<body>", 1)[1]
+        for fake in ("1,284", "240 ms", ">3<"):
+            self.assertNotIn(fake, body.split('<div class="ostat">', 1)[1][:900], fake)
+        self.assertIn("async function openStats()", self.h)
+        j = self.h.index("async function openStats()")
+        body = self.h[j:j + 1200]
+        self.assertIn("/api/status?sys=ALL", body)
+        self.assertIn("/api/cases?all=1&sys=ALL", body)
+        self.assertIn("'–'", body, "못 받았으면 0 이 아니라 '–' (0 은 '이상 없음' 으로 읽힌다)")
+
+    def test_테마_넷을_오프닝에서_고른다(self):
+        i = self.h.index('class="othm"')
+        box = self.h[i:i + 700]
+        for t, nm in (("dark", "다크"), ("light", "화이트"),
+                      ("navy", "네이비"), ("contrast", "고대비")):
+            self.assertIn('data-theme="%s">%s<' % (t, nm), box, nm)
+
+    def test_테마_단추는_한_길을_쓴다(self):
+        """상단 바와 오프닝에 단추가 둘이다 — 한쪽만 갱신하면 다른 쪽 불이 남는다."""
+        self.assertIn("'#themechip button[data-theme], .othm button[data-theme]'", self.h)
+        self.assertIn("window.__setTheme(b.getAttribute('data-theme'))", self.h)
+
+    def test_아바타_카드를_뺐다(self):
+        """고객: "아바타 2D는 일단 빼둬라". 관제 시스템이 아니라 새 탭으로
+        뜨는 다른 앱이라, 고르는 자리에 같이 두면 무엇을 고르는 화면인지 흐려진다."""
+        self.assertNotIn('id="sys-avatar"', self.h)
+        i = self.h.index("function renderOpen()")
+        blk = self.h[i:i + 2200]
+        # 주석의 설명은 괜찮다 — 실제로 그리는 자리(템플릿 문자열)에만 없으면 된다
+        tpl = blk.split("$('#sysgrid').innerHTML = `", 1)[1].split("`;", 1)[0]
+        self.assertNotIn("AVATAR_2D", tpl, "오프닝이 아직 카드를 그린다")
+        self.assertNotIn("sys-avatar", tpl)
+        self.assertNotIn("wireAvatar();", blk, "renderOpen 이 아직 부른다")
+        # 다시 넣을 수 있게 배선은 남긴다 ('일단' 이라고 하셨다)
+        self.assertIn("async function wireAvatar()", self.h)
+
+    def test_ALL_이_혼자_한_줄을_쓴다(self):
+        """아바타를 뺐으니 옆칸이 빈다 — 가로로 길고 낮게."""
+        i = self.h.index("function renderOpen()")
+        self.assertIn('<div class="lead solo">', self.h[i:i + 900])
+        self.assertIn(".sysgrid .lead.solo .sys.hero{min-height:0", self.h)
+
+    def test_고르는_시스템은_여전히_여섯(self):
+        """ALL + FAB 다섯 — 서버 systems() 와 같아야 한다 (test_fabs 가 본다)."""
+        i = self.h.index("const SYSTEMS = [")
+        blk = self.h[i:self.h.index("];", i)]
+        for c in ("'ALL'", "'M14'", "'M14B'", "'M16A'", "'M16B'", "'M16HUB'"):
+            self.assertIn(c, blk, c)
+
+
 if __name__ == "__main__":
     unittest.main()
