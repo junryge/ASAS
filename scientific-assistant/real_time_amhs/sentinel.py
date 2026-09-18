@@ -439,7 +439,10 @@ class CaseStore:
         self.cfg = cfg or load_config()
         self.path = os.path.join(BASE_DIR, self.cfg.get("storage", {}).get("cases", "data/cases.json"))
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        self._lock = threading.Lock()
+        # ★RLock — save() 가 잠금을 잡는데, ingest·ack·mark_normal·close 는
+        #   **이미 잠금을 쥔 채** save() 를 부른다. 그냥 Lock 이면 제 잠금에
+        #   제가 걸려 서버가 그 자리에서 멎는다.
+        self._lock = threading.RLock()
         self.cases: list[dict] = self._load()
 
     def _load(self) -> list[dict]:
@@ -452,10 +455,32 @@ class CaseStore:
         return []
 
     def save(self) -> None:
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(self.cases, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, self.path)
+        """★잠금 + **제 임시파일**.
+
+        예전에는 둘 다 없었다. 임시파일 이름이 늘 'cases.json.tmp' 하나라,
+        LLM 자동 판단이 여럿 동시에 끝나면(_auto_judge 는 케이스마다 실을
+        하나씩 띄운다) 같은 파일에 같이 쓰다가, 먼저 끝난 실이 os.replace 로
+        그 파일을 걷어가고 나머지는 FileNotFoundError 로 터졌다 —
+        **12번 중 7번**이 그랬다(재 봤다). 터진 저장은 호출부가
+        '자동 판단 예외' 한 줄로만 찍고 넘어가, 그 판단이 파일에 안 남았다.
+        운 나쁘면 두 실의 글이 한 파일에 섞여 cases.json 자체가 깨진다.
+
+        ★속도 때문이 아니다 — 재 보니 저장 폭풍이 화면 요청을 늦추지는
+          않았다(json.dump 는 쓸 때마다 GIL 을 놓는다). 잃는 것은 판단이다.
+        """
+        with self._lock:
+            tmp = f"{self.path}.{os.getpid()}.{threading.get_ident()}.tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(self.cases, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, self.path)
+            except Exception:
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                raise
 
     # ── 조회 ──
     def active(self) -> list[dict]:

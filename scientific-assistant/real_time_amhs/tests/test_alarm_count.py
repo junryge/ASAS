@@ -16,12 +16,18 @@
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
+import threading
 import unittest
+from copy import deepcopy
 from datetime import datetime, timedelta
 
 from . import util  # noqa: F401
 import alarm_count
+import sentinel
+from lp_client import load_config
 
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 T0 = datetime(2026, 9, 16, 14, 0)
@@ -619,3 +625,88 @@ class 화면토막_실행(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 케이스_저장이_서로_밟지_않는다(unittest.TestCase):
+    """LLM 자동 판단은 케이스마다 실(thread)을 하나씩 띄우고, 끝나면 각자
+    store.save() 를 부른다.
+
+    예전에는 임시파일 이름이 늘 'cases.json.tmp' 하나였고 잠금도 없었다.
+    여럿이 동시에 끝나면
+      · 먼저 끝난 실이 os.replace 로 그 파일을 걷어가 나머지가
+        FileNotFoundError 로 터지고 (재 보니 12번 중 7번)
+      · 터진 저장은 호출부(_auto_judge)가 '자동 판단 예외' 한 줄만 찍어
+        **그 판단이 파일에 안 남았다**
+      · 운 나쁘면 두 실의 글이 한 파일에 섞여 cases.json 이 깨진다
+
+    ★속도 문제가 아니다 — 저장이 몰려도 화면 요청은 안 늦어졌다
+      (json.dump 는 쓸 때마다 GIL 을 놓는다). 잃는 것은 판단이다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="casesave")
+        cfg = deepcopy(load_config())
+        cfg.setdefault("storage", {})["cases"] = os.path.join(self.tmp, "cases.json")
+        self.store = sentinel.CaseStore(cfg)
+        self.store.cases = [
+            {"id": "C%03d" % i, "area": "M16HUB", "status": "진행", "level": "위험",
+             "timeline": [{"at": "2026-09-16T14:%02d:00" % k, "what": "감지"} for k in range(20)],
+             "llm": {"판단": "가" * 200, "확신도": 82}}
+            for i in range(200)
+        ]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_동시에_저장해도_안_터진다(self):
+        errs = []
+
+        def work():
+            try:
+                self.store.save()
+            except Exception as e:                       # noqa: BLE001
+                errs.append("%s: %s" % (type(e).__name__, e))
+
+        for _ in range(6):                               # 여러 판이 몰리는 상황
+            ths = [threading.Thread(target=work) for _ in range(12)]
+            for t in ths:
+                t.start()
+            for t in ths:
+                t.join()
+        self.assertEqual(errs, [], "동시 저장이 터진다 — 그만큼 판단이 안 남는다")
+
+    def test_동시에_저장해도_파일이_안_깨진다(self):
+        def work():
+            try:
+                self.store.save()
+            except Exception:                            # noqa: BLE001
+                pass
+
+        ths = [threading.Thread(target=work) for _ in range(16)]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join()
+        with open(self.store.path, encoding="utf-8") as f:
+            got = json.load(f)                           # 깨졌으면 여기서 터진다
+        self.assertEqual(len(got), 200)
+
+    def test_임시파일을_안_남긴다(self):
+        self.store.save()
+        left = [n for n in os.listdir(self.tmp) if n.endswith(".tmp")]
+        self.assertEqual(left, [], "임시파일이 쌓인다")
+
+    def test_이미_잠금을_쥔_채_불러도_안_멎는다(self):
+        """★ingest·ack·mark_normal·close 는 잠금을 쥔 채 save() 를 부른다.
+        그냥 Lock 이면 제 잠금에 제가 걸려 서버가 그 자리에서 멎는다."""
+        done = []
+
+        def work():
+            with self.store._lock:
+                self.store.save()
+            done.append(1)
+
+        t = threading.Thread(target=work, daemon=True)
+        t.start()
+        t.join(timeout=5)
+        self.assertEqual(done, [1], "잠금을 쥔 채 저장하면 멎는다 (RLock 이어야 한다)")
