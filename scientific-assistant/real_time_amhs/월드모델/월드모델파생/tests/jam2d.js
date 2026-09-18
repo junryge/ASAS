@@ -22,25 +22,24 @@ function z3dId(z) { return z.name || ('HID ' + z.id); }
 eval(grab(/const DEFAULT_MAP_SETTINGS = \{[\s\S]*?\n\};/).replace(/\bconst DEFAULT_MAP_SETTINGS\b/, 'var DEFAULT_MAP_SETTINGS'));
 var mapSettings = { ...DEFAULT_MAP_SETTINGS };
 eval(grab(/const JAM_R = 1200;[\s\S]*?\nfunction jamClusters\(radius\) \{[\s\S]*?\n\}/)
-     .replace(/\bconst JAM_R\b/, 'var JAM_R'));
+     .replace(/\bconst (JAM_R|JAM_KIND)\b/g, 'var $1'));
 eval(grab(/function drawJamBlobs\(ctx, toS, sc\) \{[\s\S]*?\n\}/));
 
-/* ── 무엇을 정체로 볼까 — ⚙ 설정 한 곳에서 나온다 ── */
-ok(mapSettings.jamStates === '7', '기본은 JAM 만 (2D 가 예전부터 보던 그대로)');
-ok(jamStateSet().has(7) && !jamStateSet().has(6), '기본으로는 OBS 를 안 센다');
-mapSettings.jamStates = '6,7';
-ok(jamStateSet().has(6) && jamStateSet().has(7), '고르면 OBS 도 센다');
-mapSettings.jamStates = '';
-ok(jamStateSet().has(7) && jamStateSet().size === 1, '다 지워도 JAM 만은 남는다 (빈 기준은 없다)');
-mapSettings.jamStates = '7,아무거나,6';
-ok(jamStateSet().size === 2, '숫자 아닌 것은 무시한다');
-/* ★아이소메트리는 이 설정을 **안 따른다** (고객: "아이소메트리 그냥 나둬라").
-   거기 '정체 지점' 은 예전대로 늘 JAM+OBS(st >= 3) 다. */
-ok(typeof jamStates3D === 'undefined', '3D 로 옮기는 길을 만들지 않았다');
-mapSettings.jamStates = '7';
-
-/* ── 묶는 크기 ── */
-ok(JAM_R === 1200, '도면 1 단위 = 10 mm → 1200 단위 = 12 m (3D 의 12 m 와 같게)');
+/* ── 정체 판정 — 종류마다 '몇 대 이상' 을 직접 적는다 ── */
+ok(mapSettings.jamMinJam === 1, '기본 JAM 1대 이상');
+ok(mapSettings.jamMinObs === 0, '기본 OBS 는 안 봄(0)');
+ok(mapSettings.jamMinStop === 0, '기본 멈춘 차도 안 봄(0)');
+ok(JAM_KIND.length === 3 && JAM_KIND[2].name === '멈춘 차', '멈춘 차가 제일 마지막');
+ok(JAM_KIND[0].has(7) && JAM_KIND[1].has(6), 'JAM=7 · OBS=6');
+ok(JAM_KIND[2].has(2) && JAM_KIND[2].has(8) && JAM_KIND[2].has(9), '멈춘 차 = 2·8·9');
+ok(jamKindOf(7) === 0 && jamKindOf(6) === 1 && jamKindOf(8) === 2, '코드 → 종류');
+ok(jamKindOf(1) === -1 && jamKindOf(3) === -1, '운행·가속은 어느 종류도 아니다');
+/* 빈칸·글자·음수는 0(안 봄)으로 */
+mapSettings.jamMinObs = '';   ok(jamMins()[1] === 0, '빈칸은 0');
+mapSettings.jamMinObs = 'abc'; ok(jamMins()[1] === 0, '글자는 0');
+mapSettings.jamMinObs = -5;   ok(jamMins()[1] === 0, '음수는 0');
+mapSettings.jamMinObs = '3';  ok(jamMins()[1] === 3, '글자 숫자도 읽는다');
+mapSettings.jamMinObs = 0;
 
 const put = (id, x, y, st) => { vehicleDisplay[id] = { dx: x, dy: y, state: st == null ? 7 : st }; };
 
@@ -48,12 +47,41 @@ const put = (id, x, y, st) => { vehicleDisplay[id] = { dx: x, dy: y, state: st =
 vehicleDisplay = {};
 ok(jamClusters(JAM_R).length === 0, '차가 없으면 무리도 없다');
 put('a', 0, 0, 1); put('b', 10, 10, 6); put('c', 20, 20, 2);
-ok(jamClusters(JAM_R).length === 0, '기본(7)에서는 운행·OBS·정지를 안 센다');
-/* 설정을 바꾸면 같은 차가 정체가 된다 */
-mapSettings.jamStates = '6,7';
-ok(jamClusters(JAM_R).length === 1 && jamClusters(JAM_R)[0].n === 1, 'OBS 를 켜면 그 차를 잡는다');
-mapSettings.jamStates = '7';
-ok(jamClusters(JAM_R).length === 0, '되돌리면 다시 안 잡는다');
+ok(jamClusters(JAM_R).length === 0, '기본(1·0·0)에서는 운행·OBS·정지를 안 센다');
+/* 0 을 올리면 같은 차가 정체가 된다 */
+mapSettings.jamMinObs = 1;
+ok(jamClusters(JAM_R).length === 1 && jamClusters(JAM_R)[0].n === 1, 'OBS 1대 이상으로 두면 잡는다');
+mapSettings.jamMinObs = 0;
+ok(jamClusters(JAM_R).length === 0, '0 으로 되돌리면 다시 안 잡는다');
+
+/* ── '몇 대 이상' — 못 넘으면 안 잡는다 ── */
+vehicleDisplay = {};
+for (let i = 0; i < 2; i++) put('t' + i, i * 100, 0, 7);
+mapSettings.jamMinJam = 3;
+ok(jamClusters(JAM_R).length === 0, 'JAM 3대 이상인데 2대면 안 잡는다');
+put('t2', 200, 0, 7);
+ok(jamClusters(JAM_R).length === 1 && jamClusters(JAM_R)[0].n === 3, '3대가 되면 잡는다');
+mapSettings.jamMinJam = 1;
+
+/* ── 종류가 섞이면 '어느 한 종류라도' ── */
+vehicleDisplay = {};
+for (let i = 0; i < 2; i++) put('x' + i, i * 100, 0, 7);        // JAM 2
+for (let i = 0; i < 5; i++) put('y' + i, 300 + i * 100, 0, 6);  // OBS 5
+mapSettings.jamMinJam = 3; mapSettings.jamMinObs = 5;
+let cc = jamClusters(JAM_R);
+ok(cc.length === 1, 'OBS 쪽이 넘어 한 무리로 잡힌다 (실제 ' + cc.length + ')');
+ok(cc[0].n === 7 && cc[0].kinds[0] === 2 && cc[0].kinds[1] === 5, '종류별 대수를 같이 센다');
+mapSettings.jamMinObs = 6;
+ok(jamClusters(JAM_R).length === 0, '둘 다 못 넘으면 안 잡는다');
+mapSettings.jamMinJam = 1; mapSettings.jamMinObs = 0;
+
+/* ── 셋 다 0 이면 아무것도 안 잡는다 ── */
+vehicleDisplay = {};
+for (let i = 0; i < 9; i++) put('z' + i, i * 100, 0, 7);
+mapSettings.jamMinJam = 0;
+ok(jamClusters(JAM_R).length === 0, '0 이면 아무 효과 없다');
+mapSettings.jamMinJam = 1;
+ok(jamClusters(JAM_R).length === 1, '되돌리면 다시 잡는다');
 
 /* ── 가까운 것끼리 한 무리 ── */
 vehicleDisplay = {};
@@ -72,6 +100,7 @@ ok(cl.length === 2, '멀리 떨어진 둘은 따로 (실제 ' + cl.length + ')')
 ok(cl[0].n === 4 && cl[1].n === 3, '많이 몰린 곳부터 나온다');
 ok(cl.reduce((s, c) => s + c.n, 0) === 7, '한 대도 빠지거나 겹쳐 세면 안 된다');
 /* ── 어느 HID 구역인가 ── */
+ok(cl[0].kinds && cl[0].kinds[0] === 4, '종류별 대수도 같이 준다');
 ok(cl[0].zone && cl[0].zone.id === 22, '먼 쪽 무리는 존 B (실제 ' + JSON.stringify(cl[0].zone && cl[0].zone.id) + ')');
 ok(cl[1].zone && cl[1].zone.id === 11, '가까운 쪽 무리는 존 A');
 ok(zoneAt(300, 300) && zoneAt(300, 300).id === 11, '상자 안이면 그 존');
@@ -142,13 +171,16 @@ drawJamBlobs(ctx, toS, 0.01);
 ok(!ctx.log.calls.some(x => x[0] === 'arc'), '화면 밖은 안 그린다');
 
 /* ── 설정 한 곳이 셋을 같이 몬다 ── */
-ok(/id="ms-jamStates"/.test(H), '⚙ 설정에 정체 판정 줄이 있다');
-ok(!/jamStates3D/.test(H), '아이소메트리로 넘기는 길이 남아 있으면 안 된다');
+ok(/zone: zoneAt\(bx, by\)/.test(H), '무리마다 구역을 붙인다');
+ok(!/jamStates/.test(H), '옛 문자열 설정이 남아 있으면 안 된다');
+for (const i of ['ms-jamMinJam', 'ms-jamMinObs', 'ms-jamMinStop'])
+  ok(H.includes('id="' + i + '"'), '⚙ 에 ' + i + ' 칸이 있다');
+ok(/<input type="number" id="ms-jamMinJam"/.test(H), '고르는 상자가 아니라 **직접 적는** 숫자 칸');
+ok(H.indexOf('id="ms-jamMinStop"') > H.indexOf('id="ms-jamMinObs"'), '멈춘 차가 제일 마지막');
 ok(/panel: false,/.test(H), '아이소메트리 안 패널은 아예 안 만든다 (사이드바 하나로 본다)');
 
 /* ── 어느 HID 구역인가 ── */
 ok(/function zoneAt\(x, y\)/.test(H), '구역 찾는 함수가 있다');
-ok(/out\.push\(\{ x: bx, y: by, n: bc, zone: zoneAt\(bx, by\) \}\)/.test(H), '무리마다 구역을 붙인다');
 ok(/c\.zone \? z3dId\(c\.zone\) : '구역 밖'/.test(H), '모르면 "구역 밖" 이라고 적는다 (엉뚱한 이름보다 낫다)');
 ok(/_zoneBoxG === railGraph/.test(H), '상자는 레이아웃마다 한 번만 만든다');
 

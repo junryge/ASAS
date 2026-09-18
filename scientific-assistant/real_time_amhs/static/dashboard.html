@@ -1504,8 +1504,25 @@
           title="고른 모델로 한 번 불러 보고, 되면 저장합니다 — 틀린 이름은 저장하지 않습니다">시험 후 저장</button>
         <span class="note" id="lm-msg"></span>
       </div>
-      <p class="note" style="margin:0">지금 <b style="color:var(--tx2)" id="lm-cur">—</b>
+      <p class="note" style="margin:0 0 14px">지금 <b style="color:var(--tx2)" id="lm-cur">—</b>
         · 목록 출처 <span class="dim" id="lm-url">—</span></p>
+
+      <h4 style="margin:0 0 6px;font-size:12px;color:var(--tx2);letter-spacing:.5px">
+        4-LLM 파이프라인 <span class="note" id="lr-note"></span></h4>
+      <p class="note" style="margin:0 0 8px">분석 탭의 네 단계가 각각 다른 모델을 씁니다.
+        <b style="color:var(--tx2)">게이트웨이에서 없어진 이름이면 그 단계만 매번 실패</b>하므로,
+        위 <b>↻ 목록</b> 으로 다시 받아 고른 뒤 저장하세요.
+        저장하면 config.json 에 적혀 재시작해도 유지됩니다.</p>
+      <table class="pol"><thead><tr>
+        <th style="width:190px">단계</th><th>모델</th>
+      </tr></thead><tbody id="lr-rows">
+        <tr><td colspan="2" class="empty">불러오는 중…</td></tr>
+      </tbody></table>
+      <div class="row" style="margin-top:12px">
+        <button class="act pri" id="lr-save"
+          title="네 단계를 각각 한 번씩 불러 보고, 다 되면 저장합니다 — 하나라도 안 되면 저장하지 않습니다">시험 후 저장</button>
+        <span class="note" id="lr-msg"></span>
+      </div>
     </div>
   </div>
 
@@ -3341,11 +3358,88 @@ async function loadLlmModel(force){
     lmMsg(force ? '목록을 다시 받는 중…' : '');
     const d = await apiRetry('/api/llm/model' + (force ? '?force=1' : ''));
     lmFill(d);
+    lrFill(d);                       // 파이프라인 네 단계도 같은 응답으로 채운다
     if(force) lmMsg('');
   }catch(e){
     $('#lmnote').textContent = '— 불러오기 실패';
     lmMsg(String(e.message || e), true);
   }
+}
+
+/* 4-LLM 파이프라인 — 단계마다 모델이 다르다. 없어진 이름이면 그 단계만
+   매번 실패하므로, 목록을 다시 받아 고르고 저장할 수 있어야 한다. */
+let LM_ROLES = [];
+function lrFill(d){
+  LM_ROLES = d.roles || [];
+  const names = (d.items || []).map(m => m.id);
+  const tb = $('#lr-rows');
+  if(!tb) return;
+  if(!LM_ROLES.length){ tb.innerHTML = '<tr><td colspan="2" class="empty">단계 정보 없음</td></tr>'; return; }
+  tb.innerHTML = LM_ROLES.map(r => {
+    const opts = names.slice();
+    // 지금 값이 목록에 없어도 골라 둔다 — 안 그러면 화면이 남의 값을 가리킨다
+    if(r.model && !opts.includes(r.model)) opts.unshift(r.model);
+    const bad = r.ok === false;
+    return `<tr>
+      <td>${esc(r.icon || '')} ${esc(r.name || r.id)}</td>
+      <td>
+        <select data-lr="${esc(r.id)}" style="min-width:290px;background:var(--panel2);
+                border:1px solid ${bad ? 'var(--wn)' : 'var(--line2)'};color:var(--tx);
+                border-radius:7px;padding:5px 8px;font:inherit">
+          ${opts.map(n => `<option value="${esc(n)}"${n === r.model ? ' selected' : ''}>${esc(n)}</option>`).join('')}
+          <option value="${LM_CUSTOM}">직접 입력…</option>
+        </select>
+        <input data-lrtxt="${esc(r.id)}" placeholder="모델 이름을 직접 입력"
+               style="display:none;margin-left:6px;min-width:250px;background:var(--panel2);
+                      border:1px solid var(--line2);color:var(--tx);border-radius:7px;
+                      padding:5px 8px;font:inherit">
+        ${bad ? '<span class="note" style="color:var(--wn);margin-left:8px">목록에 없음 — 이 단계는 실패합니다</span>' : ''}
+      </td></tr>`;
+  }).join('');
+  tb.querySelectorAll('select[data-lr]').forEach(sel => {
+    sel.onchange = () => {
+      const t = tb.querySelector(`input[data-lrtxt="${sel.dataset.lr}"]`);
+      if(!t) return;
+      const on = sel.value === LM_CUSTOM;
+      t.style.display = on ? '' : 'none';
+      if(on && !t.value) t.value = '';
+    };
+  });
+  const bad = LM_ROLES.filter(r => r.ok === false).length;
+  $('#lr-note').textContent = bad ? `— ${bad}개 단계가 목록에 없습니다` : '';
+}
+
+function lrPicked(){
+  const tb = $('#lr-rows'), out = {};
+  if(!tb) return out;
+  tb.querySelectorAll('select[data-lr]').forEach(sel => {
+    const id = sel.dataset.lr;
+    const t = tb.querySelector(`input[data-lrtxt="${id}"]`);
+    out[id] = (sel.value === LM_CUSTOM) ? ((t && t.value) || '').trim() : sel.value;
+  });
+  return out;
+}
+
+async function saveLlmRoles(){
+  const roles = lrPicked();
+  const empty = Object.keys(roles).filter(k => !roles[k]);
+  if(empty.length){ $('#lr-msg').textContent = '모델을 안 고른 단계가 있습니다'; $('#lr-msg').style.color='var(--wn)'; return; }
+  const b = $('#lr-save');
+  b.disabled = true;
+  $('#lr-msg').style.color = 'var(--tx3)';
+  $('#lr-msg').textContent = '네 단계를 각각 불러 보는 중…';
+  try{
+    // test:true — 하나라도 안 되면 서버가 전부 되돌린다
+    const r = await post('/api/llm/model', {roles, save: true, test: true});
+    if(r.error){ $('#lr-msg').textContent = r.error; $('#lr-msg').style.color='var(--wn)'; }
+    else{
+      $('#lr-msg').textContent = r.saved ? '저장했습니다 — 다음 분석부터 이 모델로 돕니다'
+                                         : '적용했습니다 (config.json 저장은 실패)';
+      $('#lr-msg').style.color = r.saved ? 'var(--tx3)' : 'var(--wn)';
+      await loadLlmModel(false);
+    }
+  }catch(e){ $('#lr-msg').textContent = String(e.message || e); $('#lr-msg').style.color='var(--wn)'; }
+  finally{ b.disabled = false; }
 }
 
 async function saveLlmModel(){
@@ -3374,6 +3468,7 @@ function initLlmModel(){
     const sel = $('#lm-sel'); if(sel) sel.onchange = lmToggleCustom;
     const rl = $('#lm-reload'); if(rl) rl.onclick = () => loadLlmModel(true);
     const sv = $('#lm-save'); if(sv) sv.onclick = saveLlmModel;
+    const rs = $('#lr-save'); if(rs) rs.onclick = saveLlmRoles;
   }
   loadLlmModel(false);
 }

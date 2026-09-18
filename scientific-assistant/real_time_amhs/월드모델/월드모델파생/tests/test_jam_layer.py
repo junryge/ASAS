@@ -84,19 +84,46 @@ class 그리기(unittest.TestCase):
         self.assertIn("createRadialGradient", body)
         self.assertIn("rgba(239,68,68,0.00)", body, "가장자리는 투명이어야 한다")
 
-    def test_무엇을_정체로_볼지_고를_수_있다(self):
-        """고객: "state === 7(JAM) 이거 설정 할 수 있는 거 만들어줄래 옵션" ·
-        "2D, 유사3D, 아이소메트리 설정 할 수 있는데 만들어주라".
+    def test_몇_대_이상인지_직접_적는다(self):
+        """고객: "정체 판정 직접 숫자로 기입하게 해야지 · 니가 정하면 우짜노 ·
+        0이면 아무 효과 없는거구 · 멈춰선차는 제일 마지막 숫자로 하고".
 
-        ★예전에는 아이소메트리만 **늘 JAM+OBS**(st >= 3) 로 잡았다. 2D 는 JAM 만
-          봤으니 같은 순간을 두 화면이 다르게 잡았다 — 그게 "아이소메트리 정체
-          지점을 어떻게 잡는 거야" 의 답이다. 이제 설정 한 값이 셋을 같이 몬다."""
-        self.assertRegex(self.h, r"jamStates:\s*'7',", "기본은 JAM 만 (2D 가 보던 그대로)")
-        self.assertIn('id="ms-jamStates"', self.h, "⚙ 설정에 고르는 줄이 있어야 한다")
-        # 2D·유사3D
+        고른 목록(드롭다운)이 아니라 **직접 적는 숫자 세 칸**이다."""
+        for k, v in (("jamMinJam", "1"), ("jamMinObs", "0"), ("jamMinStop", "0")):
+            self.assertRegex(self.h, r"%s:\s*%s," % (k, v), k + " 기본값")
+        for i in ("ms-jamMinJam", "ms-jamMinObs", "ms-jamMinStop"):
+            self.assertIn('<input type="number" id="%s"' % i, self.h,
+                          i + " 는 고르는 상자가 아니라 적는 칸이어야 한다")
+        self.assertNotIn("jamStates", self.h, "옛 문자열 설정이 남아 있다")
+        self.assertGreater(self.h.index('id="ms-jamMinStop"'), self.h.index('id="ms-jamMinObs"'),
+                           "멈춘 차가 제일 마지막")
+        self.assertIn("{ key: 'jamMinStop', name: '멈춘 차'", self.h)
+
+    def test_0_이면_아무_효과_없다(self):
         i = self.h.index("function jamClusters(")
-        self.assertIn("const hit = jamStateSet();", self.h[i:i + 500])
-        self.assertIn("if (hit.has(v.state)) js.push(v);", self.h[i:i + 500])
+        body = self.h[i:i + 700]
+        self.assertIn("if (!mins.some(n => n > 0)) return [];", body,
+                      "셋 다 0 이면 아무것도 안 잡아야 한다")
+        self.assertIn("if (k >= 0 && mins[k] > 0) js.push", body,
+                      "0 인 종류는 후보에도 안 넣는다")
+        j = self.h.index("function jamMins()")
+        self.assertIn("(isNaN(n) || n < 0) ? 0 : n", self.h[j:j + 400],
+                      "빈칸·글자·음수도 0 으로")
+
+    def test_어느_한_종류라도_넘으면_정체(self):
+        """3·5·0 = JAM 3대 이상 **또는** OBS 5대 이상."""
+        i = self.h.index("function jamClusters(")
+        self.assertIn("if (!cnt.some((c, i) => mins[i] > 0 && c >= mins[i])) continue;",
+                      self.h[i:i + 2400])
+
+    def test_저장된다(self):
+        """★⚙ 의 다른 값과 같은 길로 저장된다 — 저장 + 적용이면 끝."""
+        i = self.h.index("function applyMapSettings()")
+        body = self.h[i:i + 700]
+        self.assertIn("for (const k of Object.keys(DEFAULT_MAP_SETTINGS))", body)
+        self.assertIn("typeof DEFAULT_MAP_SETTINGS[k] === 'number'", body,
+                      "숫자 칸은 숫자로 읽어야 한다")
+        self.assertIn("saveMapSettings();", body)
     def test_아이소메트리는_안_따른다(self):
         """고객: "아이소메트리 그냥 나둬라". 거기 '정체 지점' 은 예전대로
         늘 JAM+OBS(st >= 3) 다 — ⚙ 설정이 거기까지 가지 않는다."""
@@ -123,7 +150,7 @@ class 어느_HID_구역인가(unittest.TestCase):
         self.assertIn("_zoneBoxG === railGraph", self.h, "레이아웃마다 한 번만 만들어야 한다")
 
     def test_2D_무리마다_구역을_붙인다(self):
-        self.assertIn("out.push({ x: bx, y: by, n: bc, zone: zoneAt(bx, by) });", self.h)
+        self.assertIn("zone: zoneAt(bx, by) });", self.h)
         self.assertIn("c.zone ? z3dId(c.zone) : '구역 밖'", self.h,
                       "모르면 '구역 밖' — 엉뚱한 이름을 적는 게 더 나쁘다")
 
@@ -139,10 +166,6 @@ class 어느_HID_구역인가(unittest.TestCase):
         self.assertIn("for (const [z, n] of zc) if (n > bn) { bn = n; bz = z; }", self.j)
         self.assertIn("'구역 밖'", self.j)
 
-    def test_빈_기준은_없다(self):
-        """다 지워 놓으면 아무것도 안 잡는 화면이 된다 — JAM 만은 남긴다."""
-        i = self.h.index("function jamStateSet()")
-        self.assertIn("if (!out.size) out.add(7);", self.h[i:i + 400])
 
     def test_몇_군데든_다_그린다(self):
         """★도는 횟수를 임의로 자르면 정체가 많은 날 몇 군데가 말없이 빠진다."""

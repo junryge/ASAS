@@ -966,13 +966,26 @@ def _persist_score_policy() -> str:
 #   하는지도, 어디를 고쳐야 하는지도 알 수 없었다(config.json 을 직접 고치고
 #   서버를 재시작해야 했다). 게이트웨이가 /v1/models 로 알려 주므로 그대로
 #   보여 주고 고르게 한다. 고른 값은 config.json 에 적어 재시작해도 남는다.
-def _persist_llm_model(model: str) -> str:
-    """고른 모델 이름을 config.json 의 llm.model 에 적는다 → 오류 글."""
+def _persist_llm_model(model: str | None = None, roles: dict | None = None) -> str:
+    """고른 모델을 config.json 에 적는다 → 오류 글.
+
+    · model  — llm.model (판단·리포트에 쓰는 한 개)
+    · roles  — llm.analysis.roles.{p1,p2,p3,final}.model (4-LLM 파이프라인)
+    둘 다 같은 파일이라 **한 번에 읽고 한 번에 쓴다**. 따로 쓰면 뒤에 쓴 쪽이
+    앞의 것을 덮는다 (실제로 그런 사고가 흔하다).
+    """
     from lp_client import CONFIG_PATH
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
             disk = json.load(f)
-        disk.setdefault("llm", {})["model"] = model
+        lc = disk.setdefault("llm", {})
+        if model:
+            lc["model"] = model
+        if roles:
+            rr = lc.setdefault("analysis", {}).setdefault("roles", {})
+            for sid, m in roles.items():
+                # ★통째로 갈아끼우지 않는다 — 각 단계의 _doc 설명이 날아간다
+                rr.setdefault(sid, {})["model"] = m
         tmp = CONFIG_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(disk, f, ensure_ascii=False, indent=2)
@@ -981,6 +994,14 @@ def _persist_llm_model(model: str) -> str:
         return ""
     except Exception as e:                              # noqa: BLE001
         return f"{type(e).__name__}: {e}"
+
+
+def _apply_roles(roles: dict) -> None:
+    """메모리 CFG 에 단계 모델을 넣는다 (다음 분석부터 이 모델로 나간다)."""
+    a = CFG.setdefault("llm", {}).setdefault("analysis", {})
+    rr = a.setdefault("roles", {})
+    for sid, m in roles.items():
+        rr.setdefault(sid, {})["model"] = m
 
 
 @app.route("/api/llm/model", methods=["GET", "POST"])
@@ -1001,6 +1022,15 @@ def api_llm_model():
                                             force=request.args.get("force") == "1")
         cur = lc.get("model") or ""
         names = [m["id"] for m in items]
+        # 4-LLM 파이프라인 단계별 모델 (분석 탭). 단계 정의는 analysis.STAGES 에 있다
+        import analysis
+        roles = []
+        for sid, st in analysis.STAGES.items():
+            m = analysis._stage_model(CFG, sid)
+            roles.append({"id": sid, "name": st["name"], "icon": st["icon"],
+                          "model": m,
+                          # 그 모델이 지금 게이트웨이에 있나 — 없으면 화면이 빨갛게
+                          "ok": (m in names) if names else None})
         return jsonify({
             "model": cur, "url": lc.get("url") or "",
             "models_url": llm_client.models_url(CFG),
@@ -1008,9 +1038,56 @@ def api_llm_model():
             # 지금 값이 목록에 있나 — 없으면 화면이 빨갛게 알려 준다
             "ok_now": (cur in names) if names else None,
             "enabled": bool(lc.get("enabled", True)),
+            "roles": roles,
         })
 
     b = request.get_json(silent=True) or {}
+
+    # ── 4-LLM 파이프라인 단계별 모델만 바꾸는 요청 ──────────────────
+    if b.get("roles") is not None:
+        import analysis
+        raw = b.get("roles") or {}
+        if not isinstance(raw, dict):
+            return jsonify({"error": "roles 는 {단계: 모델이름} 이어야 합니다"}), 400
+        roles = {}
+        for sid, m in raw.items():
+            if sid not in analysis.STAGES:
+                return jsonify({"error": f"모르는 단계: {sid}"}), 400
+            m = str(m or "").strip()
+            if not m:
+                return jsonify({"error": f"{sid} 모델이 비었습니다"}), 400
+            if len(m) > 200:
+                return jsonify({"error": f"{sid} 모델 이름이 너무 깁니다"}), 400
+            roles[sid] = m
+        if not roles:
+            return jsonify({"error": "바꿀 단계가 없습니다"}), 400
+        prev = {sid: analysis._stage_model(CFG, sid) for sid in roles}
+        _apply_roles(roles)
+        if b.get("test"):
+            # ★서로 다른 모델을 **각각** 불러 본다. 하나만 확인하면 나머지가
+            #   없어진 이름이어도 그대로 저장돼 그 단계만 매번 실패한다.
+            for sid, m in roles.items():
+                _, err = llm_client.chat([{"role": "user", "content": "핑"}],
+                                         {**CFG, "llm": {**lc, "model": m}}, max_tokens=8)
+                if err:
+                    _apply_roles(prev)      # 하나라도 안 되면 전부 되돌린다
+                    return jsonify({"error": f"{analysis.STAGES[sid]['name']} — "
+                                             f"{m} 로는 호출이 안 됩니다: {err}",
+                                    "stage": sid, "applied": False}), 400
+        saved, serr = False, ""
+        if b.get("save", True):
+            serr = _persist_llm_model(roles=roles)
+            saved = not serr
+        print("[LLM] 파이프라인 모델 → "
+              + " · ".join(f"{k}={v}" for k, v in roles.items())
+              + (" · 저장됨" if saved else "")
+              + (f" · 저장 실패: {serr}" if serr else ""))
+        out = {"roles": roles, "applied": True, "saved": saved}
+        if serr:
+            out["error"] = f"config.json 저장 실패 — {serr} (메모리에는 적용됨)"
+            return jsonify(out), 500
+        return jsonify(out)
+
     model = str(b.get("model") or "").strip()
     if not model:
         return jsonify({"error": "model 이 비었습니다"}), 400
@@ -1029,7 +1106,7 @@ def api_llm_model():
 
     saved, serr = False, ""
     if b.get("save", True):
-        serr = _persist_llm_model(model)
+        serr = _persist_llm_model(model=model)
         saved = not serr
     print(f"[LLM] 모델 → {model}" + (" · 저장됨" if saved else "")
           + (f" · 저장 실패: {serr}" if serr else ""))

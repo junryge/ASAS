@@ -573,15 +573,16 @@ const DEFAULT_MAP_SETTINGS = {
      ★삼각형(모양·색)은 그대로다. 점은 그 위에 얹는 표시일 뿐이고, 차의 색은
        여전히 상태(공차·적재·OBS·정지·JAM)가 정한다 — 캡처에서도 노란 삼각형,
        하늘 삼각형 안에 똑같이 검은 점이 찍혀 있다. */
-  /* ★무엇을 '정체' 로 볼까 — 2D · 유사3D · 아이소메트리가 **같은 값**을 쓴다.
-       UDP STATUS 코드를 쉼표로 적는다:
-         1 RUN · 2 STOP · 3 ACCEL · 4 DECEL · 5 CURVE
-         6 OBS_BZ_STOP · 7 JAM · 8 HT_STOP · 9 E84_TIMEOUT
-     기본은 '7' (JAM 만) — 예전부터 2D 가 보던 그대로다.
-     ★아이소메트리는 **안 따른다** (고객: "아이소메트리 그냥 나둬라"). 거기
-       '정체 지점' 은 예전대로 늘 JAM+OBS(st >= 3) 다. 둘을 맞추고 싶으면
-       여기를 '6,7' 로 고르면 된다. */
-  jamStates:      '7',
+  /* ★정체 판정 — **몇 대 이상 모이면** 정체로 볼까. 종류마다 직접 적는다.
+       0 = 그 종류는 **안 본다**. 셋 다 0 이면 정체 표시가 아무것도 안 나온다.
+       한 무리 안에서 **어느 한 종류라도** 그 수를 넘으면 정체로 잡는다.
+         예) 1 0 0 → JAM 이 한 대라도 있으면 정체
+             3 5 0 → JAM 세 대 이상 **또는** OBS 다섯 대 이상
+     ★2D 와 유사3D 가 이 값을 같이 쓴다. 아이소메트리는 **안 따른다**
+       (고객: "아이소메트리 그냥 나둬라") — 거기는 예전대로 JAM+OBS 다. */
+  jamMinJam:      1,              // JAM       (STATUS 7)
+  jamMinObs:      0,              // OBS       (STATUS 6)
+  jamMinStop:     0,              // 멈춘 차   (STATUS 2 · 8 · 9)  ← 제일 마지막
   carryDot:       'on',           // 'on' | 'off'
   dotLoaded:      '#000000',      // 들고 감 — 검은 점
   dotAssign:      '#ffffff',      // 가지러 감 — 흰 점
@@ -1546,18 +1547,30 @@ function vehicleHeading(v, g, toS) {
      12 m 와 같은 크기로 맞췄다 — 두 화면이 같은 것을 '한 무리' 라고 해야 한다. */
 const JAM_R = 1200;                 // 도면 단위 (= 12 m)
 
-/* 무엇을 '정체' 로 셀까 — ⚙ 설정의 '정체로 볼 상태' 에서 나온다.
-   ★2D 와 유사3D 만 쓴다. 아이소메트리는 제 기준(JAM+OBS)을 그대로 쓴다. */
-function jamStateSet() {
-  const out = new Set();
-  for (const t of String(mapSettings.jamStates || '7').split(',')) {
-    const n = parseInt(t, 10);
-    if (!isNaN(n)) out.add(n);
-  }
-  if (!out.size) out.add(7);        // 다 지워 놨으면 JAM 만이라도
-  return out;
+/* 정체 판정 — ⚙ 설정의 '몇 대 이상' 세 칸에서 나온다.
+   ★2D 와 유사3D 만 쓴다. 아이소메트리는 제 기준(JAM+OBS)을 그대로 쓴다.
+   ★순서가 화면 순서다 — 멈춘 차가 제일 마지막. */
+const JAM_KIND = [
+  { key: 'jamMinJam',  name: 'JAM',     has: st => st === 7 },
+  { key: 'jamMinObs',  name: 'OBS',     has: st => st === 6 },
+  { key: 'jamMinStop', name: '멈춘 차', has: st => st === 2 || st === 8 || st === 9 },
+];
+function jamMins() {
+  return JAM_KIND.map(k => {
+    const n = parseInt(mapSettings[k.key], 10);
+    return (isNaN(n) || n < 0) ? 0 : n;      // 0·빈칸·음수 = 안 봄
+  });
 }
-function isJam(v) { return jamStateSet().has(v.state); }
+function jamKindOf(state) {
+  for (let i = 0; i < JAM_KIND.length; i++) if (JAM_KIND[i].has(state)) return i;
+  return -1;
+}
+/* 이 차를 세기는 하나 — 그 종류를 '안 봄(0)' 으로 뒀으면 후보에도 안 넣는다.
+   (몇 대 이상인지는 무리를 만든 **뒤에** 따진다.) */
+function isJam(v) {
+  const i = jamKindOf(v.state);
+  return i >= 0 && jamMins()[i] > 0;
+}
 
 /* 그 자리가 어느 HID 구역인가 — 존의 레인 노드로 테두리 상자를 만들어 둔다.
    ★한 번만 만든다. 존 187개 × 레인 수천 개를 프레임마다 훑으면 화면이 끊긴다.
@@ -1598,14 +1611,17 @@ function zoneAt(x, y) {
 }
 
 function jamClusters(radius) {
+  const mins = jamMins();
+  if (!mins.some(n => n > 0)) return [];      // 셋 다 0 — 아무것도 안 잡는다
   const js = [];
-  const hit = jamStateSet();
   for (const vid in vehicleDisplay) {
     const v = vehicleDisplay[vid];
-    if (hit.has(v.state)) js.push(v);
+    const k = jamKindOf(v.state);
+    if (k >= 0 && mins[k] > 0) js.push({ dx: v.dx, dy: v.dy, k });
   }
   if (!js.length) return [];
   const used = new Array(js.length).fill(false);
+  const counted = new Array(js.length).fill(false);   // 한 대를 두 무리에서 세지 않게
   const out = [];
   /* 제일 많이 몰린 곳부터 집어내고, 그 무리는 빼고 다시 센다.
      ★도는 횟수를 임의로 자르지 않는다. 한 번 돌 때마다 최소 한 대는 빠지므로
@@ -1626,7 +1642,17 @@ function jamClusters(radius) {
     if (bi < 0) break;
     for (let k = 0; k < js.length; k++)
       if (!used[k] && Math.hypot(js[bi].dx - js[k].dx, js[bi].dy - js[k].dy) <= radius) used[k] = true;
-    out.push({ x: bx, y: by, n: bc, zone: zoneAt(bx, by) });
+    /* ★'몇 대 이상' 은 여기서 따진다. 한 무리 안에서 **어느 한 종류라도**
+       그 수를 넘으면 정체다 (3 5 0 = JAM 3대 이상 **또는** OBS 5대 이상).
+       못 넘으면 그 무리는 버린다 — 이미 used 로 빠졌으니 다시 묶이지 않는다. */
+    const cnt = [0, 0, 0];
+    for (let k = 0; k < js.length; k++)
+      if (used[k] && !counted[k] && Math.hypot(js[bi].dx - js[k].dx, js[bi].dy - js[k].dy) <= radius) {
+        cnt[js[k].k]++; counted[k] = true;
+      }
+    if (!cnt.some((c, i) => mins[i] > 0 && c >= mins[i])) continue;
+    out.push({ x: bx, y: by, n: cnt.reduce((a, b) => a + b, 0), kinds: cnt,
+               zone: zoneAt(bx, by) });
   }
   return out;
 }
@@ -1656,9 +1682,12 @@ function drawJamBlobs(ctx, toS, sc) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.font = `700 ${fs}px sans-serif`;
-      ctx.strokeText(`${c.n}대`, sx, sy);
+      // 한 종류면 'N대', 섞였으면 무엇이 몇 대인지 (JAM 4 · OBS 2)
+      const kk = (c.kinds || []).map((n, i) => n ? `${JAM_KIND[i].name} ${n}` : '').filter(Boolean);
+      const num = kk.length > 1 ? kk.join(' · ') : `${c.n}대`;
+      ctx.strokeText(num, sx, sy);
       ctx.fillStyle = '#b91c1c';
-      ctx.fillText(`${c.n}대`, sx, sy);
+      ctx.fillText(num, sx, sy);
       // 어느 HID 구역인가 — 대수 **위에** 붙인다 (고객: "어디 HID인지 위에 표시해줘")
       const nm = c.zone ? z3dId(c.zone) : '구역 밖';
       ctx.font = `700 ${Math.round(fs * 0.92)}px sans-serif`;
@@ -3602,24 +3631,23 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
     </section>
 
     <section class="ms-sec">
-      <h4>정체로 볼 상태 <small>2D · 유사 3D</small></h4>
-      <p class="ms-note">위 표시 줄의 <b>정체</b> 단추가 무엇을 잡을지 정합니다 —
-        <b>2D 와 유사 3D 가 이 값을 같이 씁니다</b>.<br>
-        괄호 안은 UDP STATUS 코드입니다 —
-        2 STOP · 6 OBS_BZ_STOP · 7 JAM · 8 HT_STOP · 9 E84_TIMEOUT.</p>
-      <div class="ms-row"><label>정체 판정</label>
-        <span><select id="ms-jamStates">
-            <option value="7">JAM 만 (7) — 기본</option>
-            <option value="6,7">JAM + OBS (6, 7)</option>
-            <option value="2,7">JAM + 정지 (2, 7)</option>
-            <option value="2,6,7">JAM + OBS + 정지 (2, 6, 7)</option>
-            <option value="2,6,7,8,9">멈춰 선 차 전부 (2, 6, 7, 8, 9)</option>
-          </select></span>
+      <h4>정체 판정 <small>2D · 유사 3D</small></h4>
+      <p class="ms-note">한자리에 <b>몇 대 이상</b> 모이면 정체로 볼지 직접 적습니다.
+        <b>0 은 그 종류를 안 봅니다.</b> 셋 다 0 이면 아무것도 안 잡습니다.<br>
+        한 무리 안에서 <b>어느 한 종류라도</b> 그 수를 넘으면 정체입니다 —
+        예) <b>3 · 5 · 0</b> 이면 JAM 3대 이상 <b>또는</b> OBS 5대 이상.</p>
+      <div class="ms-row"><label>JAM<small>STATUS 7</small></label>
+        <span><input type="number" id="ms-jamMinJam" step="1" min="0" max="999"><small>대 이상</small></span>
       </div>
-      <p class="ms-note">★<b>아이소메트리는 이 설정을 안 따릅니다.</b> 거기 <b>정체 지점</b> 단추는
-        예전부터 <b>JAM + OBS</b> 를 잡고 그대로 둡니다 — 여기를 <b>JAM 만</b>(기본)으로 두면
-        같은 순간을 두 화면이 다르게 잡을 수 있습니다. 맞추시려면 여기를
-        <b>JAM + OBS (6, 7)</b> 로 고르세요.</p>
+      <div class="ms-row"><label>OBS<small>STATUS 6</small></label>
+        <span><input type="number" id="ms-jamMinObs" step="1" min="0" max="999"><small>대 이상</small></span>
+      </div>
+      <div class="ms-row"><label>멈춘 차<small>STATUS 2 · 8 · 9</small></label>
+        <span><input type="number" id="ms-jamMinStop" step="1" min="0" max="999"><small>대 이상</small></span>
+      </div>
+      <p class="ms-note">아래 <b>저장 + 적용</b> 을 누르면 이 브라우저에 남아 다음에 열어도 그대로입니다.<br>
+        ★<b>아이소메트리는 이 설정을 안 따릅니다.</b> 거기 <b>정체 지점</b> 단추는
+        예전부터 <b>JAM + OBS</b> 를 잡고 그대로 둡니다.</p>
     </section>
 
     <section class="ms-sec">
