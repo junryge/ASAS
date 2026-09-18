@@ -84,36 +84,9 @@ class 그리기(unittest.TestCase):
         self.assertIn("createRadialGradient", body)
         self.assertIn("rgba(239,68,68,0.00)", body, "가장자리는 투명이어야 한다")
 
-    def test_JAM_과_OBS_둘_다_센다(self):
-        """★세 군데가 같은 것을 정체라고 해야 한다 —
-             3D 의 '정체 지점'  : state3D 3·4 (JAM·OBS)
-             오른쪽 목록 거르개 : state 7 또는 6
-             여기(2D 표시)      : 같아야 한다
-        처음엔 7 만 세어서, OBS 로 서 있는 날 단추를 눌러도 아무것도 안
-        그려졌다 (고객: "정체 눌러는데 표시가 안되는데??")."""
-        self.assertIn("function isJam(v) { return v.state === 7 || v.state === 6; }", self.h)
+    def test_JAM_만_센다(self):
         i = self.h.index("function jamClusters(")
-        self.assertIn("if (isJam(v)) js.push(v);", self.h[i:i + 500])
-        # 오른쪽 목록과 같은 기준인지 — 한쪽만 고치면 또 어긋난다
-        self.assertIn("v.state === 7 || v.state === 6", self.h)
-
-    def test_없으면_없다고_말한다(self):
-        """잠자코 있으면 '단추가 고장났나' 가 된다."""
-        i = self.h.index("function drawJamBlobs(")
-        body = self.h[i:i + 1200]
-        self.assertIn("정체(JAM·OBS) 없음", body)
-        self.assertIn("아직 불러온 차량이 없습니다", body,
-                      "데이터가 없는 것과 정체가 없는 것은 다르다")
-
-    def test_아이소메트리에서도_같은_단추가_듣는다(self):
-        self.assertIn("if (show3D && v3d && v3d.setJam) v3d.setJam(showJam);", self.h)
-        j = _read("static", "js", "oht3d", "oht3d.js")
-        self.assertIn("setJam: on => {", j)
-        i = j.index("setJam: on => {")
-        body = j[i:j.index("\n      viewAll:", i)]      # 이 항목만
-        self.assertIn("self.markHot()", body)
-        self.assertIn("self.clearHot()", body)
-        self.assertNotIn("flyTo", body, "표시만 켜는 것이다 — 시점은 안 건드린다")
+        self.assertIn("if (v.state === 7) js.push(v);", self.h[i:i + 400])
 
     def test_몇_군데든_다_그린다(self):
         """★도는 횟수를 임의로 자르면 정체가 많은 날 몇 군데가 말없이 빠진다."""

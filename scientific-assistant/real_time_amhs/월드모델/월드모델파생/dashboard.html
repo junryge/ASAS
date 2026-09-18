@@ -1189,12 +1189,7 @@ function toggleLayer(layer) {
   if (layer==='label') showLabel = !showLabel;
   if (layer==='sensor') showSensor = !showSensor;
   if (layer==='junction') showJunction = !showJunction;
-  if (layer==='jam') {
-    showJam = !showJam;
-    // 아이소메트리(3D)에서도 같은 단추가 듣게 한다. 3D 는 캔버스가 아니라
-    // 뷰어가 그리므로 drawMap 이 아니라 뷰어에 알려야 한다 (날아가지는 않는다).
-    if (show3D && v3d && v3d.setJam) v3d.setJam(showJam);
-  }
+  if (layer==='jam') showJam = !showJam;
   if (layer==='iso') { setMapView(showIso ? '2d' : 'iso'); return; }
   const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', v); };
   on('btn-zone', showZone); on('btn-railcut', showRailCut); on('btn-id', showId);
@@ -1511,18 +1506,11 @@ function vehicleHeading(v, g, toS) {
      12 m 와 같은 크기로 맞췄다 — 두 화면이 같은 것을 '한 무리' 라고 해야 한다. */
 const JAM_R = 1200;                 // 도면 단위 (= 12 m)
 
-/* 무엇을 '정체' 로 셀까 — **JAM(7) 과 OBS(6) 둘 다**.
-   ★처음엔 7 만 셌다. 그런데 3D 의 '정체 지점'(state3D 3·4 = JAM·OBS)도,
-     오른쪽 목록의 JAM 거르개(state 7 또는 6)도 둘 다 본다. 여기만 7 만 보니
-     OBS 로 서 있는 날 단추를 눌러도 **아무것도 안 그려졌다** (고객: "정체
-     눌러는데 표시가 안되는데??"). 세 군데가 같은 것을 정체라고 해야 한다. */
-function isJam(v) { return v.state === 7 || v.state === 6; }
-
 function jamClusters(radius) {
   const js = [];
   for (const vid in vehicleDisplay) {
     const v = vehicleDisplay[vid];
-    if (isJam(v)) js.push(v);
+    if (v.state === 7) js.push(v);
   }
   if (!js.length) return [];
   const used = new Array(js.length).fill(false);
@@ -1555,20 +1543,7 @@ function jamClusters(radius) {
    테두리가 또렷하면 '구역' 처럼 보여 HID Zone 과 헷갈린다. */
 function drawJamBlobs(ctx, toS, sc) {
   const cl = jamClusters(JAM_R);
-  /* ★없으면 **없다고 말한다**. 그냥 아무것도 안 그리면 "단추가 고장났나"
-     가 된다 (실제로 그렇게 물어보셨다). 차가 몇 대인지도 같이 적어야
-     '데이터가 없는 것' 과 '정체가 없는 것' 이 구분된다. */
-  if (!cl.length) {
-    const n = Object.keys(vehicleDisplay).length;
-    ctx.save();
-    ctx.font = '600 13px sans-serif';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(239,68,68,0.85)';
-    ctx.fillText(n ? `정체(JAM·OBS) 없음 — 차량 ${n.toLocaleString()}대`
-                   : '정체 표시 켜짐 — 아직 불러온 차량이 없습니다', 12, 12);
-    ctx.restore();
-    return;
-  }
+  if (!cl.length) return;
   const base = JAM_R * sc;                       // 화면 픽셀로 옮긴 묶음 반지름
   ctx.save();
   for (const c of cl) {
