@@ -214,6 +214,16 @@ class Viewer {
       focusZone: (z, fly = true) => self.selectZone(typeof z === 'number' ? z : self.zoneIndex(z), fly),
       focusVehicle: id => self.focusVehicle(self.idx.get(String(id)) ?? -1),
       focusHotspot: () => self.G && self.flyTo(self.withPanel(self.hotView(self.sel))),
+      /* 정체 표시만 켜고 끈다 — 화면 위 '정체' 단추가 2D·유사3D·아이소메트리
+         셋을 같이 몰기 위해서다. focusHotspot 과 달리 **날아가지 않는다**. */
+      setJam: on => {
+        if (!self.G) return false;
+        if (!on) { self.clearHot(); self.dom.bar?.querySelector('[data-a=hot]')?.classList.remove('on'); return false; }
+        self.hotView(self.sel);                      // hotAt 을 정한다 (시점은 안 건드린다)
+        const hit = self.markHot();
+        self.dom.bar?.querySelector('[data-a=hot]')?.classList.toggle('on', hit);
+        return hit;
+      },
       viewAll: () => self.G && self.flyTo(self.allView()),
       setOptions: p => self.setOptions(p),
       setActive: on => { self.active = !!on; if (self.active) { self.resized = true; self.camDirty = true; self.needRender = true; } },
