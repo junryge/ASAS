@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from flask import Flask, jsonify, request, send_from_directory, Response
 
 import alarm_count
+import http_cache
 from lp_client import fab_codes, load_config, parse_dt, ping, sys_cfg
 from lp_query import build, query
 from report import build_report, feedback_status, save_feedback
@@ -46,6 +47,43 @@ def _t_start():
 
 
 @app.after_request
+def _etag(resp):
+    """나머지 /api GET 도 지문을 붙이고, 같으면 304 로 끝낸다.
+
+    ★화면은 status·cases·kpi 를 3초마다 묻는데 내용은 대개 그대로다. 지문만
+      맞춰 보면 본문을 아예 안 보낸다 — 느린 서버에서 이게 제일 크게 듣는다.
+      (feed·fab/compare 는 이미 자기 캐시에서 지문을 붙여 오므로 건너뛴다.)
+    ★GET · 200 · 다이렉트 패스스루가 아닌 것만. POST 는 손대지 않는다.
+    """
+    try:
+        if (request.method != "GET" or resp.status_code != 200
+                or resp.direct_passthrough or resp.headers.get("ETag")
+                or not request.path.startswith("/api/")):
+            return resp
+        body = resp.get_data()
+        if not body:
+            return resp
+        etag = http_cache.etag_of(body)
+        resp.headers["ETag"] = etag
+        resp.headers["Cache-Control"] = "no-cache"
+        inm = request.headers.get("If-None-Match")
+        if inm and etag in [t.strip() for t in inm.split(",")]:
+            resp.set_data(b"")
+            resp.status_code = 304
+            return resp
+        if len(body) >= http_cache.GZIP_MIN and \
+                "gzip" in (request.headers.get("Accept-Encoding") or "").lower():
+            gz = http_cache.gzipped(body)
+            if len(gz) < len(body):
+                resp.set_data(gz)
+                resp.headers["Content-Encoding"] = "gzip"
+                resp.headers["Vary"] = "Accept-Encoding"
+    except Exception as e:                              # noqa: BLE001
+        print(f"[ETag] ⚠️ 건너뜀: {type(e).__name__}: {e}")
+    return resp
+
+
+@app.after_request
 def _t_end(resp):
     t0 = request.environ.get("_t0")
     if t0:
@@ -64,7 +102,22 @@ def _t_end(resp):
 @app.route("/api/slow")
 def api_slow():
     """최근 느린 요청 목록 — 현장에서 원인을 좁힐 때."""
-    return jsonify({"threshold_ms": SLOW_MS, "items": list(reversed(SLOW_LOG))})
+    return jsonify({"threshold_ms": SLOW_MS, "items": list(reversed(SLOW_LOG)),
+                    "caches": [c.stats() for c in (FEED_CACHE, CMP_CACHE)]})
+
+
+# ─────────────────────── 무거운 응답 캐시 ───────────────────────
+# ★2026-09-18 현장 로그: feed 7~17초, fab/compare 18~20초. 재 보니 계산은
+#   300ms 인데 (1) 화면이 3초마다 묻고 데이터는 60초에 한 번 바뀌며
+#   (2) 화면 셋이 같은 순간 같은 것을 동시에 만들고 (3) 캐시가 적중해도
+#   1.5MB 를 매번 다시 직렬화하고 있었다. http_cache 가 셋을 같이 막는다.
+def _cached_json(cache, key: str, sig, build):
+    """지문이 같으면 안 만들고, 브라우저가 이미 갖고 있으면 304 로 끝낸다."""
+    e = cache.get_or_build(key, sig, build)
+    code, body, hdr = http_cache.negotiate(
+        e, request.headers.get("If-None-Match"),
+        request.headers.get("Accept-Encoding"))
+    return Response(body, status=code, headers=hdr)
 
 
 # ─────────────────────── 시스템(FAB) 별 컨텍스트 ───────────────────────
@@ -213,14 +266,25 @@ def _wire(ctx: dict) -> str:
       받기가 안 먹는 것이고, 꼬리만인데도 느리면 원인은 다른 데 있다.
     """
     try:
-        from jupyter_csv import cfg_of, wire_bytes
-        got, tot = wire_bytes(cfg_of(ctx["cfg"]))
+        from jupyter_csv import cfg_of, last_timing, wire_bytes
+        _c = cfg_of(ctx["cfg"])
+        got, tot = wire_bytes(_c)
+        t = last_timing(_c)
     except Exception:                                   # noqa: BLE001
         return ""
+    # ★어디서 시간이 갔는지 나눠 적는다. '받기' 가 대부분이면 주피터 쪽이고,
+    #   '저장' 이 대부분이면 우리 쪽이다 — 이 한 줄이 그 판가름을 한다.
+    if t:
+        _br = " · ".join(f"{k}{v}s" for k, v in
+                         (("받기 ", t.get("net")), ("파싱 ", t.get("parse")),
+                          ("저장 ", t.get("save"))) if v is not None)
+    else:
+        _br = ""
     if not tot:
-        return ""
+        return f" · {_br}" if _br else ""
     kb = lambda n: f"{n / 1024:.0f}KB" if n < 1024 * 1024 else f"{n / 1048576:.1f}MB"
-    return f" · 받음 {kb(got)}/{kb(tot)}" + ("" if got >= tot else " (꼬리)")
+    return (f" · 받음 {kb(got)}/{kb(tot)}" + ("" if got >= tot else " (꼬리)")
+            + (f" · {_br}" if _br else ""))
 
 
 def _llm_mode(sys: str) -> str:
@@ -551,8 +615,11 @@ def doc_fab_score():
 
 # 아바타가 5초마다 두드린다 — 매번 하루 CSV(1440×143)를 다시 읽으면
 # 수집·LLM 과 겹칠 때 응답이 늘어져 저쪽에서 '끊김' 으로 보인다.
-_FAB_CMP_CACHE = {"key": None, "at": 0.0, "out": None}
-_FAB_CMP_TTL = 3.0
+# ★예전엔 3초 TTL 이었다. 그런데 이걸 부르는 아바타는 **10초마다** 묻는다 —
+#   즉 캐시가 한 번도 안 맞고 매번 하루치를 다시 계산했다 (재 보니 220ms,
+#   현장에서는 다른 일과 겹쳐 18~20초). 이제 시간이 아니라 **원본 파일 지문**
+#   으로 잡는다: 파일이 그대로면 몇 분이 지나도 다시 안 만든다.
+CMP_CACHE = http_cache.JsonCache("fab_compare")
 
 
 @app.route("/api/fab/compare")
@@ -565,17 +632,11 @@ def api_fab_compare():
       비교가 안 된다 — 화면의 ?sys= 를 따라가면 안 되는 이유다.
     """
     try:
-        import time as _time
         import fab_score
-        from store_csv import latest_day, list_days, read_day
+        from store_csv import day_path, latest_day, list_days, read_day
         cfg = get_ctx("ALL")["cfg"]
         day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
         at_q = (request.args.get("at") or "").strip()
-        key = (day, at_q)
-        now = _time.time()
-        if _FAB_CMP_CACHE["out"] is not None and _FAB_CMP_CACHE["key"] == key \
-                and now - _FAB_CMP_CACHE["at"] < _FAB_CMP_TTL:
-            return jsonify(_FAB_CMP_CACHE["out"])
         # ── 어느 날을 '현재 상태' 로 볼 것인가 ────────────────────────
         # ★예전: days[-1] — list_days 는 **최신순**이라 이건 '가장 오래된 날'
         #   이다. 파일이 0728·0819 두 개일 때 8월 25일에 7월 28일을 현재
@@ -594,19 +655,30 @@ def api_fab_compare():
                 if newest:
                     fallback = {"asked_day": today, "used_day": newest}
                     day = newest
-        rows = read_day(day, cfg)
-        # day 를 넘겨야 FAB 분리 파일(data/{FAB}/{day}_TOTAL.CSV)의
-        # area_score 를 그 FAB 점수로 쓴다
-        out = fab_score.compare(rows, parse_dt(at_q or None), cfg, day=day)
-        out["day"] = day
-        if fallback:
-            out["fallback_day"] = fallback
-            out["warn"] = ("오늘({}) 수집 데이터가 없어 {} 자료를 보고 있습니다 "
-                           "— 실시간이 아닙니다. 수집이 멈췄는지 확인하세요."
-                           .format(fallback["asked_day"], fallback["used_day"]))
-        if out.get("ok"):
-            _FAB_CMP_CACHE.update(key=key, at=now, out=out)
-        return jsonify(out)
+        # 원본 지문 — ALL 파일 + FAB 다섯 파일 + 등급 컷. 이게 그대로면
+        # 몇 번을 물어도 같은 답이므로 다시 만들지 않는다.
+        try:
+            _st = os.stat(day_path(day, cfg))
+            sig = (_st.st_mtime_ns, _st.st_size, fab_score.files_sig(day, cfg),
+                   json.dumps(cfg.get("grade") or {}, sort_keys=True, ensure_ascii=False),
+                   at_q)
+        except OSError:
+            sig = None                      # 원본을 못 읽었다 — 캐시하지 않는다
+
+        def _build():
+            rows = read_day(day, cfg)
+            # day 를 넘겨야 FAB 분리 파일(data/{FAB}/{day}_TOTAL.CSV)의
+            # area_score 를 그 FAB 점수로 쓴다
+            out = fab_score.compare(rows, parse_dt(at_q or None), cfg, day=day)
+            out["day"] = day
+            if fallback:
+                out["fallback_day"] = fallback
+                out["warn"] = ("오늘({}) 수집 데이터가 없어 {} 자료를 보고 있습니다 "
+                               "— 실시간이 아닙니다. 수집이 멈췄는지 확인하세요."
+                               .format(fallback["asked_day"], fallback["used_day"]))
+            return out
+
+        return _cached_json(CMP_CACHE, f"{day}|{at_q}", sig, _build)
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
@@ -876,6 +948,88 @@ def _persist_score_policy() -> str:
         return ""
     except Exception as e:
         return f"{type(e).__name__}: {e}"
+
+
+# ─────────────────────── LLM 판단 모델 고르기 ───────────────────────
+# ★2026-09-18 현장: config 의 모델 이름이 게이트웨이에서 내려가(혹은 이름이
+#   바뀌어) 매분 이렇게 찍혔다 —
+#     [LLM/1분:M14] ⚠️ HTTP 400: Invalid model name passed in model=...
+#   하루 종일 'LLM 판단 일치' 가 통째로 비었는데, 화면에서는 무슨 이름을 써야
+#   하는지도, 어디를 고쳐야 하는지도 알 수 없었다(config.json 을 직접 고치고
+#   서버를 재시작해야 했다). 게이트웨이가 /v1/models 로 알려 주므로 그대로
+#   보여 주고 고르게 한다. 고른 값은 config.json 에 적어 재시작해도 남는다.
+def _persist_llm_model(model: str) -> str:
+    """고른 모델 이름을 config.json 의 llm.model 에 적는다 → 오류 글."""
+    from lp_client import CONFIG_PATH
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
+            disk = json.load(f)
+        disk.setdefault("llm", {})["model"] = model
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(disk, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, CONFIG_PATH)
+        return ""
+    except Exception as e:                              # noqa: BLE001
+        return f"{type(e).__name__}: {e}"
+
+
+@app.route("/api/llm/model", methods=["GET", "POST"])
+def api_llm_model():
+    """LLM 판단에 쓸 모델 — 지금 값 + 게이트웨이가 받아 주는 목록 / 바꾸기.
+
+    GET  → {"model", "url", "items":[{id, owned_by}], "error", "ok_now"}
+    POST {"model": "이름", "save"?: true, "test"?: true}
+      · 메모리에 즉시 적용 (다음 분 판단부터 이 모델로 나간다)
+      · save=true 면 config.json 에도 적어 재시작해도 남는다
+      · test=true 면 바꾸기 전에 한 번 불러 본다 — 400 이면 안 바꾼다
+        (틀린 이름을 저장해 두면 또 하루를 날린다)
+    """
+    import llm_client
+    lc = CFG.setdefault("llm", {})
+    if request.method == "GET":
+        items, err = llm_client.list_models(CFG,
+                                            force=request.args.get("force") == "1")
+        cur = lc.get("model") or ""
+        names = [m["id"] for m in items]
+        return jsonify({
+            "model": cur, "url": lc.get("url") or "",
+            "models_url": llm_client.models_url(CFG),
+            "items": items, "error": err,
+            # 지금 값이 목록에 있나 — 없으면 화면이 빨갛게 알려 준다
+            "ok_now": (cur in names) if names else None,
+            "enabled": bool(lc.get("enabled", True)),
+        })
+
+    b = request.get_json(silent=True) or {}
+    model = str(b.get("model") or "").strip()
+    if not model:
+        return jsonify({"error": "model 이 비었습니다"}), 400
+    if len(model) > 200:
+        return jsonify({"error": "model 이름이 너무 깁니다"}), 400
+
+    prev = lc.get("model")
+    lc["model"] = model                     # 먼저 메모리에 (시험도 이 값으로)
+    if b.get("test"):
+        txt, err = llm_client.chat(
+            [{"role": "user", "content": "핑"}], CFG, max_tokens=8)
+        if err:
+            lc["model"] = prev              # ★되돌린다 — 틀린 이름을 남기지 않는다
+            return jsonify({"error": f"이 모델로는 호출이 안 됩니다 — {err}",
+                            "model": prev, "applied": False}), 400
+
+    saved, serr = False, ""
+    if b.get("save", True):
+        serr = _persist_llm_model(model)
+        saved = not serr
+    print(f"[LLM] 모델 → {model}" + (" · 저장됨" if saved else "")
+          + (f" · 저장 실패: {serr}" if serr else ""))
+    out = {"model": model, "applied": True, "saved": saved}
+    if serr:
+        out["error"] = f"config.json 저장 실패 — {serr} (메모리에는 적용됨)"
+        return jsonify(out), 500
+    return jsonify(out)
 
 
 @app.route("/api/score_policy", methods=["GET", "POST"])
@@ -1496,7 +1650,7 @@ def api_window():
 # /api/feed 응답 캐시 — {키: (원본표시, 응답)}
 # 화면이 3초마다 부르는데 데이터는 1분에 한 번 바뀐다. 원본이 그대로면
 # 같은 응답을 다시 만들 이유가 없다 (행 수백 개를 매번 가공·직렬화했다).
-FEED_CACHE: dict = {}
+FEED_CACHE = http_cache.JsonCache("feed")   # 지문이 같으면 만든 글자를 그대로
 
 
 # 이름표 → 그 이름표를 띄운 카운트의 키 (화면 almChip 과 같은 규칙)
@@ -1559,161 +1713,161 @@ def api_feed():
                 _fab_score.files_sig(shown_day, C["cfg"]))
     except OSError:
         _sig = None
-    if _sig:
-        _hit = FEED_CACHE.get(C["sys"])
-        if _hit and _hit[0] == _sig:
-            return jsonify(_hit[1])
+    # ★여기서 바로 돌려주지 않는다. 아래 본문 전체를 build() 로 감싸 두고,
+    #   지문이 같으면 **만들지도 않고** 지난 글자를 그대로 내준다. 브라우저가
+    #   이미 같은 것을 갖고 있으면 304 한 줄로 끝난다 (3초 폴링의 열아홉 번).
+    def _build():
 
-    # 추이 그래프에서 고를 수 있는 지표 묶음 — 값을 같이 실어보낸다
-    groups = metric_groups(C["cfg"])
-    mkeys = sorted({m["key"] for g in groups for m in g["metrics"]})
-    seen_keys = set()
+        # 추이 그래프에서 고를 수 있는 지표 묶음 — 값을 같이 실어보낸다
+        groups = metric_groups(C["cfg"])
+        mkeys = sorted({m["key"] for g in groups for m in g["metrics"]})
+        seen_keys = set()
 
-    # FAB 다섯 점수 — **어느 화면에서든** 같이 내려준다. 원본이 FAB 분리
-    # 파일(data/{FAB}/{day}_TOTAL.CSV)이라 M14 를 보는 중에도 다섯을 다
-    # 읽어올 수 있다. 값을 모르는 FAB 은 area_table 이 빼고 주고, 화면은
-    # 빈 칸으로 그린다 (0 으로 채우면 '그 FAB 정상' 으로 읽힌다).
-    ftab = None
-    try:
-        import fab_score
-        ftab = fab_score.area_table(rows, day=shown_day, cfg=C["cfg"])
-    except Exception as e:                              # noqa: BLE001
-        # FAB 점수가 없어도 목록 자체는 떠야 한다 (컬럼만 빈다)
-        print(f"[FEED] ⚠️ FAB 점수 계산 실패 — 컬럼을 비웁니다: {e}")
+        # FAB 다섯 점수 — **어느 화면에서든** 같이 내려준다. 원본이 FAB 분리
+        # 파일(data/{FAB}/{day}_TOTAL.CSV)이라 M14 를 보는 중에도 다섯을 다
+        # 읽어올 수 있다. 값을 모르는 FAB 은 area_table 이 빼고 주고, 화면은
+        # 빈 칸으로 그린다 (0 으로 채우면 '그 FAB 정상' 으로 읽힌다).
+        ftab = None
+        try:
+            import fab_score
+            ftab = fab_score.area_table(rows, day=shown_day, cfg=C["cfg"])
+        except Exception as e:                              # noqa: BLE001
+            # FAB 점수가 없어도 목록 자체는 떠야 한다 (컬럼만 빈다)
+            print(f"[FEED] ⚠️ FAB 점수 계산 실패 — 컬럼을 비웁니다: {e}")
 
-    out = []
-    for r in rows:
-        dt, sc = _row_dt(r), _score(r)
-        if dt is None:
-            continue
-        g = grade(sc, C["cfg"])
-        area = (r.get("hot_area") or "").strip() or "UNKNOWN"
-        bd = (r.get("BOTTLENECK_downward_anomaly_cols") or "").strip()
-        bu = (r.get("BOTTLENECK_upward_anomaly_cols") or "").strip()
-        qd = (r.get("QUEUE_downward_anomaly_cols") or "").strip()
-        qu = (r.get("QUEUE_upward_anomaly_cols") or "").strip()
-        bott = " ".join(x for x in (bd, bu) if x)
-        items = " ".join(x for x in (qd, qu) if x).split()
-        # 이 시각이 속한 케이스 찾기
-        cid = None
-        for c in C["store"].cases:
-            if c["area"] == area and c["opened_at"] <= dt.isoformat() <= (
-                    c.get("last_seen") or c["opened_at"]):
-                cid = c["id"]
-                break
-        raw_reason = (r.get("reason") or "").strip()
-        # FAB 다섯 점수 + 제일 높은 FAB (위 ftab 참고)
-        fx = {}
-        if ftab:
-            _fr = ftab["rows"].get(dt.replace(second=0, microsecond=0).isoformat())
-            if _fr:
-                fx = {"fab": _fr["s"], "hi_fab": _fr["hi"]}
-                if _fr.get("lv"):        # 예측기 등급이 컷 판정과 다른 것만
-                    fx["fab_lv"] = _fr["lv"]
-        m = {}
-        for k in mkeys:
-            v = _num(r.get(k))
-            if v is not None:
-                m[k] = v
-                seen_keys.add(k)
-        out.append({
-            "m": m,
-            "at": dt.isoformat(),
-            "datetime": (r.get("datetime") or dt.strftime("%Y-%m-%d %H:%M")).strip(),
-            "time": dt.strftime("%H:%M"), "area": area,
-            "score": sc, "level": g["level"], "emoji": g["emoji"], "severity": g["severity"],
-            # 원문 fallback 금지 — 요약이 비면 룰 코드·금지어가 그대로 새어
-            # 나갔다. summarize_reason 이 항상 한글 한 줄을 돌려준다.
-            "reason": summarize_reason(raw_reason, area),
-            "reason_raw": raw_reason,
-            # 한글 요약 옆 '실제지표' 칸 — 그 룰이 실제로 보는 raw 컬럼명
-            "metrics": [{"raw": x["raw"], "label": x["label"]}
-                        for x in reason_metrics(raw_reason, area, r)],
-            "zones": hid_zones(bott), "items": items,
-            # AMOS 4개 컬럼을 나눠서 그대로 (UI 표시용)
-            "bott_down": hid_zones(bd), "bott_up": hid_zones(bu),
-            "queue_down": qd.split(), "queue_up": qu.split(),
-            "chain": (r.get("propagation_chain") or "").strip(),
-            "case_id": cid,
-            **fx,
-        })
+        out = []
+        for r in rows:
+            dt, sc = _row_dt(r), _score(r)
+            if dt is None:
+                continue
+            g = grade(sc, C["cfg"])
+            area = (r.get("hot_area") or "").strip() or "UNKNOWN"
+            bd = (r.get("BOTTLENECK_downward_anomaly_cols") or "").strip()
+            bu = (r.get("BOTTLENECK_upward_anomaly_cols") or "").strip()
+            qd = (r.get("QUEUE_downward_anomaly_cols") or "").strip()
+            qu = (r.get("QUEUE_upward_anomaly_cols") or "").strip()
+            bott = " ".join(x for x in (bd, bu) if x)
+            items = " ".join(x for x in (qd, qu) if x).split()
+            # 이 시각이 속한 케이스 찾기
+            cid = None
+            for c in C["store"].cases:
+                if c["area"] == area and c["opened_at"] <= dt.isoformat() <= (
+                        c.get("last_seen") or c["opened_at"]):
+                    cid = c["id"]
+                    break
+            raw_reason = (r.get("reason") or "").strip()
+            # FAB 다섯 점수 + 제일 높은 FAB (위 ftab 참고)
+            fx = {}
+            if ftab:
+                _fr = ftab["rows"].get(dt.replace(second=0, microsecond=0).isoformat())
+                if _fr:
+                    fx = {"fab": _fr["s"], "hi_fab": _fr["hi"]}
+                    if _fr.get("lv"):        # 예측기 등급이 컷 판정과 다른 것만
+                        fx["fab_lv"] = _fr["lv"]
+            m = {}
+            for k in mkeys:
+                v = _num(r.get(k))
+                if v is not None:
+                    m[k] = v
+                    seen_keys.add(k)
+            out.append({
+                "m": m,
+                "at": dt.isoformat(),
+                "datetime": (r.get("datetime") or dt.strftime("%Y-%m-%d %H:%M")).strip(),
+                "time": dt.strftime("%H:%M"), "area": area,
+                "score": sc, "level": g["level"], "emoji": g["emoji"], "severity": g["severity"],
+                # 원문 fallback 금지 — 요약이 비면 룰 코드·금지어가 그대로 새어
+                # 나갔다. summarize_reason 이 항상 한글 한 줄을 돌려준다.
+                "reason": summarize_reason(raw_reason, area),
+                "reason_raw": raw_reason,
+                # 한글 요약 옆 '실제지표' 칸 — 그 룰이 실제로 보는 raw 컬럼명
+                "metrics": [{"raw": x["raw"], "label": x["label"]}
+                            for x in reason_metrics(raw_reason, area, r)],
+                "zones": hid_zones(bott), "items": items,
+                # AMOS 4개 컬럼을 나눠서 그대로 (UI 표시용)
+                "bott_down": hid_zones(bd), "bott_up": hid_zones(bu),
+                "queue_down": qd.split(), "queue_up": qu.split(),
+                "chain": (r.get("propagation_chain") or "").strip(),
+                "case_id": cid,
+                **fx,
+            })
 
-    # ── 등급 카운터 — 최근 N분에 경계·위험·초위험이 몇 번 떴나 ──────────
-    # ★**정렬 전**에 센다. out 은 아래에서 최신순으로 뒤집히는데, 창을 굴리려면
-    #   시간 오름차순이어야 한다 (뒤집힌 뒤에 세면 창이 거꾸로 간다).
-    # ★점수·등급을 만들지 않는다. 이미 매겨진 level 을 세기만 한다.
-    # at 은 우리가 dt.isoformat() 으로 만든 글자라 fromisoformat 이 정확하다
-    #   (parse_dt 는 사람이 친 글자를 너그럽게 읽는 함수다 — 여기 쓸 자리가 아니다)
-    _ats = [datetime.fromisoformat(x["at"]) for x in out]
-    _alm = alarm_count.scan(list(zip(_ats, (x["level"] for x in out))), C["cfg"])
-    _apol = alarm_count.policy(C["cfg"])
-    for _x, _a in zip(out, _alm):
-        if _a.get("label"):
-            _x["alm"] = {"lv": _a["label"], "w": _a["warn"], "d": _a["danger"],
-                         "c": _a["critical"], "why": alarm_count.why(_a, _apol)}
+        # ── 등급 카운터 — 최근 N분에 경계·위험·초위험이 몇 번 떴나 ──────────
+        # ★**정렬 전**에 센다. out 은 아래에서 최신순으로 뒤집히는데, 창을 굴리려면
+        #   시간 오름차순이어야 한다 (뒤집힌 뒤에 세면 창이 거꾸로 간다).
+        # ★점수·등급을 만들지 않는다. 이미 매겨진 level 을 세기만 한다.
+        # at 은 우리가 dt.isoformat() 으로 만든 글자라 fromisoformat 이 정확하다
+        #   (parse_dt 는 사람이 친 글자를 너그럽게 읽는 함수다 — 여기 쓸 자리가 아니다)
+        _ats = [datetime.fromisoformat(x["at"]) for x in out]
+        _alm = alarm_count.scan(list(zip(_ats, (x["level"] for x in out))), C["cfg"])
+        _apol = alarm_count.policy(C["cfg"])
+        for _x, _a in zip(out, _alm):
+            if _a.get("label"):
+                _x["alm"] = {"lv": _a["label"], "w": _a["warn"], "d": _a["danger"],
+                             "c": _a["critical"], "why": alarm_count.why(_a, _apol)}
 
-    # ── ALL 화면에서는 FAB 다섯도 **각각** 센다 ──────────────────────────
-    # ★ALL 의 종합점수만 세면 '어느 FAB 이 계속 나쁜가' 를 말하지 못한다.
-    #   화면에 FAB 다섯 점수 칸이 이미 있는데, 그 중 무엇이 눌러앉아 있는지가
-    #   안 보였다 (고객 지적: "ALL에서 ALL,FAB인지 그런 알람 내용이 없다").
-    # ★FAB 마다 **자기 컷**으로 등급을 매기고 **자기 정책**으로 센다.
-    #   컷은 FAB 별(grade.by_sys)이고 카운터도 FAB 별(grade.alarm_by_sys)이다.
-    # ★점수·등급을 새로 만들지 않는다. area_table 이 이미 낸 FAB 점수를
-    #   컷에 대보는 것뿐이다 (화면의 fabLv 와 같은 규칙 — 정책이 이긴다).
-    _apol_fab = {}
-    if C["sys"] == "ALL" and ftab:
-        for _f in (ftab.get("fabs") or []):
-            _fp = alarm_count.policy(CFG, _f)
-            if not _fp["enabled"]:
-                continue            # 그 FAB 은 미적용 — 세지도 않는다
-            _fcfg = sys_cfg(CFG, _f)
-            _seq = []
-            for _t, _x in zip(_ats, out):
-                _v = (_x.get("fab") or {}).get(_f)
-                # 값을 모르는 분은 '' — 정상으로 세면 없는 것을 괜찮다고 말하게 된다
-                _seq.append((_t, grade(_v, _fcfg)["level"] if _v is not None else ""))
-            _fa = alarm_count.scan(_seq, CFG, _f)
-            _hit = False
-            for _x, _a in zip(out, _fa):
-                if _a.get("label"):
-                    _x.setdefault("alm_fab", {})[_f] = {"lv": _a["label"],
-                                                        "n": _a[_LVKEY[_a["label"]]]}
-                    _hit = True
-            if _hit:
-                # 말풍선 글은 화면이 만든다 — 행마다 실으면 하루치가 그만큼 무겁다
-                _apol_fab[_f] = _fp
+        # ── ALL 화면에서는 FAB 다섯도 **각각** 센다 ──────────────────────────
+        # ★ALL 의 종합점수만 세면 '어느 FAB 이 계속 나쁜가' 를 말하지 못한다.
+        #   화면에 FAB 다섯 점수 칸이 이미 있는데, 그 중 무엇이 눌러앉아 있는지가
+        #   안 보였다 (고객 지적: "ALL에서 ALL,FAB인지 그런 알람 내용이 없다").
+        # ★FAB 마다 **자기 컷**으로 등급을 매기고 **자기 정책**으로 센다.
+        #   컷은 FAB 별(grade.by_sys)이고 카운터도 FAB 별(grade.alarm_by_sys)이다.
+        # ★점수·등급을 새로 만들지 않는다. area_table 이 이미 낸 FAB 점수를
+        #   컷에 대보는 것뿐이다 (화면의 fabLv 와 같은 규칙 — 정책이 이긴다).
+        _apol_fab = {}
+        if C["sys"] == "ALL" and ftab:
+            for _f in (ftab.get("fabs") or []):
+                _fp = alarm_count.policy(CFG, _f)
+                if not _fp["enabled"]:
+                    continue            # 그 FAB 은 미적용 — 세지도 않는다
+                _fcfg = sys_cfg(CFG, _f)
+                _seq = []
+                for _t, _x in zip(_ats, out):
+                    _v = (_x.get("fab") or {}).get(_f)
+                    # 값을 모르는 분은 '' — 정상으로 세면 없는 것을 괜찮다고 말하게 된다
+                    _seq.append((_t, grade(_v, _fcfg)["level"] if _v is not None else ""))
+                _fa = alarm_count.scan(_seq, CFG, _f)
+                _hit = False
+                for _x, _a in zip(out, _fa):
+                    if _a.get("label"):
+                        _x.setdefault("alm_fab", {})[_f] = {"lv": _a["label"],
+                                                            "n": _a[_LVKEY[_a["label"]]]}
+                        _hit = True
+                if _hit:
+                    # 말풍선 글은 화면이 만든다 — 행마다 실으면 하루치가 그만큼 무겁다
+                    _apol_fab[_f] = _fp
 
-    out.sort(key=lambda x: x["at"], reverse=True)
-    counts = {lv: sum(1 for x in out if x["level"] == lv)
-              for lv in ("정상", "경계", "위험", "초위험")}
-    # 지금(제일 최근 행)의 알람 상태 — 화면 머리에 한 줄로 띄운다
-    alm_now = (out[0].get("alm") if out else None) or None
-    # 기본은 하루치 전부 (1분 1행 = 1440행). 00:00 부터 다 보여야 한다.
-    try:
-        limit = max(1, min(5000, int(request.args.get("limit", 1500))))
-    except ValueError:
-        limit = 1500
-    payload = {"rows": out[:limit], "counts": counts, "total": len(out),
-               # 등급 카운터 — 설정과 '지금' 상태. 화면이 배지를 이걸로 그린다
-               "alarm": _apol, "alarm_now": alm_now,
-               # FAB 카운터가 걸린 FAB 의 정책 — 화면이 말풍선을 이걸로 만든다
-               "alarm_fab": _apol_fab,
-                    "shown": min(limit, len(out)),
-                    # 실제로 값이 있는 지표만 선택지로 준다 (CSV 에 없는 컬럼은 뺀다)
-                    "groups": [dict(g, metrics=[m for m in g["metrics"] if m["key"] in seen_keys])
-                               for g in groups
-                               if any(m["key"] in seen_keys for m in g["metrics"])],
-                    "day": shown_day, "fallback": fallback,
-                    "latest": out[0]["datetime"] if out else None,
-                    "earliest": out[-1]["datetime"] if out else None,
-               "window": C["cfg"].get("query", {}).get("window", "10m"),
-               # FAB 마다 등급 컷이 다르다 — 화면이 이 컷으로 글자색을 칠한다.
-               # 행마다 싣지 않고 한 번만 준다 (하루 1440행이라 무거워진다).
-               "fabs": (ftab or {}).get("fabs") or [],
-               "fab_cuts": (ftab or {}).get("cuts") or {}}
-    if _sig:
-        FEED_CACHE[C["sys"]] = (_sig, payload)
-    return jsonify(payload)
+        out.sort(key=lambda x: x["at"], reverse=True)
+        counts = {lv: sum(1 for x in out if x["level"] == lv)
+                  for lv in ("정상", "경계", "위험", "초위험")}
+        # 지금(제일 최근 행)의 알람 상태 — 화면 머리에 한 줄로 띄운다
+        alm_now = (out[0].get("alm") if out else None) or None
+        # 기본은 하루치 전부 (1분 1행 = 1440행). 00:00 부터 다 보여야 한다.
+        try:
+            limit = max(1, min(5000, int(request.args.get("limit", 1500))))
+        except ValueError:
+            limit = 1500
+        payload = {"rows": out[:limit], "counts": counts, "total": len(out),
+                   # 등급 카운터 — 설정과 '지금' 상태. 화면이 배지를 이걸로 그린다
+                   "alarm": _apol, "alarm_now": alm_now,
+                   # FAB 카운터가 걸린 FAB 의 정책 — 화면이 말풍선을 이걸로 만든다
+                   "alarm_fab": _apol_fab,
+                        "shown": min(limit, len(out)),
+                        # 실제로 값이 있는 지표만 선택지로 준다 (CSV 에 없는 컬럼은 뺀다)
+                        "groups": [dict(g, metrics=[m for m in g["metrics"] if m["key"] in seen_keys])
+                                   for g in groups
+                                   if any(m["key"] in seen_keys for m in g["metrics"])],
+                        "day": shown_day, "fallback": fallback,
+                        "latest": out[0]["datetime"] if out else None,
+                        "earliest": out[-1]["datetime"] if out else None,
+                   "window": C["cfg"].get("query", {}).get("window", "10m"),
+                   # FAB 마다 등급 컷이 다르다 — 화면이 이 컷으로 글자색을 칠한다.
+                   # 행마다 싣지 않고 한 번만 준다 (하루 1440행이라 무거워진다).
+                   "fabs": (ftab or {}).get("fabs") or [],
+                   "fab_cuts": (ftab or {}).get("cuts") or {}}
+        return payload
+
+    return _cached_json(FEED_CACHE, C["sys"], _sig, _build)
 
 
 @app.route("/api/collect", methods=["POST"])

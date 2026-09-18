@@ -1481,6 +1481,35 @@
   </div>
 
   <div class="card">
+    <h2>LLM 판단 모델 <span class="note" id="lmnote"></span></h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">
+        판단·리포트에 쓰는 모델입니다. 게이트웨이가 받아 주는 이름이 바뀌면
+        <b style="color:var(--tx2)">매분 HTTP 400 이 나면서 'LLM 판단 일치' 가 통째로 빕니다</b>
+        — 그때 여기서 목록을 보고 고르면 됩니다.
+        고른 값은 <b style="color:var(--tx2)">바로 적용</b>되고 config.json 에도 적혀
+        재시작해도 유지됩니다.</p>
+      <div id="lm-warn" class="note ctlbox" style="display:none;color:var(--wn);
+           border-color:var(--wn)"></div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="note">모델
+          <select id="lm-sel" style="min-width:300px;background:var(--panel2);
+                  border:1px solid var(--line2);color:var(--tx);border-radius:7px;
+                  padding:5px 8px;font:inherit"><option value="">불러오는 중…</option></select></label>
+        <input id="lm-txt" placeholder="모델 이름을 직접 입력" style="display:none;min-width:300px;
+               background:var(--panel2);border:1px solid var(--line2);color:var(--tx);
+               border-radius:7px;padding:5px 8px;font:inherit">
+        <button class="act" id="lm-reload" title="게이트웨이에 목록을 다시 물어봅니다">↻ 목록</button>
+        <button class="act pri" id="lm-save"
+          title="고른 모델로 한 번 불러 보고, 되면 저장합니다 — 틀린 이름은 저장하지 않습니다">시험 후 저장</button>
+        <span class="note" id="lm-msg"></span>
+      </div>
+      <p class="note" style="margin:0">지금 <b style="color:var(--tx2)" id="lm-cur">—</b>
+        · 목록 출처 <span class="dim" id="lm-url">—</span></p>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>LLM 판단 일치 — 시스템별 설정 <span class="note" id="lpnote"></span></h2>
     <div class="bd">
       <p class="note" style="margin:0 0 10px">
@@ -2318,6 +2347,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   }else if(b.dataset.tab==='policy'){
     initScorePolicy();
     initScoreTune();
+    initLlmModel();
     initLlmPolicy();
   }
   if(b.dataset.tab!=='past' && b.dataset.tab!=='analysis' && ACC){
@@ -3247,6 +3277,105 @@ function policyFail(rowsId, noteId, retryFn){
     if(b) b.onclick = retryFn;
   }
   $('#' + noteId).textContent = '— 불러오기 실패 · 다시 시도하세요';
+}
+
+/* ── LLM 판단 모델 (정책 탭) ─────────────────────────────────────
+   ★2026-09-18 현장에서 이렇게 찍혔다 —
+       [LLM/1분:M14] ⚠️ HTTP 400: Invalid model name passed in model=...
+     config 의 모델 이름이 게이트웨이에서 내려간 것인데, 화면에서는 무슨
+     이름을 써야 하는지도 어디를 고쳐야 하는지도 알 수 없었다(config.json 을
+     직접 고치고 재시작해야 했다). 게이트웨이가 /v1/models 로 알려 주므로
+     그대로 보여 주고 고르게 한다.
+   ★'시험 후 저장' 이다 — 한 번 불러 보고 되는 것만 저장한다. 틀린 이름을
+     저장하면 또 하루를 날린다. */
+const LM_CUSTOM = '__직접__';
+let LM_CUR = '';
+
+function lmMsg(t, bad){
+  const el = $('#lm-msg');
+  if(!el) return;
+  el.textContent = t || '';
+  el.style.color = bad ? 'var(--wn)' : 'var(--tx3)';
+}
+
+function lmFill(d){
+  const sel = $('#lm-sel'), warn = $('#lm-warn');
+  if(!sel) return;
+  LM_CUR = d.model || '';
+  const items = d.items || [];
+  const names = items.map(m => m.id);
+  // 지금 값이 목록에 없으면 그것도 골라 둔다 — 안 그러면 화면이 남의 값을 가리킨다
+  const opts = names.slice();
+  if(LM_CUR && !opts.includes(LM_CUR)) opts.unshift(LM_CUR);
+  sel.innerHTML = opts.map(n =>
+      `<option value="${esc(n)}"${n === LM_CUR ? ' selected' : ''}>${esc(n)}</option>`).join('')
+    + `<option value="${LM_CUSTOM}">직접 입력…</option>`;
+  $('#lm-cur').textContent = LM_CUR || '(없음)';
+  $('#lm-url').textContent = d.models_url || '—';
+  $('#lmnote').textContent = names.length ? `— ${names.length}개` : '';
+  let w = '';
+  if(d.error) w = `목록을 못 받았습니다 — ${d.error}. 이름을 아신다면 '직접 입력…' 으로 넣으세요.`;
+  else if(d.ok_now === false)
+    w = `지금 설정된 ${LM_CUR || '(없음)'} 은 게이트웨이 목록에 없습니다 — 이대로면 매분 HTTP 400 이 납니다. 아래에서 고르세요.`;
+  if(d.enabled === false) w = (w ? w + ' ' : '') + 'LLM 이 꺼져 있습니다 (config.llm.enabled=false).';
+  warn.style.display = w ? '' : 'none';
+  warn.textContent = w;
+  lmToggleCustom();
+}
+
+function lmToggleCustom(){
+  const sel = $('#lm-sel'), txt = $('#lm-txt');
+  if(!sel || !txt) return;
+  const on = sel.value === LM_CUSTOM;
+  txt.style.display = on ? '' : 'none';
+  if(on && !txt.value) txt.value = LM_CUR || '';
+}
+
+function lmPicked(){
+  const sel = $('#lm-sel'), txt = $('#lm-txt');
+  return (sel && sel.value === LM_CUSTOM) ? (txt.value || '').trim() : (sel ? sel.value : '');
+}
+
+async function loadLlmModel(force){
+  try{
+    lmMsg(force ? '목록을 다시 받는 중…' : '');
+    const d = await apiRetry('/api/llm/model' + (force ? '?force=1' : ''));
+    lmFill(d);
+    if(force) lmMsg('');
+  }catch(e){
+    $('#lmnote').textContent = '— 불러오기 실패';
+    lmMsg(String(e.message || e), true);
+  }
+}
+
+async function saveLlmModel(){
+  const m = lmPicked();
+  if(!m){ lmMsg('모델을 고르거나 이름을 적으세요', true); return; }
+  const b = $('#lm-save');
+  b.disabled = true;
+  lmMsg('이 모델로 한 번 불러 보는 중…');
+  try{
+    // test:true — 되는 것만 저장한다. 400 이면 서버가 옛 값으로 되돌린다.
+    const r = await post('/api/llm/model', {model: m, save: true, test: true});
+    if(r.error){ lmMsg(r.error, true); }
+    else{
+      lmMsg(r.saved ? '저장했습니다 — 다음 판단부터 이 모델로 나갑니다'
+                    : '적용했습니다 (config.json 저장은 실패)', !r.saved);
+      await loadLlmModel(false);
+    }
+  }catch(e){ lmMsg(String(e.message || e), true); }
+  finally{ b.disabled = false; }
+}
+
+let LM_INIT = false;
+function initLlmModel(){
+  if(!LM_INIT){
+    LM_INIT = true;
+    const sel = $('#lm-sel'); if(sel) sel.onchange = lmToggleCustom;
+    const rl = $('#lm-reload'); if(rl) rl.onclick = () => loadLlmModel(true);
+    const sv = $('#lm-save'); if(sv) sv.onclick = saveLlmModel;
+  }
+  loadLlmModel(false);
 }
 
 /* ── 스코어 등급 설정 (정책 탭) — 시스템 6개 각각의 등급 컷 ──

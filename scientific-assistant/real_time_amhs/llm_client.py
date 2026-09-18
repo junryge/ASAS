@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -252,6 +253,65 @@ class _KeepPost(urllib.request.HTTPRedirectHandler):
 
 
 _POST_OPENER = urllib.request.build_opener(_KeepPost)
+
+
+# ── 쓸 수 있는 모델 목록 ────────────────────────────────────────────
+# ★2026-09-18 현장: config 의 모델 이름이 게이트웨이에서 내려가(또는 이름이
+#   바뀌어) 매분 HTTP 400 "Invalid model name" 이 찍혔다. 하루 종일 LLM 판단이
+#   통째로 비었는데, 화면에서는 무슨 이름을 써야 하는지 알 길이 없었다.
+#   게이트웨이가 /v1/models 로 알려 주므로 그걸 그대로 물어본다.
+_MODELS_CACHE: dict = {"at": 0.0, "url": "", "items": [], "error": ""}
+_MODELS_TTL = 60.0
+
+
+def models_url(cfg: dict) -> str:
+    """chat/completions 주소에서 같은 뿌리의 /models 주소를 만든다."""
+    u = str((cfg.get("llm") or {}).get("url") or "").strip()
+    if not u:
+        return ""
+    base = u.split("/chat/completions")[0].rstrip("/")
+    return base + "/models"
+
+
+def list_models(cfg: dict | None = None, force: bool = False) -> tuple[list, str]:
+    """게이트웨이가 지금 받아 주는 모델 이름들 → (목록, 오류).
+
+    목록 한 개는 {"id": ..., "owned_by": ...}. 못 물어봐도 화면은 떠야 하므로
+    오류를 글로 돌려주고 목록은 비운다 (부르는 쪽이 config 값으로 채운다).
+    """
+    cfg = cfg or load_config()
+    url = models_url(cfg)
+    if not url:
+        return [], "config.llm.url 이 비어 있습니다"
+    now = time.time()
+    if not force and _MODELS_CACHE["url"] == url and \
+            now - _MODELS_CACHE["at"] < _MODELS_TTL:
+        return list(_MODELS_CACHE["items"]), _MODELS_CACHE["error"]
+
+    headers = {"Accept": "application/json"}
+    key = _api_key(cfg)
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    items, err = [], ""
+    try:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8", errors="replace"))
+        for m in (data.get("data") or data.get("models") or []):
+            if isinstance(m, str):
+                items.append({"id": m, "owned_by": ""})
+            elif isinstance(m, dict) and m.get("id"):
+                items.append({"id": str(m["id"]),
+                              "owned_by": str(m.get("owned_by") or "")})
+        items.sort(key=lambda x: x["id"].lower())
+        if not items:
+            err = f"{url} 이 모델 목록을 비워 돌려줬습니다"
+    except urllib.error.HTTPError as e:
+        err = f"HTTP {e.code} — {url}"
+    except Exception as e:                              # noqa: BLE001
+        err = f"{type(e).__name__}: {e}"
+    _MODELS_CACHE.update(at=now, url=url, items=items, error=err)
+    return list(items), err
 
 
 def chat(messages: list[dict], cfg: dict | None = None,

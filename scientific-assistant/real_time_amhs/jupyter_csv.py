@@ -314,6 +314,19 @@ def wire_bytes(c: dict | None = None) -> tuple[int, int]:
     return _LAST_WIRE.get(_sess_key(c or {}), (0, 0))
 
 
+_LAST_T: dict = {}
+
+
+def last_timing(c: dict | None = None) -> dict:
+    """마지막 fetch_day 가 어디서 시간을 썼나 — {net, parse, save} 초.
+
+    ★'수집이 48초 걸렸다' 는 말만으로는 우리 코드를 봐야 할지 상대 서버를
+      봐야 할지 알 수 없다. 받는 데 47초면 우리가 고칠 게 없고, 저장에서
+      47초면 우리 문제다. 숫자를 나눠 남겨야 그 자리에서 판가름이 난다.
+    """
+    return _LAST_T.get(_sess_key(c or {}), {})
+
+
 def download(day: str, cfg: dict | None = None) -> tuple[bytes | None, str]:
     """그 날짜 CSV 원문 → (bytes, 오류).
 
@@ -476,12 +489,16 @@ def fetch_day(day: str = "", cfg: dict | None = None,
 
     if verbose:
         print(f"📥 주피터에서 {day} 발동이벤트 CSV 받는 중…")
+    _tk, _t0 = _sess_key(c), time.time()
+    _LAST_T[_tk] = {}
     raw, err = download(day, cfg)
+    _LAST_T[_tk]["net"] = round(time.time() - _t0, 1)
     if err:
         if verbose:
             print(f"  ❌ {err}")
         return {"ok": False, "day": day, "error": err, "rows": 0, "written": 0}
 
+    _t1 = time.time()
     raw_path = _save_raw(day, raw, cfg) if c.get("save_raw", True) else ""
     rows = parse_csv(raw, c)
     fab = str(cfg.get("_sys") or "").strip().upper()
@@ -510,8 +527,11 @@ def fetch_day(day: str = "", cfg: dict | None = None,
         return {"ok": False, "day": day, "error": msg,
                 "rows": len(rows), "written": 0, "raw_path": raw_path}
 
+    _LAST_T[_tk]["parse"] = round(time.time() - _t1, 1)
+    _t2 = time.time()
     from store_csv import append_rows
     saved = append_rows(rows, cfg)
+    _LAST_T[_tk]["save"] = round(time.time() - _t2, 1)
     out = {"ok": True, "day": day, "bytes": len(raw), "rows": len(rows),
            "warn": warn or None,
            "written": saved["written"], "skipped": saved["skipped"],

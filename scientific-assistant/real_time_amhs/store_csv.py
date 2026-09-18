@@ -24,10 +24,22 @@ _lock = threading.Lock()
 _keys_cache: dict[str, set] = {}      # {파일경로: {이미 쓴 키}}
 
 
+_MADE: set = set()          # 이미 만들어 본 폴더 (같은 mkdir 을 매번 부르지 않게)
+
+
 def data_dir(cfg: dict | None = None) -> str:
+    """저장 폴더. 없으면 만든다 — 단, **한 번만**.
+
+    ★day_path() 가 이걸 부르고, day_path 는 읽기·쓰기 경로 어디서나 불린다.
+      예전엔 부를 때마다 os.makedirs 가 나가서, 하루치를 넣는 동안만
+      1440번, 화면이 3초마다 물을 때마다 또 한 번씩 디스크를 두드렸다.
+      폴더가 생겼는지 한 번 확인했으면 그 뒤로는 안 물어도 된다.
+    """
     cfg = cfg or load_config()
     d = os.path.join(BASE_DIR, cfg.get("storage", {}).get("daily_csv_dir", "data"))
-    os.makedirs(d, exist_ok=True)
+    if d not in _MADE:
+        os.makedirs(d, exist_ok=True)
+        _MADE.add(d)
     return d
 
 
