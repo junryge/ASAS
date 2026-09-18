@@ -155,6 +155,67 @@ class 문서(unittest.TestCase):
         self.assertEqual(tb[0][1], 0, "×1 에서는 아직 경계 아래")
         self.assertEqual(tb[-1][1], 10, "×5 면 전부 경계 위")
 
+    def test_문서의_숫자를_원본에서_다시_세어_대조한다(self):
+        """★고객: "이상한거 하지마라. 실제 데이터 기반으로 하고 있는데."
+
+        문서를 만든 코드로 다시 재면 검증이 아니다. 여기서는 올려주신 원본을
+        **처음부터 따로 세어** 문서에 찍힌 숫자와 맞춰 본다. 하나라도 다르면
+        문서가 자료에 없는 말을 하고 있다는 뜻이다.
+        """
+        import csv as _csvmod
+        import re as _re
+        up = ("/root/.claude/uploads/d02bef53-654d-5efc-a5eb-2c6bb7b9e067/"
+              "730996b1-spspss.ipynb_24.txt")
+        if not os.path.isfile(up):
+            self.skipTest("받은 자료가 이 환경에 없다")
+        import json as _json
+        from datetime import datetime as _dt
+        nb = _json.load(io.open(up, encoding="utf-8"))
+        cuts = {"M14": (36, 52, 72), "M16HUBROOM": (40, 55, 75)}
+        docs = {"M14": "M14_20260913_장애분석.html",
+                "M16HUBROOM": "M16HUB_데드락_분석.html"}
+        for cell in nb["cells"]:
+            src = cell.get("source")
+            if isinstance(src, list):
+                src = "".join(src)
+            if not src or "변경전" not in src:
+                continue
+            rows = list(_csvmod.reader(io.StringIO(src)))
+            fab = _re.search(r"변경전_(.+?)_area_score", rows[0][1]).group(1).upper()
+            c = cuts[fab]
+            d = []
+            for r in rows[1:]:
+                if len(r) < 4 or not r[0].strip():
+                    continue
+                t1 = _dt.strptime(r[0].strip(), "%Y-%m-%d %H:%M")
+                t2 = _dt.strptime(r[2].strip(), "%Y-%m-%d %H:%M")
+                if t1 == t2:
+                    d.append((t1, float(r[1]), float(r[3])))
+            self.assertEqual(len(d), 2880, f"{fab} 원본 행 수")
+
+            def lv(v):
+                return 3 if v >= c[2] else 2 if v >= c[1] else 1 if v >= c[0] else 0
+
+            h = io.open(os.path.join(_BASE, "docs", docs[fab]), encoding="utf-8").read()
+            sec = h[h.index("PIO_ERROR 룰 추가"):]
+            txt = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", sec))
+            for tag, i in (("변경 전", 1), ("변경 후", 2)):
+                cnt = [0, 0, 0, 0]
+                for r in d:
+                    cnt[lv(r[i])] += 1
+                m = _re.search(tag + r" (\d+) (\d+) (\d+) (\d+) (\d+) (\d+)%", txt)
+                self.assertIsNotNone(m, f"{fab} {tag} 표를 못 찾았다")
+                self.assertEqual([int(m.group(k)) for k in (1, 2, 3, 4)], cnt,
+                                 f"{fab} {tag} 등급 분포가 원본과 다르다")
+                self.assertEqual(int(m.group(5)), cnt[2] + cnt[3], f"{fab} {tag} 위험 이상")
+            up_n = sum(1 for _, b, a in d if c[0] <= b < c[1] <= a)
+            m = _re.search(r"경계 → 위험으로 올라간 분 (\d+)", txt)
+            if m:
+                self.assertEqual(int(m.group(1)), up_n, f"{fab} 경계→위험")
+            ch = sum(1 for _, b, a in d if b != a)
+            m = _re.search(r"([\d,]+)분 / ([\d,]+)분 \(", txt)
+            self.assertEqual(int(m.group(1).replace(",", "")), ch, f"{fab} 오른 분")
+
     def test_실제_받은_자료로도_돈다(self):
         """받은 노트북이 아직 있으면 그것으로도 한 번 돌려 본다."""
         up = ("/root/.claude/uploads/d02bef53-654d-5efc-a5eb-2c6bb7b9e067/"
