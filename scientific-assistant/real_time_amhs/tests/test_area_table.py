@@ -809,3 +809,106 @@ class 이_점수가_어디서_왔나(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 칸이_겹치지_않는다(unittest.TestCase):
+    """고객: "HI_FAB 글자숫자 칸이 겹치는 경우가 종종 발생해 칸이 안맞아".
+
+    표는 table-layout:fixed + white-space:nowrap 이다. 그래서 내용이 칸보다
+    넓으면 칸이 늘지도, 글자가 접히지도 않고 **옆 칸 글자 위에 그대로 겹쳐
+    찍힌다**. 1366px 크로미엄에서 잰 값:
+
+        HI_FAB  'M16HUB · 100 ≠M14B'  123.8px  /  칸 안쪽 60px  → 63.8px 겹침
+        시각    '2026-09-16'           61.0px  /  칸 안쪽 46px  → 15.0px
+        AMOS QUEUE 지표(머리글)       160.1px  /  칸 안쪽 90px  → 30.1px
+        M16HUB(머리글)                 60.8px  /  칸 안쪽 48px  →  4.8px
+
+    ★고칠 때의 제약 — 칸을 넓히기만 하면 고정 폭 합이 늘어 1366px 노트북에
+      가로 스크롤이 생긴다(그래서 예전에 폭을 한 번 깎았다). 짧은 FAB 칸에서
+      남는 폭을 가져와 **합은 오히려 줄여** 놓았다.
+    ★실시간·과거 두 표는 같은 마크업·같은 syncFabCols 를 쓴다 — 둘 다 본다.
+    """
+
+    OLD_SUM = 1206      # 겹치던 시절의 고정 폭 합 (이 위로 올리면 안 된다)
+    FABS5 = ["M14", "M14B", "M16A", "M16B", "M16HUB"]
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(util.BASE, "static", "dashboard.html"),
+                  encoding="utf-8") as f:
+            cls.h = f.read()
+        cls.heads = re.findall(r'<table class="cases">\s*<thead><tr>(.*?)</tr></thead>',
+                               cls.h, re.S)
+
+    def test_표가_둘_다_잡혔다(self):
+        self.assertEqual(len(self.heads), 2, "실시간·과거 두 표를 못 찾았다")
+
+    # ── 폭 ────────────────────────────────────────────────────────────
+    def _fcolW(self):
+        m = re.search(r"const fcolW = f => Math\.max\((\d+), String\(f\)\.length \* (\d+) \+ (\d+)\)",
+                      self.h)
+        self.assertIsNotNone(m, "FAB 칸 폭을 이름 길이로 정하는 식이 없다")
+        lo, k, c = (int(x) for x in m.groups())
+        return lambda f: max(lo, len(f) * k + c)
+
+    def test_HI_FAB_칸이_두_줄을_담을_만큼_넓다(self):
+        w = int(re.search(r'<th class="hcol" style="width:(\d+)px">', self.h).group(1))
+        self.assertGreaterEqual(w, 92, "두 줄로 나눠도 '100 ≠M14B'(65px)가 안 들어간다")
+
+    def test_시각_칸에_날짜가_들어간다(self):
+        for head in self.heads:
+            w = int(re.search(r'<th style="width:(\d+)px">시각</th>', head).group(1))
+            # 첫 칸은 카드 여백에 맞춰 왼쪽 30px·오른쪽 10px 를 쓴다
+            self.assertGreaterEqual(w - 40, 61, "'2026-09-16'(61px)이 안 들어간다")
+
+    def test_긴_FAB_이름이_칸을_안_넘는다(self):
+        fw = self._fcolW()
+        self.assertGreaterEqual(fw("M16HUB") - 8, 52.8,
+                                "'M16HUB' 머리글(52.8px + 여백 8px)이 칸을 넘는다")
+        self.assertGreaterEqual(fw("M14B") - 8, 34.6, "네 글자 FAB 이 칸을 넘는다")
+
+    def test_고정_폭_합이_늘지_않았다(self):
+        """★한 칸을 넓히려면 다른 칸에서 그만큼 가져와야 한다 — 안 그러면
+        1366px 노트북에서 표가 창을 넘어 가로 스크롤이 생긴다."""
+        fw = self._fcolW()
+        static = [int(x) for x in re.findall(r'width:(\d+)px', self.heads[0])]
+        hcol = int(re.search(r'<th class="hcol" style="width:(\d+)px">', self.h).group(1))
+        total = sum(static) + hcol + sum(fw(f) for f in self.FABS5)
+        self.assertLessEqual(total, self.OLD_SUM,
+                             "고정 폭 합 %d — 겹치던 시절(%d)보다 넓어졌다" % (total, self.OLD_SUM))
+
+    def test_두_표의_폭이_같다(self):
+        """과거 데이터 탭도 같은 표다 — 한쪽만 고치면 탭을 옮길 때 칸이 흔들린다."""
+        a = re.findall(r'width:(\d+)px', self.heads[0])
+        b = re.findall(r'width:(\d+)px', self.heads[1])
+        self.assertEqual(a, b)
+
+    # ── 모양 ──────────────────────────────────────────────────────────
+    def test_HI_FAB_은_이름과_점수를_두_줄로_놓는다(self):
+        m = re.search(r"function hiCell\(r\)\{.*?\n\}", self.h, re.S).group(0)
+        self.assertIn('<div class="dim">', m, "점수가 아직 이름과 한 줄에 있다")
+        self.assertNotIn('<span class="dim"> · ', m, "' · ' 로 잇던 옛 한 줄이 남아 있다")
+        # 보이던 것은 하나도 없애지 않았다
+        for keep in ("fabTx(lv)", "≠", "예측기 hot_area", "예측기 표기"):
+            self.assertIn(keep, m, keep)
+
+    def test_CASE_는_잘렸다고_말하고_전문을_남긴다(self):
+        """실제 번호는 'C143000-M16HUB' 라 84px 칸에 안 들어간다. 예전에는
+        overflow:hidden 이 말없이 잘라서 잘린 줄도 몰랐다."""
+        self.assertRegex(self.h, r"\.cid \.id\{[^}]*text-overflow:ellipsis")
+        m = re.search(r"function rowsHtml\(.*?\n\}", self.h, re.S).group(0)
+        self.assertIn('class="cid"', m)
+        self.assertIn('title="${esc(r.case_id)}"', m, "전문을 툴팁에 안 남긴다")
+        self.assertIn('<span class="id">', m, "…을 걸 span 이 없다")
+
+    def test_긴_AMOS_머리글은_두_줄로_접는다(self):
+        """'AMOS QUEUE 지표'(160.1px)가 130px 칸을 넘어 표 오른쪽 밖으로
+        삐져나갔다. 칸을 넓히면 가로 스크롤이 생기므로 이 둘만 접는다."""
+        m = re.search(r"table\.cases th\.amhd\{([^}]*)\}", self.h)
+        self.assertIsNotNone(m, "amhd 규칙이 없다")
+        self.assertIn("white-space:normal", m.group(1))
+        self.assertIn("word-break:keep-all", m.group(1),
+                      "한글은 기본이 '어디서나 줄바꿈' 이라 '구역' 이 갈라진다")
+        for head in self.heads:
+            self.assertEqual(len(re.findall(r'<th class="amhd"', head)), 2,
+                             "AMOS 두 머리글에 다 안 붙었다")

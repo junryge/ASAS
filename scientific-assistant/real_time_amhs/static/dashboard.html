@@ -507,10 +507,19 @@
   table.cases td.fcol b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     font-size:13.5px;font-weight:400}
   table.cases td.fcol b.hot{font-weight:700}
+  /* ★HI_FAB 는 **두 줄**이다 — 위에 이름, 아래에 점수(+예측기와 다르면 ≠표시).
+     한 줄로 흘리던 'M16HUB · 100 ≠M14B' 가 123.8px 인데 칸은 80px(안쪽 60px)
+     이라 63.8px 이 옆 M14 칸의 숫자 위에 그대로 겹쳐 찍혔다 — 1366px 노트북에서
+     잰 값이다. 칸을 92px 로 넓히고 줄을 나누면 제일 긴 줄이 65px 로 들어간다.
+     시각 칸이 쓰는 꼴(시각 위 · 날짜 아래)과 같다. */
   table.cases th.hcol,table.cases td.hcol{white-space:nowrap;text-align:right}
   table.cases td.hcol b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     font-size:12.5px;font-weight:600}
-  table.cases td.hcol .dim{font-size:11.5px}
+  table.cases td.hcol .dim{font-size:11.5px;line-height:1.35;margin-top:2px;
+    font-variant-numeric:tabular-nums}
+  /* 예측기 hot_area 가 다를 때만 붙는 꼬리. 점수와 붙어 버리면 '100≠M14B' 가
+     한 덩어리로 읽힌다. */
+  table.cases td.hcol .ne{margin-left:5px}
   /* ★제일 높은 FAB 에 네모를 두르던 것을 뗐다. 등급을 글자색이 이미 말해
      주는데 칸마다 상자가 생기니 표가 시끄러웠다. 어느 FAB 이 제일 높은지는
      바로 왼쪽 HI_FAB 칸이 이름으로 말해 준다 — 두 번 말할 이유가 없다.
@@ -544,6 +553,14 @@
   table.cases td .dirline b{width:auto;font-size:10px}
   table.cases td .zchip{padding:1px 7px;font-size:11px;max-width:100%;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* ★'AMOS QUEUE 지표' 머리글은 한 줄로 160.1px 인데 칸은 130px 이다 — 30px 이
+     표 오른쪽 밖으로 삐져나가 카드 모서리에 걸쳤다. 칸을 넓히면 1366px 에서
+     가로 스크롤이 생기므로 이 둘만 두 줄로 접는다. th 높이 44px 안에 들어간다
+     (11px × 1.25 × 2줄 = 27.5px). */
+  /* ★word-break:keep-all — 한글은 기본이 '어디서나 줄바꿈' 이라 'AMOS HID 구역'
+     이 'AMOS HID 구' / '역' 로 갈라졌다. 띄어쓰기에서만 접는다 (발동 룰 칸이
+     쓰는 규칙과 같다). */
+  table.cases th.amhd{white-space:normal;line-height:1.25;word-break:keep-all}
   table.cases tr.morerow td{text-align:center;padding:18px;background:var(--panel)}
   /* 추이에 겹쳐 그릴 FAB 고르기. 체크하면 네모가 그 FAB 선 색으로 차서
      범례를 겸한다 — 색만으로 구분하지 않게 이름을 항상 같이 둔다. */
@@ -565,6 +582,13 @@
      참조하는 글자인데 .fresh(--cybg) 행 위에서 대비가 2.5:1 까지 떨어졌다 → --tx2. */
   .cid{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--tx2);white-space:nowrap;
        min-width:0;overflow:hidden;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
+  /* ★실제 CASE 번호는 'C143000-M16HUB'(시분초+구역) 라 84px 칸에 안 들어간다.
+     예전에는 .cid 의 overflow:hidden 이 **말없이** 잘라 내서, 잘린 것인지
+     원래 그런 번호인지 알 수 없었다. …을 붙여 잘렸다고 말해 주고 전문은
+     툴팁에 둔다 — 칸을 넓히면 1366px 노트북에서 가로 스크롤이 생긴다.
+     ★text-overflow 는 블록에만 먹는다. .cid 는 flex 라 글자를 span 으로
+       싸서 거기에 건다. */
+  .cid .id{min-width:0;overflow:hidden;text-overflow:ellipsis}
   .cid i{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}
   /* 스코어 숫자 — mono 13.5px(표에서 제일 큰 글자. 본문보다 크면 행이 높아진다) */
   .ttl{font-weight:600;font-size:13.5px;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
@@ -1229,14 +1253,14 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:86px">시각</th>
+        <th style="width:104px">시각</th>
         <th style="width:84px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th class="acol" style="width:150px">알람</th>
         <th class="rhcol" style="width:170px">발동 룰</th>
         <th class="mcol">실제지표</th>
-        <th style="width:118px">AMOS HID 구역</th>
-        <th style="width:130px">AMOS QUEUE 지표</th>
+        <th class="amhd" style="width:118px">AMOS HID 구역</th>
+        <th class="amhd" style="width:130px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="cases"><tr><td colspan="8" class="empty">불러오는 중…</td></tr></tbody>
     </table>
@@ -1304,14 +1328,14 @@
     </div>
     <table class="cases">
       <thead><tr>
-        <th style="width:86px">시각</th>
+        <th style="width:104px">시각</th>
         <th style="width:84px">CASE</th>
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th class="acol" style="width:150px">알람</th>
         <th class="rhcol" style="width:170px">발동 룰</th>
         <th class="mcol">실제지표</th>
-        <th style="width:118px">AMOS HID 구역</th>
-        <th style="width:130px">AMOS QUEUE 지표</th>
+        <th class="amhd" style="width:118px">AMOS HID 구역</th>
+        <th class="amhd" style="width:130px">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="pcases"><tr><td colspan="8" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
@@ -4073,8 +4097,16 @@ function syncFabCols(){
        HI_FAB 이 종합점수와 알람 사이로 파고들어 머리글과 내용이 어긋난다. */
     let at = tr.querySelector('th.acol') || sc;
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
-    add('<th class="hcol" style="width:80px">HI_FAB</th>');
-    FABS.forEach(f => add(`<th class="fcol" style="width:56px">${esc(f)}</th>`));
+    /* ★폭 — 넘치면 옆 칸 글자 위에 그대로 겹쳐 찍힌다(table-layout:fixed 라
+         칸이 늘지 않고 nowrap 이라 접히지도 않는다). 1366px 에서 재 보고 정했다.
+         · HI_FAB 80 → 92 : 두 줄로 나눈 뒤 제일 긴 줄(점수 ≠구역)이 65px
+         · FAB 56 → 이름 길이대로 : 'M16HUB' 여섯 글자는 56px 을 4.8px 넘겼고
+           'M14' 세 글자는 21.7px 이 남아돌았다. 짧은 칸에서 아낀 폭을 위의
+           둘에 돌려주면 **고정 폭 합은 오히려 2px 줄어든다** — 1366px 노트북에
+           가로 스크롤이 안 생기는 성질을 그대로 지킨다. */
+    const fcolW = f => Math.max(46, String(f).length * 9 + 10);
+    add('<th class="hcol" style="width:92px">HI_FAB</th>');
+    FABS.forEach(f => add(`<th class="fcol" style="width:${fcolW(f)}px">${esc(f)}</th>`));
   });
 }
 
@@ -4159,12 +4191,16 @@ function hiCell(r){
   const dif = hot && hot !== f;
   /* 색은 FAB 칸과 같은 규칙(위험 이상만 등급색) — 같은 수를 두 칸에서 다르게
      칠하면 어느 쪽이 맞는지 묻게 된다. 점수는 시안처럼 이름 옆에 붙인다. */
+  /* ★두 줄로 나눈다 — 위에 이름, 아래에 점수(+예측기와 다르면 ≠표시).
+     한 줄로 흘리던 'M16HUB · 100 ≠M14B' 는 123.8px 인데 칸 안쪽은 60px 이라
+     63.8px 이 옆 M14 칸 숫자 위에 겹쳐 찍혔다. 보이는 것은 그대로 두고
+     (이름·점수·다름 표시·툴팁 전부) 놓는 자리만 바꾼다. */
   return `<td class="hcol"><b style="color:${fabTx(lv)}" title="${
     esc((dif ? `최고점은 ${f}(${v}점) 인데 예측기 hot_area 는 ${hot} 입니다`
              : `${f} ${v}점 — 이 분에 제일 높은 FAB`)
-        + (plv && plv !== lv ? `\n예측기 표기: ${plv} (정책 컷과 다름)` : ''))}">${esc(f)}</b><span class="dim"> · ${
-    (v===undefined || v===null) ? '–' : v}</span>${
-    dif ? `<span class="dim" title="${esc('예측기 hot_area: '+hot)}"> ≠${esc(hot)}</span>` : ''}</td>`;
+        + (plv && plv !== lv ? `\n예측기 표기: ${plv} (정책 컷과 다름)` : ''))}">${esc(f)}</b><div class="dim">${
+    (v===undefined || v===null) ? '–' : v}${
+    dif ? `<span class="ne" title="${esc('예측기 hot_area: '+hot)}">≠${esc(hot)}</span>` : ''}</div></td>`;
 }
 
 /* 등급 카운터 — 종합점수 **바로 옆 칸**. 점수 칸에 같이 넣었더니 좁은 칸
@@ -4238,8 +4274,10 @@ function rowsHtml(list, byId, newAt, cap){
     return `<tr class="crow${isNew?' fresh':''}${hot}" data-at="${esc(r.at)}">
       <td class="tcol"><div class="t">${esc((r.datetime||'').slice(11) || r.time)}</div>
           <div class="dim">${esc((r.datetime||'').slice(0,10))}</div></td>
-      <td><div class="cid"><i style="background:${lvColor(r.level)}"></i>${
-          r.case_id ? esc(shortId(r.case_id)) : '<span class="dim">—</span>'}</div></td>
+      <td><div class="cid"${r.case_id ? ` title="${esc(r.case_id)}"` : ''}><i style="background:${
+          lvColor(r.level)}"></i>${
+          r.case_id ? `<span class="id">${esc(shortId(r.case_id))}</span>`
+                    : '<span class="dim">—</span>'}</div></td>
       <td><div class="ttl">${Math.round(r.score)}<span class="dim" style="font-weight:400"> 점</span></div>
           <div class="sub"><span class="chip lv${esc(r.level)}" title="${esc(r.severity)}">${
             esc(r.level)}</span></div></td>
