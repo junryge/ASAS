@@ -65,7 +65,7 @@ const DEFAULTS = {
   portScale: 0.40,       // 설비(포트) 상자
   textScale: 0.80,       // 글자(차량 라벨·존)
   sizeUI: false,         // '크기' 단추·패널을 띄울까 (기본 안 띄움 — 값은 위로 고정)
-  floor: true,           // 바닥판·격자를 깔까 ('바닥' 단추로 끌 수 있다)
+  ports: true,           // 설비(포트)를 세울까 — '설비' 단추로 끄고 켠다
   labels: true,
   heat: true,
   ui: true,        // 뷰어 내부 버튼/범례/툴팁
@@ -193,7 +193,7 @@ class Viewer {
     this.fly = null;
     this.opt = { labels: o.labels, heat: o.heat, vs: o.vehicleScale, proj: o.projection === 'iso' ? 'iso' : 'persp',
                  rs: +o.railScale || DEFAULTS.railScale, ps: +o.portScale || DEFAULTS.portScale,
-                 ts: +o.textScale || DEFAULTS.textScale, floor: o.floor !== false };
+                 ts: +o.textScale || DEFAULTS.textScale, ports: o.ports !== false };
     this.sel = -1; this.hover = -1; this.tracked = -1; this.follow = false;
     this.needRender = true; this.camDirty = true; this.vehDirty = true; this.resized = true; this.domDirty = true;
     this.mouse = null; this.lastDom = 0;
@@ -261,8 +261,8 @@ class Viewer {
       <button class="o3d-btn ${o.heat ? 'on' : ''}" data-a="heat">히트맵</button>
       ${o.sizeUI ? '<button class="o3d-btn" data-a="size" title="레일 굵기·차량·설비·글자 크기">크기</button>' : ''}
       <button class="o3d-btn" data-a="png">이미지 저장</button>
-      <button class="o3d-btn ${o.floor === false ? '' : 'on'}" data-a="floor"
-        title="바닥판과 1.2 m 격자 — 끄면 레일·설비·차량만 남는다">바닥</button>
+      <button class="o3d-btn ${o.ports === false ? '' : 'on'}" data-a="ports"
+        title="설비(포트) — 바닥에 선 회색 상자 · 기둥 · 초록 상태등. 끄면 레일과 차량만 남는다">설비</button>
       ${o.panel ? `<button class="o3d-btn ${o.panelOpen === false ? '' : 'on'}" data-a="panel">패널</button>` : ''}`;
     r.appendChild(bar);
     const leg = document.createElement('div');
@@ -322,9 +322,8 @@ class Viewer {
       if (a === 'labels') this.setOptions({ labels: !this.opt.labels });
       if (a === 'heat') this.setOptions({ heat: !this.opt.heat });
       if (a === 'size' && this.dom.size) { const z = this.dom.size; z.classList.toggle('on'); b.classList.toggle('on', z.classList.contains('on')); }
-      // 바닥 — 바닥판 + 격자. HID Zone 바닥판은 **건드리지 않는다** (그게 존을
-      //   클릭하는 과녁이라, 숨기면 존 선택이 안 된다).
-      if (a === 'floor') { this.setOptions({ floor: !(this.opt.floor !== false) }); }
+      // 설비 — 바닥에 선 회색 상자 + 기둥 + 상태등 (고객이 사진으로 짚은 그것)
+      if (a === 'ports') { this.setOptions({ ports: !(this.opt.ports !== false) }); }
       if (a === 'png') this.snapshot();
       if (a === 'follow') { this.follow = !this.follow; b.classList.toggle('on', this.follow); if (this.follow && this.orb.dist > 40) this.flyTo({ dist: 20 }); }
       if (a === 'panel') { const p = this.dom.panel; p.hidden = !p.hidden; b.classList.toggle('on', !p.hidden); }
@@ -512,10 +511,11 @@ class Viewer {
     this.needRender = true;
   }
 
-  /* 바닥판·격자 보이기/숨기기 — 다시 세우지 않고 visible 만 바꾼다 (즉시 바뀐다) */
-  applyFloor() {
-    const on = this.opt.floor !== false;
-    for (const m of (this.floorParts || [])) m.visible = on;
+  /* 설비(포트) 보이기/숨기기 — 다시 세우지 않고 visible 만 바꾼다 (즉시 바뀐다).
+     ★설비 = 바닥에 선 회색 상자 + 앞면 + 뚜껑 + 로드포트 + 기둥 + 초록 상태등.
+       한 묶음(portGroup)에 들어 있어 이 한 줄로 같이 사라졌다 다시 나온다. */
+  applyPorts() {
+    if (this.portGroup) this.portGroup.visible = this.opt.ports !== false;
   }
   applyTheme() {
     this.root.classList.toggle('o3d-dark', this.o.dark === true);
@@ -610,21 +610,14 @@ class Viewer {
     else floor.position.y = -0.4;
     floor.receiveShadow = true;
     W0.add(floor);
-    // ★바닥판과 격자를 붙잡아 둔다 — '바닥' 단추로 끄고 켠다.
-    //   (HID Zone 바닥판은 여기 안 들어간다. 그게 존을 클릭하는 과녁이라
-    //    숨기면 존 선택이 안 된다.)
-    this.floorParts = [floor];
     const gp = [], step = 1.2;
     if (W / step < 1500 && D / step < 1500) {
       for (let x = -W / 2 + step; x < W / 2; x += step) gp.push(x, 0.005, -D / 2, x, 0.005, D / 2);
       for (let z = -D / 2 + step; z < D / 2; z += step) gp.push(-W / 2, 0.005, z, W / 2, 0.005, z);
       const gg = new T.BufferGeometry();
       gg.setAttribute('position', new T.Float32BufferAttribute(gp, 3));
-      const grid = new T.LineSegments(gg, new T.LineBasicMaterial({ color: 0xc9cdd1, transparent: true, opacity: 0.7 }));
-      W0.add(grid);
-      this.floorParts.push(grid);
+      W0.add(new T.LineSegments(gg, new T.LineBasicMaterial({ color: 0xc9cdd1, transparent: true, opacity: 0.7 })));
     }
-    this.applyFloor();
 
     // 벽 — walls:false 면 없다 (월드모델파생은 안 세운다: 등각으로 돌려 보면 벽이
     //   안쪽을 가리고, 레일·차량 말고는 보여줄 정보가 없는 상자다).
@@ -671,6 +664,7 @@ class Viewer {
 
     // 설비 / 스토커 — 한 그룹에, 크기 배수로 다시 세울 수 있게
     this.portGroup = new T.Group();
+    this.portGroup.visible = this.opt.ports !== false;
     W0.add(this.portGroup);
     this._buildPortBodies(X, Z, this.opt.ps || 1);
   }
@@ -779,6 +773,7 @@ class Viewer {
     const X = x => x - this.cx, Z = y => y - this.cy;
     this.disposeGroup(this.portGroup);
     this._buildPortBodies(X, Z, this.opt.ps || 1);
+    this.applyPorts();          // 꺼 둔 채로 다시 세우면 다시 나타나면 안 된다
   }
 
   buildVehicleMeshes(cap) {
@@ -1194,7 +1189,7 @@ class Viewer {
     if (p.textScale != null && +p.textScale > 0 && +p.textScale !== this.opt.ts) { this.opt.ts = +p.textScale; this.fitSprites(); }
     if (p.portScale != null && +p.portScale > 0 && +p.portScale !== this.opt.ps) { this.opt.ps = +p.portScale; if (this.G) this.buildPorts(); }
     if (p.railScale != null && +p.railScale > 0 && +p.railScale !== this.opt.rs) { this.opt.rs = +p.railScale; if (this.G) this.buildRails(); }
-    if (p.floor != null) { this.opt.floor = !!p.floor; this.applyFloor(); }
+    if (p.ports != null) { this.opt.ports = !!p.ports; this.applyPorts(); }
     if (p.dark !== undefined) { this.o.dark = p.dark; this.applyTheme(); this.domDirty = true; for (const L of this.labelPool.values()) L.txt = ''; }
     if (p.background) { this.o.colors.background = p.background; if (this.scene) this.scene.background.set(p.background); }
     if (Array.isArray(p.stateColors) && p.stateColors.length) {
@@ -1210,7 +1205,7 @@ class Viewer {
     if (q('labels')) q('labels').classList.toggle('on', this.opt.labels);
     if (q('heat')) q('heat').classList.toggle('on', this.opt.heat);
     if (q('proj')) q('proj').textContent = this.opt.proj === 'iso' ? '원근으로' : '아이소로';
-    if (q('floor')) q('floor').classList.toggle('on', this.opt.floor !== false);
+    if (q('ports')) q('ports').classList.toggle('on', this.opt.ports !== false);
     // 크기 패널 슬라이더·숫자를 지금 값으로 (기본값 단추·바깥에서 부른 setOptions 도 따라온다)
     const sz2 = this.dom.size;
     if (sz2) for (const k of ['rs', 'vs', 'ps', 'ts']) {

@@ -288,32 +288,41 @@ class 화면에서_정한_기본값(unittest.TestCase):
         self.assertIn("data-a=\"panel\"", self.j)
 
 
-class 바닥_끄고_켜기(unittest.TestCase):
+class 설비_끄고_켜기(unittest.TestCase):
+    """고객이 사진으로 짚은 것 — 바닥에 선 회색 상자 + 기둥 + 초록 상태등.
+    그게 **설비(포트)** 다. 그것만 끄고 켠다 (다른 건 안 건드린다)."""
+
     @classmethod
     def setUpClass(cls):
         cls.j = _read("static", "js", "oht3d", "oht3d.js")
 
     def test_단추가_있다(self):
-        self.assertIn('data-a="floor"', self.j)
-        self.assertRegex(self.j, r"floor:\s*true")
+        self.assertIn('data-a="ports"', self.j)
+        self.assertRegex(self.j, r"ports:\s*true")
+        self.assertIn(">설비</button>", self.j)
 
-    def test_바닥판과_격자를_같이_끈다(self):
-        self.assertIn("this.floorParts = [floor];", self.j)
-        self.assertIn("this.floorParts.push(grid);", self.j)
-        i = self.j.index("applyFloor() {")
-        self.assertIn("m.visible = on", self.j[i:i + 260])
+    def test_설비_묶음_하나만_끈다(self):
+        i = self.j.index("applyPorts() {")
+        body = self.j[i:i + 260]
+        self.assertIn("this.portGroup.visible = this.opt.ports !== false", body)
 
-    def test_존_바닥판은_안_건드린다(self):
-        """★존 바닥판이 존을 클릭하는 과녁이다 — 숨기면 존 선택이 안 된다."""
-        i = self.j.index("applyFloor() {")
-        self.assertNotIn("zoneMeshes", self.j[i:i + 260])
+    def test_다른_것은_안_건드린다(self):
+        """바닥판·격자·존 바닥판·레일·차량은 그대로여야 한다."""
+        i = self.j.index("applyPorts() {")
+        body = self.j[i:i + 260]
+        for k in ("zoneMeshes", "railGroup", "vehGroup", "floor", "grid"):
+            self.assertNotIn(k, body, k + " 를 건드리면 안 된다")
+        self.assertNotIn("floorParts", self.j, "바닥을 끄는 길은 안 만든다")
+        self.assertNotIn('data-a="floor"', self.j)
 
-    def test_다시_세우면_참조를_비운다(self):
-        """world 를 비우면 바닥도 같이 날아간다 — 옛 참조를 쥐고 있으면 안 된다."""
-        self.assertIn("this.hotMark = null;", self.j)
+    def test_다시_세워도_꺼진_채로_남는다(self):
+        """설비 크기를 바꾸면 buildPorts 가 다시 세운다 — 그때 되살아나면 안 된다."""
+        i = self.j.index("this._buildPortBodies(X, Z, this.opt.ps || 1);\n    this.applyPorts();")
+        self.assertGreater(i, 0)
+        self.assertIn("this.portGroup.visible = this.opt.ports !== false;", self.j)
 
     def test_setOptions_로도_된다(self):
-        self.assertIn("if (p.floor != null) { this.opt.floor = !!p.floor; this.applyFloor(); }", self.j)
+        self.assertIn("if (p.ports != null) { this.opt.ports = !!p.ports; this.applyPorts(); }", self.j)
 
 
 class 정체_지점_표시(unittest.TestCase):
