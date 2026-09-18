@@ -13,13 +13,14 @@ logpresso_query.py — 로그프레소 OHT 조회 (시간 구간 → CSV DataFra
   ② /api/logpresso/load 본문에 {"profile": "raw" | "agg30"}
   ③ 환경변수 LP_QUERY_PROFILE · 이 파일의 PROFILE (①②가 없을 때만)
 
-★agg30 은 컬럼이 줄어든다 — 받는 쪽(data_loader.parse_oht_data_m14a_row)이
-  읽는 것 중 이 둘이 안 온다:
-      STOCK_INFO   → isFull.      없으면 **전부 공차로 보인다** (적재 색이 안 뜬다)
-      DESTINATION  → destination. 없으면 목적지가 0
-  (FROM_RETURN_PORT · DEST_RETURN_PORT · RETURN_PRIORITY 도 안 오지만, 이 셋은
-   화면·엔진이 안 쓴다. 속도는 위치 변화로 따로 재므로 영향 없다 — velocity_tracker.)
-  필요하면 stats 줄에 first(STOCK_INFO) as STOCK_INFO 를 더하면 된다.
+★agg30 도 화면이 쓰는 컬럼은 **다 가져온다** (2026-09-18 보탬).
+      STOCK_INFO             적재 여부      → 적재 색
+      VEHICLE_EXECUTE_CYCLE  반송 사이클    → 삼각형 안의 점 (검정/흰색)
+      DESTINATION            목적지         → 점을 대신 읽는 길
+  예전에는 이 셋이 안 와서 "상세는 되는데 간소는 안 된다" 였다 — 차가 전부
+  공차 색으로 나오고 점이 하나도 안 찍혔다.
+  (FROM_RETURN_PORT · DEST_RETURN_PORT · RETURN_PRIORITY 는 여전히 안 오지만,
+   이 셋은 화면·엔진이 안 쓴다. 속도는 위치 변화로 따로 잰다 — velocity_tracker.)
 ★agg30 은 30초에 한 줄이라 재생이 그만큼 성큼성큼 간다 (raw 는 1초 단위).
 """
 
@@ -130,7 +131,17 @@ def _q_raw(from_dt: str, to_dt: str, table: str) -> str:
 
 
 def _q_agg30(from_dt: str, to_dt: str, table: str) -> str:
-    """고객이 준 쿼리 — MSG_ID=2 만, 30초로 묶어 차량당 한 줄."""
+    """고객이 준 쿼리 — MSG_ID=2 만, 30초로 묶어 차량당 한 줄.
+
+    ★2026-09-18 — 컬럼 세 개를 **더했다** (고객: "상세는 되는데 왜 간소는 안 되냐").
+        STOCK_INFO             적재 여부      → 적재 색이 안 나와 전부 공차로 보였다
+        VEHICLE_EXECUTE_CYCLE  반송 사이클    → 삼각형 안의 점(검정/흰색)이 안 찍혔다
+        DESTINATION            목적지         → 점을 대신 읽는 길까지 막혔다
+      셋 다 이 테이블에 원래 있는 컬럼이고, 묶는 기준(by VEHICLE, _time)도
+      거르는 조건(MSG_ID=2)도 그대로다 — **행 수가 늘지 않는다**. 간소를 만든
+      이유(10분 넘는 구간 조회)는 그대로 살아 있다.
+    ★되돌리려면 이 세 줄만 지우면 된다. 원본 쿼리는 아래 백업 파일에도 있다.
+    """
     return (
         f'table from={from_dt} to={to_dt} {table}'
         ' | search MSG_ID == "2"'
@@ -139,7 +150,10 @@ def _q_agg30(from_dt: str, to_dt: str, table: str) -> str:
         ' | stats first(ADDRESS) as ADDRESS, first(DISTANCE) as DISTANCE,'
         ' first(NEXT_ADDRESS) as NEXT_ADDRESS, first(EDGE) as EDGE,'
         ' first(CARRIER) as CARRIER, first(STATUS) as STATUS,'
-        ' first(OPERATION_STATUS) as OPERATION_STATUS'
+        ' first(OPERATION_STATUS) as OPERATION_STATUS,'
+        ' first(STOCK_INFO) as STOCK_INFO,'
+        ' first(VEHICLE_EXECUTE_CYCLE) as VEHICLE_EXECUTE_CYCLE,'
+        ' first(DESTINATION) as DESTINATION'
         ' by VEHICLE, _time'
         ' | sort _time, VEHICLE'
     )

@@ -356,6 +356,7 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <button id="btn-junction" class="toggle-btn on" onclick="toggleLayer('junction')" title="합류(✕)·분기(○) 노드">합류</button>
       <button id="btn-sensor" class="toggle-btn" onclick="toggleLayer('sensor')" title="ZCU 센서 위치">센서</button>
       <button id="btn-hotspot" class="toggle-btn on" onclick="toggleLayer('hotspot')" title="데드락 체인/클러스터 마커 ON/OFF">체인</button>
+      <button id="btn-jam" class="toggle-btn" onclick="toggleLayer('jam')" title="정체(JAM) 구간을 붉게 뿌옇게 — 2D·유사 3D 같이 씁니다">정체</button>
     </div>
   </div>
 </div>
@@ -1155,6 +1156,10 @@ function scheduleDrawMap() {
 // ★주소(노드 번호)는 기본 ON — 현장 캡처처럼 확대하면 번호가 보인다.
 //   축소돼 있을 땐 자동으로 숨긴다(겹쳐서 읽히지 않는다). 포트·라벨도 같다.
 let showZone = true, showRailCut = true, showId = false, showName = true, showHotspot = true;
+/* 정체 구간 붉은 표시 — 2D 와 유사 3D 가 **같은 단추**를 쓴다 (고객: "옵션 같이 써야지").
+   두 보기는 캔버스 한 장을 같은 투영(toS)으로 나눠 쓰므로 그릴 자리 계산이 하나다.
+   ★기본은 꺼 둔다. 늘 켜 두면 정체가 없는 날에도 화면이 붉게 보인다. */
+let showJam = false;
 let showStation = true, showLabel = true, showSensor = false, showJunction = true;
 // ★등각(유사 3D) 보기 — 기본은 **끔**. 켜도 정보는 같고 눕혀 보이기만 한다.
 //   M14 레일은 단층(cad-z 7,242개 = 0)이라 3D 로 올려도 보여줄 높이가 없다 —
@@ -1184,12 +1189,14 @@ function toggleLayer(layer) {
   if (layer==='label') showLabel = !showLabel;
   if (layer==='sensor') showSensor = !showSensor;
   if (layer==='junction') showJunction = !showJunction;
+  if (layer==='jam') showJam = !showJam;
   if (layer==='iso') { setMapView(showIso ? '2d' : 'iso'); return; }
   const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('on', v); };
   on('btn-zone', showZone); on('btn-railcut', showRailCut); on('btn-id', showId);
   on('btn-name', showName); on('btn-hotspot', showHotspot);
   on('btn-station', showStation); on('btn-label', showLabel); on('btn-sensor', showSensor);
   on('btn-junction', showJunction); on('btn-iso', showIso); on('btn-2d', !showIso && !show3D); on('btn-3d', show3D);
+  on('btn-jam', showJam);
   railCacheCanvas = null;
   drawMap();
 }
@@ -1491,15 +1498,89 @@ function vehicleHeading(v, g, toS) {
   return ang;
 }
 
+/* 정체(JAM) 구간 — 붉게 뿌옇게. 2D 와 유사 3D 가 **같은 단추**로 켠다.
+   ★3D 의 '정체 지점' 은 제일 심한 한 곳으로 날아가는 단추다. 여기는 화면에
+     맵 전체가 들어오므로 **몰린 곳을 전부** 칠한다 — 어디가 몇 군데인지가
+     2D 에서 보고 싶은 것이다.
+   ★묶는 반지름은 도면 단위다 (1 단위 = 10 mm → 1200 단위 = 12 m). 3D 가 쓰는
+     12 m 와 같은 크기로 맞췄다 — 두 화면이 같은 것을 '한 무리' 라고 해야 한다. */
+const JAM_R = 1200;                 // 도면 단위 (= 12 m)
+
+function jamClusters(radius) {
+  const js = [];
+  for (const vid in vehicleDisplay) {
+    const v = vehicleDisplay[vid];
+    if (v.state === 7) js.push(v);
+  }
+  if (!js.length) return [];
+  const used = new Array(js.length).fill(false);
+  const out = [];
+  /* 제일 많이 몰린 곳부터 집어내고, 그 무리는 빼고 다시 센다.
+     ★도는 횟수를 임의로 자르지 않는다. 한 번 돌 때마다 최소 한 대는 빠지므로
+       차 대수만큼이면 반드시 끝난다. 예전에 60으로 잘라 뒀더니 정체가 예순
+       군데를 넘는 날 나머지가 통째로 안 그려졌다 — '어디가 정체인가' 를 보는
+       표시에서 몇 군데를 말없이 빼면 안 된다. */
+  for (let guard = 0; guard < js.length; guard++) {
+    let bi = -1, bc = 0, bx = 0, by = 0;
+    for (let i = 0; i < js.length; i++) {
+      if (used[i]) continue;
+      let c = 0, sx = 0, sy = 0;
+      for (let k = 0; k < js.length; k++) {
+        if (used[k]) continue;
+        if (Math.hypot(js[i].dx - js[k].dx, js[i].dy - js[k].dy) <= radius) { c++; sx += js[k].dx; sy += js[k].dy; }
+      }
+      if (c > bc) { bc = c; bi = i; bx = sx / c; by = sy / c; }
+    }
+    if (bi < 0) break;
+    for (let k = 0; k < js.length; k++)
+      if (!used[k] && Math.hypot(js[bi].dx - js[k].dx, js[bi].dy - js[k].dy) <= radius) used[k] = true;
+    out.push({ x: bx, y: by, n: bc });
+  }
+  return out;
+}
+
+/* 붉은 무리 — 가운데가 진하고 가장자리로 흐려진다 (3D 와 같은 결).
+   테두리가 또렷하면 '구역' 처럼 보여 HID Zone 과 헷갈린다. */
+function drawJamBlobs(ctx, toS, sc) {
+  const cl = jamClusters(JAM_R);
+  if (!cl.length) return;
+  const base = JAM_R * sc;                       // 화면 픽셀로 옮긴 묶음 반지름
+  ctx.save();
+  for (const c of cl) {
+    const [sx, sy] = toS(c.x, c.y);
+    // 많이 몰린 곳일수록 조금 더 크게 (1대 = 기본, 10대 = 1.6배쯤)
+    const R = Math.max(18, base * (0.9 + 0.22 * Math.log2(1 + c.n)));
+    if (sx < -R || sy < -R || sx > ctx.canvas.width + R || sy > ctx.canvas.height + R) continue;
+    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, R);
+    g.addColorStop(0.00, 'rgba(239,68,68,0.50)');
+    g.addColorStop(0.35, 'rgba(239,68,68,0.26)');
+    g.addColorStop(0.70, 'rgba(239,68,68,0.09)');
+    g.addColorStop(1.00, 'rgba(239,68,68,0.00)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(sx, sy, R, 0, 6.283); ctx.fill();
+    // 몇 대인지 — 숫자가 없으면 '붉은 얼룩' 일 뿐이다
+    if (R >= 26) {
+      ctx.font = `700 ${Math.round(Math.min(18, Math.max(11, R * 0.22)))}px sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.strokeText(`${c.n}대`, sx, sy);
+      ctx.fillStyle = '#b91c1c';
+      ctx.fillText(`${c.n}대`, sx, sy);
+    }
+  }
+  ctx.restore();
+}
+
 /* 반송 중인 두 상태 — 현장 HMI 가 ● 로 그리는 그것.
    ★가장 확실한 신호는 VEHICLE_EXECUTE_CYCLE(차량 실행 사이클) 이다.
        2 = ACQUIRE_MOVING  가지러 이동 (지시받아 Source 포트로) → 흰 ●
        4 = DEPOSIT_MOVING  들고 이동                            → 검은 ●
      그 밖의 사이클(대기·유지보수·투입…)은 반송 이동이 아니라 ▲ 세모다.
-   ★이 컬럼이 없는 조회에서는 0 으로 온다 — **간소(agg30) 조회가 그렇다**
-     (STOCK_INFO·DESTINATION 도 같이 안 온다). 그때는 적재 여부와 목적지로
-     대신 읽는다. 정확도는 떨어지지만 화면이 통째로 세모가 되는 것보다 낫다.
-     동그라미를 제대로 보려면 **상세** 로 조회해야 한다. */
+   ★2026-09-18 부터 **간소(agg30) 조회도** 이 컬럼을 가져온다. 그전에는 안 와서
+     간소로 보면 점이 하나도 안 찍혔다 (고객: "간소 옵션 삼각형 그거 안 되네").
+   ★그래도 0 으로 오는 길은 남는다 — 옛 CSV, 컬럼이 빠진 테이블. 그때는 적재
+     여부와 목적지로 대신 읽는다. 정확도는 떨어지지만 화면이 통째로 세모가
+     되는 것보다 낫다. */
 const VC_ACQUIRE = 2, VC_DEPOSIT = 4;
 function vehCarry(v) {
   const c = Number(v.vhlCycle) || 0;
@@ -1908,6 +1989,8 @@ function drawMap() {
   //   화면에서 8px, 열 배 확대해도 14px 쯤이다.
   const pal = mapPal();
   const r = vehicleRadiusPx(mapSettings.vehicleRadius, mapZoom);
+  // 정체 구간 — 차량 **밑에** 깐다. 위에 덮으면 삼각형이 붉게 묻혀 안 보인다.
+  if (showJam) drawJamBlobs(mapCtx, toS, sc);
   for (const vid in vehicleDisplay) {
     const v = vehicleDisplay[vid];
     const [sx,sy] = toS(v.dx, v.dy);
@@ -3421,8 +3504,8 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
         점은 <b>짐을 들었는지</b>만 말합니다.<br>
         ● 검은 점 = FOUP 을 들고 이동 &nbsp;·&nbsp; ● 흰 점 = FOUP 을 가지러 이동
         (지시받아 Source 포트로) &nbsp;·&nbsp; 그 밖에는 점을 안 찍습니다.<br>
-        <b>간소</b> 로 조회하면 실행 사이클 · 적재 · 목적지 컬럼이 안 와서 점이 잘 안
-        보입니다 — 점을 제대로 보려면 <b>상세</b> 로 조회하세요.</p>
+        <b>상세 · 간소 둘 다</b> 나옵니다. (2026-09-18 부터 — 그전에는 간소가 실행 사이클 ·
+        적재 · 목적지 컬럼을 안 가져와서 점이 하나도 안 찍혔습니다.)</p>
       <div class="ms-row"><label>점 표시</label>
         <span><select id="ms-carryDot">
             <option value="on">켜기</option>

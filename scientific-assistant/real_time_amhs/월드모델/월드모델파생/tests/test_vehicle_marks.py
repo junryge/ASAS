@@ -131,10 +131,20 @@ class 삼각형_안의_점(unittest.TestCase):
         self.assertIn('<option value="on">', self.h)
         self.assertIn('<option value="off">', self.h)
 
-    def test_간소로는_점이_잘_안_보인다고_적었다(self):
-        """눌러 보고 알면 늦다 — 설정창과 주석 둘 다에."""
-        self.assertIn("점을 제대로 보려면", self.h)
-        self.assertIn("상세", self.h)
+    def test_간소로도_점이_나온다(self):
+        """★2026-09-18 — 간소(agg30) 쿼리가 실행 사이클·적재·목적지를 안 가져와서
+        간소로 보면 점이 하나도 안 찍혔다 (고객: "간소 옵션 삼각형 그거 안 되네").
+        쿼리에 세 컬럼을 더해 상세와 같아졌다."""
+        q = _read("logpresso_query.py")
+        i = q.index("def _q_agg30(")
+        body = q[i:q.index("QUERY_PROFILES", i)]
+        for c in ("STOCK_INFO", "VEHICLE_EXECUTE_CYCLE", "DESTINATION"):
+            self.assertIn("first(%s) as %s" % (c, c), body, c + " 를 안 가져온다")
+        # 묶는 기준·거르는 조건은 그대로 — 행 수가 늘면 간소를 만든 뜻이 없어진다
+        self.assertIn("by VEHICLE, _time", body)
+        self.assertIn('search MSG_ID == "2"', body)
+        self.assertIn('datetrunc(_time, "30s")', body)
+        self.assertIn("상세 · 간소 둘 다</b> 나옵니다", self.h, "설정창에도 적어야 한다")
 
     def test_아이소메트리는_안_건드렸다(self):
         """회의 뒤로 미룬 것. 차량 색은 예전 그대로라 3D 는 건드릴 게 없고,
