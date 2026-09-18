@@ -194,6 +194,18 @@ class 서버에_제대로_붙었나(unittest.TestCase):
         self.assertIn("resp.status_code = 304", body)
         self.assertIn("Content-Encoding", body)
 
+    def test_화면_파일도_늘_물어보게_한다(self):
+        """현장: "서버에서는 잘 적용이 되는데 접속하는 html 에서 적용이 안 되네".
+        Cache-Control 을 안 붙이면 브라우저가 제 마음대로(휴리스틱) 캐시해서
+        **묻지도 않고** 옛 파일을 쓴다. no-cache 는 '쓰기 전에 물어봐라' 라
+        안 바뀌었으면 304 한 줄로 끝난다."""
+        i = self.s.index("def _etag(resp):")
+        body = self.s[i:i + 900]
+        self.assertIn('request.path.startswith("/static/")', body)
+        self.assertIn('"no-cache, must-revalidate"', body)
+        # 화면 한 장(dashboard.html)은 아예 저장하지 않는다 — 이건 예전부터
+        self.assertIn('resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"', self.s)
+
     def test_캐시_상태를_볼_수_있다(self):
         self.assertIn('"caches": [c.stats() for c in (FEED_CACHE, CMP_CACHE)]', self.s)
 

@@ -56,6 +56,14 @@ def _etag(resp):
     ★GET · 200 · 다이렉트 패스스루가 아닌 것만. POST 는 손대지 않는다.
     """
     try:
+        # ★정적 파일도 **늘 물어보고** 쓰게 한다. Flask 는 ETag·Last-Modified 만
+        #   붙이고 Cache-Control 을 안 붙이는데, 그러면 브라우저가 휴리스틱
+        #   캐시로 넘어가 **묻지도 않고** 옛 파일을 쓴다 — "서버는 바뀌었는데
+        #   화면은 그대로". no-cache 는 '쓰지 마라' 가 아니라 '쓰기 전에
+        #   물어봐라' 라서, 안 바뀌었으면 304 한 줄로 끝난다.
+        if request.method == "GET" and request.path.startswith("/static/") \
+                and not resp.headers.get("Cache-Control"):
+            resp.headers["Cache-Control"] = "no-cache, must-revalidate"
         if (request.method != "GET" or resp.status_code != 200
                 or resp.direct_passthrough or resp.headers.get("ETag")
                 or not request.path.startswith("/api/")):

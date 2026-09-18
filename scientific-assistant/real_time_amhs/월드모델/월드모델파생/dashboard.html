@@ -1567,6 +1567,8 @@ function drawCarryDot(ctx, sx, sy, rr, kind, ang) {
 // 도면 단위 → m. 실물 M14A 레이아웃에서 잰 값: 엣지 10,424개의 (distance-puls mm ÷
 // 도면 길이) 중앙값 9.99, p10~p90 9.98~10.00 — 1 단위 = 10 mm 다.
 const V3D_SCALE = 0.01;
+// 3D 뷰어 판 번호 — oht3d.js 를 고쳐 올릴 때 같이 올린다 (브라우저 캐시 우회)
+const V3D_BUILD = '20260918a';
 
 // 2D 차량 상태 코드 → 3D 상태(0 운행 · 1 적재 · 2 정지 · 3 JAM · 4 OBS).
 // ★2D 의 색 규칙(drawMap)과 **같은 순서**로 판정한다. 7=JAM, 6=OBS, 2/8/9=정지,
@@ -1665,7 +1667,14 @@ async function open3D() {
   mapCanvas.style.display = 'none';
   if (!v3d) {
     if (!v3dLoading) v3dLoading = (async () => {
-      const mod = await import('/static/js/oht3d/oht3d.js');
+      /* ★주소에 판 번호를 붙인다. 서버가 이제 no-cache 를 붙이지만, **이미**
+         브라우저에 박혀 있는 옛 파일은 그 헤더를 받아 본 적이 없어서 계속
+         제 캐시를 쓴다 (휴리스틱 캐시가 아직 안 끝났다). 주소가 달라지면
+         그건 '다른 파일' 이라 무조건 새로 받는다 — 사용자가 Ctrl+Shift+R 을
+         누르지 않아도 된다.
+         oht3d.js 를 고쳐 올릴 때 이 숫자를 같이 올려라. three.js 는 oht3d.js
+         안에서 상대경로로 부르므로 여기 영향을 안 받는다(690KB 를 다시 안 받는다). */
+      const mod = await import('/static/js/oht3d/oht3d.js?v=' + V3D_BUILD);
       const pal = mapPal();
       const inst = await mod.createOHT3D(box, {
         coordScale: V3D_SCALE,

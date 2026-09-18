@@ -145,7 +145,9 @@ class 서버(unittest.TestCase):
         s = _read("main.py")
         self.assertIn("from fastapi.staticfiles import StaticFiles", s)
         self.assertIn('_STATIC_DIR = bundled_dir() / "static"', s, "번들(_MEIPASS)에서도 찾으려면 bundled_dir 기준")
-        self.assertIn('app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")', s)
+        # ★2026-09-18: 그냥 StaticFiles 면 Cache-Control 이 안 붙어 브라우저가
+        #   묻지도 않고 옛 파일을 쓴다 — oht3d.js 를 올려도 3D 가 그대로였다.
+        self.assertIn('app.mount("/static", _NoCacheStatic(directory=str(_STATIC_DIR)), name="static")', s)
         self.assertIn("if _STATIC_DIR.is_dir():", s, "폴더가 없어도 서버는 떠야 한다")
 
     def test_번들에_static_이_들어간다(self):
@@ -213,7 +215,8 @@ class 화면(unittest.TestCase):
     def test_뷰어는_눌러야_받고_static_경로가_서버와_같다(self):
         m = re.search(r"async function open3D\(\) \{[\s\S]*?\n\}", self.h)
         self.assertIsNotNone(m)
-        self.assertIn("await import('/static/js/oht3d/oht3d.js')", m.group(0))
+        # 주소에 판 번호가 붙는다 — 이미 브라우저에 박힌 옛 파일을 지나치기 위해
+        self.assertIn("await import('/static/js/oht3d/oht3d.js?v=' + V3D_BUILD)", m.group(0))
         self.assertIn("projection: 'iso'", m.group(0), "단추 이름이 아이소메트리다 — 등각으로 열어야 한다")
         self.assertIn("walls: false,", m.group(0), "벽 없이 연다 (고객: 벽 필요없다)")
         self.assertIn("coordScale: V3D_SCALE", m.group(0))

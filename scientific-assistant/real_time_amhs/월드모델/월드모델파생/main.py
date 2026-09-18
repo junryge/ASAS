@@ -50,9 +50,25 @@ app = FastAPI(title="OHT 월드모델 시뮬레이션", version="1.0")
 #   폐쇄망이라 CDN 이 아니라 **이 폴더**에서 나가야 한다.
 #   PyInstaller 로 묶으면 sys._MEIPASS 밑에 풀리므로 bundled_dir() 기준이다
 #   (oht_world.spec 의 datas 에 ('static', 'static') 이 같이 있어야 한다).
+class _NoCacheStatic(StaticFiles):
+    """정적 파일도 **늘 물어보고** 쓰게 한다.
+
+    ★StaticFiles 는 ETag·Last-Modified 는 붙이지만 Cache-Control 을 안 붙인다.
+      그러면 브라우저가 휴리스틱 캐시로 넘어가 **묻지도 않고** 옛 파일을 쓴다.
+      oht3d.js 를 새로 올렸는데 3D 가 예전 모습 그대로였던 이유가 이것이다.
+    ★no-cache 는 '쓰지 마라' 가 아니라 '쓰기 전에 물어봐라' 다. 안 바뀌었으면
+      304 한 줄로 끝나니 통신량은 거의 그대로다(three.js 690KB 도 다시 안 받는다).
+    """
+
+    def file_response(self, *a, **k):
+        r = super().file_response(*a, **k)
+        r.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return r
+
+
 _STATIC_DIR = bundled_dir() / "static"
 if _STATIC_DIR.is_dir():
-    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+    app.mount("/static", _NoCacheStatic(directory=str(_STATIC_DIR)), name="static")
 else:
     print(f"[경고] static 폴더가 없다 — 3D 아이소메트리 보기가 안 뜬다: {_STATIC_DIR}")
 
@@ -123,10 +139,20 @@ ws_clients: list = []
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    """대시보드 HTML"""
+    """대시보드 HTML.
+
+    ★캐시를 끈다. 이 화면은 한 번 띄우면 며칠씩 그대로 떠 있고, 그 사이
+      dashboard.html 을 새로 올려도 브라우저가 예전 것을 계속 쓴다. 헤더를
+      하나도 안 붙이면 브라우저가 **제 마음대로**(휴리스틱) 캐시하는데,
+      그 기간이 '마지막 수정 이후 지난 시간의 10%' 라 오래된 파일일수록
+      더 오래 붙들고 있는다 — "서버는 바뀌었는데 화면은 그대로" 가 그것이다.
+      HTML 한 장이라 매번 받아도 부담이 없다.
+    """
     html_path = str(bundled_dir() / "dashboard.html")
     with open(html_path, 'r', encoding='utf-8') as f:
-        return f.read()
+        return HTMLResponse(f.read(), headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache", "Expires": "0"})
 
 
 @app.get("/api/status")
