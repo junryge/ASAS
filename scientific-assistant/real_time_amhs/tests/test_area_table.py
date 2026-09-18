@@ -819,6 +819,7 @@ class 칸이_겹치지_않는다(unittest.TestCase):
     찍힌다**. 1366px 크로미엄에서 잰 값:
 
         HI_FAB  'M16HUB · 100 ≠M14B'  123.8px  /  칸 안쪽 60px  → 63.8px 겹침
+                (★점수는 그 뒤에 아예 뺐다 — 아래 test_HI_FAB_은_이름만_적는다)
         시각    '2026-09-16'           61.0px  /  칸 안쪽 46px  → 15.0px
         AMOS QUEUE 지표(머리글)       160.1px  /  칸 안쪽 90px  → 30.1px
         M16HUB(머리글)                 60.8px  /  칸 안쪽 48px  →  4.8px
@@ -851,9 +852,11 @@ class 칸이_겹치지_않는다(unittest.TestCase):
         lo, k, c = (int(x) for x in m.groups())
         return lambda f: max(lo, len(f) * k + c)
 
-    def test_HI_FAB_칸이_두_줄을_담을_만큼_넓다(self):
+    def test_HI_FAB_칸에_이름이_들어간다(self):
+        """이름만 적으므로 제일 긴 'M16HUB'(45.2px) + 좌우 여백 20px 이면 된다.
+        머리글 'HI_FAB' 도 같은 칸을 쓴다 — 둘 중 넓은 쪽이 기준이다."""
         w = int(re.search(r'<th class="hcol" style="width:(\d+)px">', self.h).group(1))
-        self.assertGreaterEqual(w, 92, "두 줄로 나눠도 '100 ≠M14B'(65px)가 안 들어간다")
+        self.assertGreaterEqual(w, 66, "'M16HUB'(45.2px)가 칸을 넘는다")
 
     def test_시각_칸에_날짜가_들어간다(self):
         for head in self.heads:
@@ -884,12 +887,26 @@ class 칸이_겹치지_않는다(unittest.TestCase):
         self.assertEqual(a, b)
 
     # ── 모양 ──────────────────────────────────────────────────────────
-    def test_HI_FAB_은_이름과_점수를_두_줄로_놓는다(self):
+    def test_HI_FAB_은_이름만_적는다(self):
+        """고객: "HI_FAB 숫자 적을 필요 없는데;; 최대값 나오는 거 그냥 FAB만
+        있으면 되는데". 그 점수는 **바로 오른쪽 FAB 칸에 이미** 서 있다 —
+        한 행에 같은 수를 두 번 적던 셈이고, 칸이 겹친 원인이기도 했다."""
         m = re.search(r"function hiCell\(r\)\{.*?\n\}", self.h, re.S).group(0)
-        self.assertIn('<div class="dim">', m, "점수가 아직 이름과 한 줄에 있다")
-        self.assertNotIn('<span class="dim"> · ', m, "' · ' 로 잇던 옛 한 줄이 남아 있다")
-        # 보이던 것은 하나도 없애지 않았다
-        for keep in ("fabTx(lv)", "≠", "예측기 hot_area", "예측기 표기"):
+        body = m.split("return `", 1)[1]        # 주석 말고 실제로 그리는 자리만
+        # <b …>여기</b> — 이름 하나뿐이어야 한다
+        inner = re.search(r">([^<>]*)</b>", body)
+        self.assertIsNotNone(inner, "이름을 담는 <b> 를 못 찾았다")
+        self.assertEqual(inner.group(1).strip(), "${esc(f)}",
+                         "이름 옆에 다른 것이 같이 적힌다")
+        tail = body.split("</b>", 1)[1]         # 이름 뒤에 붙는 것
+        self.assertNotIn(" · ", tail, "' · 점수' 로 잇던 옛 한 줄이 남아 있다")
+        self.assertNotIn(": v}", tail, "점수를 아직 칸에 적는다")
+        # 점수 자체는 잃지 않는다 — 색(등급)과 툴팁에 그대로 남는다
+        self.assertIn("fabTx(lv)", m, "등급색이 사라졌다")
+        self.assertIn("${v}점", m, "점수가 툴팁에서도 사라졌다")
+        # ★진짜로 안 그리는지는 tests/cut_color.js 가 함수를 돌려서 본다
+        # 예측기가 다른 데를 지목한 사실은 점수가 아니다 — 지우면 안 된다
+        for keep in ("≠", "예측기 hot_area", "예측기 표기"):
             self.assertIn(keep, m, keep)
 
     def test_CASE_는_잘렸다고_말하고_전문을_남긴다(self):

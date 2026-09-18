@@ -507,19 +507,15 @@
   table.cases td.fcol b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     font-size:13.5px;font-weight:400}
   table.cases td.fcol b.hot{font-weight:700}
-  /* ★HI_FAB 는 **두 줄**이다 — 위에 이름, 아래에 점수(+예측기와 다르면 ≠표시).
-     한 줄로 흘리던 'M16HUB · 100 ≠M14B' 가 123.8px 인데 칸은 80px(안쪽 60px)
-     이라 63.8px 이 옆 M14 칸의 숫자 위에 그대로 겹쳐 찍혔다 — 1366px 노트북에서
-     잰 값이다. 칸을 92px 로 넓히고 줄을 나누면 제일 긴 줄이 65px 로 들어간다.
-     시각 칸이 쓰는 꼴(시각 위 · 날짜 아래)과 같다. */
+  /* ★HI_FAB 는 **이름만** 적는다. 점수를 같이 적던 'M16HUB · 100 ≠M14B' 는
+     123.8px 인데 칸은 80px(안쪽 60px)이라 63.8px 이 옆 M14 칸의 숫자 위에
+     그대로 겹쳐 찍혔다 — 1366px 노트북에서 잰 값이다. 그 점수는 바로 오른쪽
+     FAB 칸에 이미 서 있어 두 번 적을 이유가 없었다(고객 지적).
+     예측기 hot_area 가 다를 때만 아랫줄에 ≠구역이 붙는다. */
   table.cases th.hcol,table.cases td.hcol{white-space:nowrap;text-align:right}
   table.cases td.hcol b{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     font-size:12.5px;font-weight:600}
-  table.cases td.hcol .dim{font-size:11.5px;line-height:1.35;margin-top:2px;
-    font-variant-numeric:tabular-nums}
-  /* 예측기 hot_area 가 다를 때만 붙는 꼬리. 점수와 붙어 버리면 '100≠M14B' 가
-     한 덩어리로 읽힌다. */
-  table.cases td.hcol .ne{margin-left:5px}
+  table.cases td.hcol .dim{font-size:11.5px;line-height:1.35;margin-top:2px}
   /* ★제일 높은 FAB 에 네모를 두르던 것을 뗐다. 등급을 글자색이 이미 말해
      주는데 칸마다 상자가 생기니 표가 시끄러웠다. 어느 FAB 이 제일 높은지는
      바로 왼쪽 HI_FAB 칸이 이름으로 말해 준다 — 두 번 말할 이유가 없다.
@@ -4099,13 +4095,15 @@ function syncFabCols(){
     const add = h => { at.insertAdjacentHTML('afterend', h); at = at.nextElementSibling; };
     /* ★폭 — 넘치면 옆 칸 글자 위에 그대로 겹쳐 찍힌다(table-layout:fixed 라
          칸이 늘지 않고 nowrap 이라 접히지도 않는다). 1366px 에서 재 보고 정했다.
-         · HI_FAB 80 → 92 : 두 줄로 나눈 뒤 제일 긴 줄(점수 ≠구역)이 65px
+         · HI_FAB 80 → 76 : 이름 한 줄(M16HUB 45.2px)과 머리글 'HI_FAB' 만
+           담으면 된다. 점수를 뺀 뒤 92px 에서 되돌린 16px 은 폭을 안 준
+           실제지표 칸이 가져간다 (거기가 제일 좁아 한 낱말이 갈라진다)
          · FAB 56 → 이름 길이대로 : 'M16HUB' 여섯 글자는 56px 을 4.8px 넘겼고
            'M14' 세 글자는 21.7px 이 남아돌았다. 짧은 칸에서 아낀 폭을 위의
            둘에 돌려주면 **고정 폭 합은 오히려 2px 줄어든다** — 1366px 노트북에
            가로 스크롤이 안 생기는 성질을 그대로 지킨다. */
     const fcolW = f => Math.max(46, String(f).length * 9 + 10);
-    add('<th class="hcol" style="width:92px">HI_FAB</th>');
+    add('<th class="hcol" style="width:76px">HI_FAB</th>');
     FABS.forEach(f => add(`<th class="fcol" style="width:${fcolW(f)}px">${esc(f)}</th>`));
   });
 }
@@ -4191,16 +4189,18 @@ function hiCell(r){
   const dif = hot && hot !== f;
   /* 색은 FAB 칸과 같은 규칙(위험 이상만 등급색) — 같은 수를 두 칸에서 다르게
      칠하면 어느 쪽이 맞는지 묻게 된다. 점수는 시안처럼 이름 옆에 붙인다. */
-  /* ★두 줄로 나눈다 — 위에 이름, 아래에 점수(+예측기와 다르면 ≠표시).
-     한 줄로 흘리던 'M16HUB · 100 ≠M14B' 는 123.8px 인데 칸 안쪽은 60px 이라
-     63.8px 이 옆 M14 칸 숫자 위에 겹쳐 찍혔다. 보이는 것은 그대로 두고
-     (이름·점수·다름 표시·툴팁 전부) 놓는 자리만 바꾼다. */
+  /* ★점수는 안 적는다 (고객: "HI_FAB 숫자 적을 필요 없는데;; 최대값 나오는
+     거 그냥 FAB만 있으면 되는데"). 그 점수는 **바로 오른쪽 FAB 칸에 이미**
+     서 있다 — 같은 수를 한 행에 두 번 적던 셈이고, 'M16HUB · 100 ≠M14B' 가
+     123.8px 로 불어나 옆 칸 숫자 위에 겹쳐 찍힌 원인이기도 했다.
+     점수는 툴팁에 그대로 남긴다 (색은 여전히 그 점수의 등급이다).
+     예측기 hot_area 가 다를 때만 아랫줄에 ≠구역을 붙인다 — 이건 점수가
+     아니라 '다른 데를 지목했다' 는 다른 사실이라 지우면 안 된다. */
   return `<td class="hcol"><b style="color:${fabTx(lv)}" title="${
     esc((dif ? `최고점은 ${f}(${v}점) 인데 예측기 hot_area 는 ${hot} 입니다`
              : `${f} ${v}점 — 이 분에 제일 높은 FAB`)
-        + (plv && plv !== lv ? `\n예측기 표기: ${plv} (정책 컷과 다름)` : ''))}">${esc(f)}</b><div class="dim">${
-    (v===undefined || v===null) ? '–' : v}${
-    dif ? `<span class="ne" title="${esc('예측기 hot_area: '+hot)}">≠${esc(hot)}</span>` : ''}</div></td>`;
+        + (plv && plv !== lv ? `\n예측기 표기: ${plv} (정책 컷과 다름)` : ''))}">${esc(f)}</b>${
+    dif ? `<div class="dim" title="${esc('예측기 hot_area: '+hot)}">≠${esc(hot)}</div>` : ''}</td>`;
 }
 
 /* 등급 카운터 — 종합점수 **바로 옆 칸**. 점수 칸에 같이 넣었더니 좁은 칸
