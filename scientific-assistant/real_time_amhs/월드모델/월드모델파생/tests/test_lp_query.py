@@ -335,31 +335,45 @@ class 조회_멈춤(unittest.TestCase):
     def test_다시_조회해도_멈춘_조회가_살아나지_않는다(self):
         """★True/False 한 개로는 안 된다. 멈추자마자 다시 조회하면 새 조회가
         플래그를 지우고, 아직 제 조각을 붙들고 있던 옛 조회가 그걸 보고 되살아나
-        둘이 같이 돈다."""
-        self.assertIn('LP_RUN = {"gen": 0, "stop_upto": 0}', self.m)
-        self.assertIn('LP_RUN["gen"] += 1', self.m, "조회마다 번호를 올려야 한다")
-        self.assertIn('LP_RUN["stop_upto"] = LP_RUN["gen"]', self.m)
-        self.assertIn("should_cancel=_lp_should_cancel(_my_gen)", self.m)
+        둘이 같이 돈다.
+        ★2026-09: 번호는 **사람마다** 따로다 (Session.lp). 전역 하나였을 때는
+          한 사람이 멈춤을 누르면 그때 돌던 남의 조회까지 같이 죽었다 —
+          그쪽은 tests/test_sessions.py 가 본다."""
+        self.assertIn('self.lp = {"gen": 0, "stop_upto": 0}', self.m,
+                      "조회 번호는 세션마다여야 한다")
+        self.assertIn('s.lp["gen"] += 1', self.m, "조회마다 번호를 올려야 한다")
+        self.assertIn('s.lp["stop_upto"] = s.lp["gen"]', self.m)
+        self.assertIn("should_cancel=_lp_should_cancel(s, _my_gen)", self.m)
+        self.assertNotIn("LP_RUN", self.m, "전역 번호가 되살아났다")
 
     def test_멈춤_판정_그대로_돌려_본다(self):
         """_lp_should_cancel 을 배포되는 그 코드 그대로 떼어 돌린다."""
-        a = self.m.index("LP_RUN = {")
+        a = self.m.index("def _lp_should_cancel(")
         b = self.m.index('@app.post("/api/logpresso/cancel")')
         ns = {}
         exec(self.m[a:b], ns)
-        run, should = ns["LP_RUN"], ns["_lp_should_cancel"]
+        should = ns["_lp_should_cancel"]
 
-        run["gen"] = 1                      # 조회 #1 시작
-        f1 = should(1)
+        class _S:                           # 한 사람 몫 — lp 만 있으면 된다
+            def __init__(self):
+                self.lp = {"gen": 0, "stop_upto": 0}
+
+        s = _S()
+        s.lp["gen"] = 1                     # 조회 #1 시작
+        f1 = should(s, 1)
         self.assertFalse(f1(), "막 시작한 조회가 멈추면 안 된다")
 
-        run["stop_upto"] = run["gen"]       # 사람이 멈춤을 눌렀다
+        s.lp["stop_upto"] = s.lp["gen"]     # 사람이 멈춤을 눌렀다
         self.assertTrue(f1(), "멈춤을 눌렀으면 멈춰야 한다")
 
-        run["gen"] = 2                      # 곧바로 다시 조회
-        f2 = should(2)
+        s.lp["gen"] = 2                     # 곧바로 다시 조회
+        f2 = should(s, 2)
         self.assertFalse(f2(), "새 조회는 지난 멈춤에 걸리면 안 된다")
         self.assertTrue(f1(), "한물간 옛 조회는 계속 멈춘 채여야 한다")
+
+        other = _S()                        # 남의 조회는 안 건드린다
+        other.lp["gen"] = 1
+        self.assertFalse(should(other, 1)(), "★남의 조회까지 죽는다")
 
     def test_멈춤은_502_가_아니다(self):
         i = self.m.index("if isinstance(e, QueryCancelled):")
