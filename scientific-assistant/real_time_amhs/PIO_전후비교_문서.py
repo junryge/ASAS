@@ -588,23 +588,9 @@ def build(sets: list[dict]) -> str:
                      + (f'<td class=n>{e}</td>' if ev else '') + '</tr>')
         a.append('</table>')
 
-    # ── 3. 그래서 ──────────────────────────────────────────────
-    a.append('<h2>3. 그래서 — 어떻게 해야 나아지나</h2>')
-    a.append('<div class="note"><b>지금 자료가 말하는 것</b><ul>'
-             '<li>룰 자체는 <b>잘 붙었습니다</b> — 점수가 올라야 할 자리에서 올랐고, '
-             '내려간 분은 한 분도 없습니다(부작용 없음).</li>'
-             '<li>다만 <b>올린 폭이 컷에 비해 작습니다</b>. 등급이 바뀌지 않으면 '
-             '관제 화면에서는 아무 일도 일어나지 않습니다.</li>'
-             '<li>알려진 사건 구간에서 등급이 안 올랐다면, 그 사건에 대해서는 '
-             '<b>PIO_ERROR 가 신호가 아닙니다</b> — 배점을 키워도 안 잡힙니다.</li>'
-             '</ul></div>')
-    a.append('<p>배점을 키우는 것은 <b>양날</b>입니다. 위 “배점을 키웠다면” 표에서 '
-             '경계 이상 분이 몇 배로 뛰는지를 먼저 보십시오 — 사건이 없는 날에도 '
-             '같이 뜁니다. 점수를 올리는 것보다 </p>'
-             '<ul><li><b>얼마나 넘었나</b>(1% 넘은 것과 300% 넘은 것을 가르기)</li>'
-             '<li><b>얼마나 계속됐나</b>(1분짜리와 173분짜리를 가르기)</li></ul>'
-             '<p>를 점수에 넣는 쪽이 먼저입니다 — '
-             '<code>docs/M14_20260913_장애분석.html</code> 3) 에 적어 둔 그것입니다.</p>')
+    # ★'그래서 이렇게 하자' 는 뺐다 — 이 문서는 **잰 값만** 적는다
+    #   (고객: "제안 빼라. 현재 데이터를 보고 이야기하는 거야").
+
     a.append('<h2>4. 이 문서가 말하지 않는 것</h2><ul>'
              '<li>받은 두 벌(변경 전·후 area_score)만 놓고 비교했습니다. '
              'PIO_ERROR 룰이 <b>어떻게</b> 계산되는지는 보지 않았습니다.</li>'
@@ -646,9 +632,9 @@ def fab_section(s: dict, title: str = "") -> str:
     up_txt = f' (경계에서 올라온 것 {nup}분)' if nup else ""
     a.append(f'<div class="note {"good" if good else "miss"}">'
              f'<b>{word} — 위험 이상 {db} → {da}분{up_txt}</b><br>'
-             f'기준은 <b>경계에 몰려 있던 것이 위험으로 올라갔나</b> 입니다. '
-             f'점수가 올라도 컷({c[0]}/{c[1]}/{c[2]})을 안 넘으면 화면은 그대로이고, '
-             f'경계만 늘면 “또 경계네” 가 되어 오히려 덜 보게 됩니다.</div>')
+             f'등급 컷 {c[0]} / {c[1]} / {c[2]} 로 셌습니다. '
+             f'운전원이 보는 것은 등급이라, 컷을 안 넘은 점수 변화는 '
+             f'화면에 나타나지 않습니다.</div>')
     a.append('<table><tr><th></th><th class=n>정상</th><th class=n>경계</th>'
              '<th class=n>위험</th><th class=n>초위험</th>'
              '<th class=n>위험 이상</th><th class=n>경계 쏠림</th></tr>')
@@ -769,23 +755,14 @@ def fab_section(s: dict, title: str = "") -> str:
                 continue
             hi = max(av for _, _, av in w)
             if hi < c[1]:
-                a.append(f'<div class="note miss"><b>{esc(e["what"])}</b> — 새 룰을 넣은 뒤에도 '
-                         f'구간 최고가 <b>{hi:.0f}점</b>이라 여전히 '
-                         f'<b>위험 아래</b>입니다 (위험까지 {c[1]-hi:.0f}점). '
-                         f'이 사건에 대해서는 PIO_ERROR 가 신호가 아닙니다.</div>')
+                a.append(f'<div class="note miss"><b>{esc(e["what"])}</b> — '
+                         f'구간 최고가 변경 전후 모두 <b>{hi:.0f}점</b>으로,'
+                         f' 위험({c[1]})까지 {c[1]-hi:.0f}점 남았습니다.</div>')
 
-    # 배점을 키웠다면
-    ev = []
-    for e in evs:
-        ev += window(rows, e["day"], e["from"], e["to"])
-    a.append('<h3>배점을 키웠다면 <span class=dim>— 지금 올린 폭의 N 배였을 때 경계 이상 분</span></h3>'
-             '<table><tr><th class=n>배수</th><th class=n>경계 이상 분</th>'
-             + ('<th class=n>그중 사건 구간</th>' if ev else '') + '</tr>')
-    for mul, n, e in scale_table(rows, ev, c):
-        a.append(f'<tr{" class=hi" if mul==1 else ""}><td class=n>×{mul}</td>'
-                 f'<td class=n>{n:,}</td>'
-                 + (f'<td class=n>{e}</td>' if ev else '') + '</tr>')
-    a.append('</table>')
+    # ★'배점을 N 배로 키웠다면' 표는 뺐다 (고객: "제안 빼라. 지금 PIO 들어가잖아.
+    #   현재 데이터를 보고 이야기하는 거야"). 이 문서는 **지금 들어간 룰이
+    #   무엇을 했는지**만 적는다 — 가정한 배점으로 센 숫자를 같이 놓으면
+    #   읽는 사람이 그것도 잰 값으로 읽는다.
     return "".join(a)
 
 

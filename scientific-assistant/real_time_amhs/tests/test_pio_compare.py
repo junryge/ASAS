@@ -251,6 +251,36 @@ class 기존_문서에_붙인다(unittest.TestCase):
         self.assertIn("note good", sec)
 
 
+class 제안은_안_쓴다(unittest.TestCase):
+    """고객: "제안 빼라. 지금 PIO 들어가잖아. 현재 데이터를 보고 이야기하는 거야."
+
+    ★이 문서는 **지금 들어간 룰이 무엇을 했는지**만 적는다. 가정한 배점으로
+      센 숫자('배점을 N 배로 키웠다면')나 '이렇게 하는 게 낫다' 를 같이 놓으면,
+      읽는 사람이 그것도 잰 값으로 읽는다.
+    """
+
+    def _sec(self):
+        rows = [("2026-09-13 11:%02d" % m, 30, 38) for m in range(0, 40)]
+        return P.fab_section(P.parse(_csv("m14", "t", rows)))
+
+    def test_가정한_배점_표가_없다(self):
+        sec = self._sec()
+        self.assertNotIn("배점을 키웠다면", sec)
+        self.assertNotIn("배수", sec)
+
+    def test_그래서_이렇게_하자가_없다(self):
+        sec = self._sec()
+        for w in ("어떻게 해야", "먼저입니다", "제안", "권장", "하는 쪽이",
+                  "신호가 아닙니다", "또 경계네"):
+            self.assertNotIn(w, sec, f"제안투가 남아 있다: {w}")
+
+    def test_잰_값은_그대로_있다(self):
+        sec = self._sec()
+        for w in ("① 룰이 먹었나", "② 화면이 달라졌나", "위험 이상",
+                  "경계 쏠림", "변경 전 / 후 — 하루치 점수"):
+            self.assertIn(w, sec, w)
+
+
 class 그래프가_들어간다(unittest.TestCase):
     """고객: "변경전·변경후 그래프도 보여줘야지. 그게 내용이 들어가 있어야 알지."
 
