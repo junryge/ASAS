@@ -111,7 +111,8 @@ def _t_end(resp):
 def api_slow():
     """최근 느린 요청 목록 — 현장에서 원인을 좁힐 때."""
     return jsonify({"threshold_ms": SLOW_MS, "items": list(reversed(SLOW_LOG)),
-                    "caches": [c.stats() for c in (FEED_CACHE, CMP_CACHE)]})
+                    "caches": [c.stats() for c in (FEED_CACHE, CMP_CACHE, CASES_CACHE,
+                                                   GRAPH_CACHE, CONTRIB_CACHE, _HTML_CACHE)]})
 
 
 # ─────────────────────── 무거운 응답 캐시 ───────────────────────
@@ -119,13 +120,33 @@ def api_slow():
 #   300ms 인데 (1) 화면이 3초마다 묻고 데이터는 60초에 한 번 바뀌며
 #   (2) 화면 셋이 같은 순간 같은 것을 동시에 만들고 (3) 캐시가 적중해도
 #   1.5MB 를 매번 다시 직렬화하고 있었다. http_cache 가 셋을 같이 막는다.
-def _cached_json(cache, key: str, sig, build):
-    """지문이 같으면 안 만들고, 브라우저가 이미 갖고 있으면 304 로 끝낸다."""
+def _cached_json(cache, key: str, sig, build, ctype: str | None = None):
+    """지문이 같으면 안 만들고, 브라우저가 이미 갖고 있으면 304 로 끝낸다.
+
+    ctype 을 주면 그 타입으로 나간다 — 구간 그래프(SVG)·기여도(HTML)처럼
+    JSON 이 아닌 응답도 같은 길을 쓴다 (build 가 bytes/str 을 돌려주면 된다).
+    """
     e = cache.get_or_build(key, sig, build)
     code, body, hdr = http_cache.negotiate(
         e, request.headers.get("If-None-Match"),
         request.headers.get("Accept-Encoding"))
+    if ctype:
+        hdr["Content-Type"] = ctype
     return Response(body, status=code, headers=hdr)
+
+
+def _days_sig(days, cfg) -> tuple | None:
+    """그 날짜 파일들이 그대로인가 — (mtime, size) 묶음. 하나라도 없으면 None
+    (캐시를 안 쓴다 — 없는 파일을 '그대로' 라고 하면 안 된다)."""
+    from store_csv import day_path
+    out = []
+    for d in sorted(days):
+        try:
+            st = os.stat(day_path(d, cfg))
+        except OSError:
+            return None
+        out.append((d, st.st_mtime_ns, st.st_size))
+    return tuple(out)
 
 
 # ─────────────────────── 시스템(FAB) 별 컨텍스트 ───────────────────────
@@ -585,17 +606,32 @@ def _num(v):
 def index():
     """오프닝(시스템 선택) → 관제 화면.
 
-    ★캐시를 끈다. 관제 화면은 한 번 띄우면 며칠씩 그대로 떠 있고, 그 사이
-      dashboard.html 을 새로 올려도 브라우저가 예전 걸 계속 쓴다. 실제로
-      오프닝 화면을 추가했는데 "안 나온다" 였다 — 파일은 바뀌었는데 화면이
-      옛날 것이었다. HTML 한 장(250KB)이라 매번 받아도 부담이 없다.
+    ★늘 **물어보고** 쓰게 한다(no-cache). 관제 화면은 한 번 띄우면 며칠씩
+      그대로 떠 있고, 그 사이 dashboard.html 을 새로 올려도 브라우저가 예전
+      걸 계속 쓴다 — 오프닝을 새로 넣었는데 "안 나온다" 였던 그것이다.
+
+    ★예전에는 no-store 로 아예 못 쓰게 막았는데, 그러면 **안 바뀌었어도
+      매번 354KB 를 통째로** 다시 받는다. no-cache 는 '쓰지 마라' 가 아니라
+      '쓰기 전에 물어봐라' 다 — 안 바뀌었으면 304 한 줄(0 바이트)로 끝나고,
+      바뀌었으면 새로 받는다. 새 화면이 안 나오는 사고는 그대로 막으면서
+      여는 값만 없앤다. 그래서 ETag 를 **지우지 않는다**.
+      (바뀐 날 첫 한 번은 gzip 으로 354KB → 138KB 로 나간다.)
     """
-    resp = send_from_directory(app.static_folder, "dashboard.html")
-    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers.pop("ETag", None)
-    resp.headers.pop("Last-Modified", None)
-    return resp
+    path = os.path.join(app.static_folder, "dashboard.html")
+    try:
+        st = os.stat(path)
+    except OSError:
+        return send_from_directory(app.static_folder, "dashboard.html")
+    sig = (st.st_mtime_ns, st.st_size)
+    e = _HTML_CACHE.get_or_build("dashboard", sig,
+                                 lambda: open(path, "rb").read())
+    code, body, hdr = http_cache.negotiate(
+        e, request.headers.get("If-None-Match"),
+        request.headers.get("Accept-Encoding"))
+    hdr["Content-Type"] = "text/html; charset=utf-8"
+    hdr["Cache-Control"] = "no-cache, must-revalidate"
+    hdr["Pragma"] = "no-cache"
+    return Response(body, status=code, headers=hdr)
 
 
 @app.route("/docs/fab-score")
@@ -1735,7 +1771,14 @@ def api_window():
 # /api/feed 응답 캐시 — {키: (원본표시, 응답)}
 # 화면이 3초마다 부르는데 데이터는 1분에 한 번 바뀐다. 원본이 그대로면
 # 같은 응답을 다시 만들 이유가 없다 (행 수백 개를 매번 가공·직렬화했다).
-FEED_CACHE = http_cache.JsonCache("feed")   # 지문이 같으면 만든 글자를 그대로
+FEED_CACHE = http_cache.JsonCache("feed")
+# 케이스 목록 — 3초마다 들어오는데 내용은 1분에 한 번 남짓 바뀐다 (위 api_cases 주석)
+CASES_CACHE = http_cache.JsonCache("cases")
+# 화면 HTML 한 장 — 파일이 그대로면 다시 읽지도, gzip 하지도 않는다
+_HTML_CACHE = http_cache.JsonCache("dashboard_html")
+# 행 더블클릭 → 구간 그래프(SVG) · 기여도(HTML). 같은 자리를 다시 열면 그대로다
+GRAPH_CACHE = http_cache.JsonCache("graph")
+CONTRIB_CACHE = http_cache.JsonCache("contrib")   # 지문이 같으면 만든 글자를 그대로
 
 
 # 이름표 → 그 이름표를 띄운 카운트의 키 (화면 almChip 과 같은 규칙)
@@ -2009,9 +2052,10 @@ def api_graph():
     except ValueError:
         minutes = 60
 
+    days = {(at - timedelta(minutes=minutes)).strftime("%Y%m%d"),
+            at.strftime("%Y%m%d"), (at + timedelta(minutes=minutes)).strftime("%Y%m%d")}
     rows = []
-    for d in {(at - timedelta(minutes=minutes)).strftime("%Y%m%d"),
-              at.strftime("%Y%m%d"), (at + timedelta(minutes=minutes)).strftime("%Y%m%d")}:
+    for d in days:
         rows.extend(read_day(d, C["cfg"]))
     if not rows:
         rows = C["state"].get("last_rows") or []
@@ -2030,9 +2074,18 @@ def api_graph():
     #   한가운데 다른 검정 상자가 박혔다. 고를 수 있는 값은 graphs.THEMES 가
     #   쥐고 있다(한쪽만 늘리면 또 어긋난다).
     theme = (request.args.get("theme") or "dark").strip().lower()
-    svg = render(rows, at, minutes, cfg=C["cfg"], fabs=picked,
-                 theme=(theme if theme in GRAPH_THEMES else "dark"))
-    return app.response_class(svg, mimetype="image/svg+xml")
+    theme = theme if theme in GRAPH_THEMES else "dark"
+    # ★같은 그림을 두 번 그리지 않는다 (고객: "더블클릭할때 느려져").
+    #   그리기 18.8ms + 응답 91KB 인데, 분 단위를 바꾸거나 같은 행을 다시
+    #   열면 그대로 다시 그렸다. 원본 날짜 파일이 그대로면 결과도 그대로다.
+    # ★날짜 파일이 하나라도 없으면 _days_sig 가 None 을 돌려주고, 그러면
+    #   캐시를 안 쓴다 — 없는 파일을 '그대로' 라고 하면 안 된다.
+    key = f'{C["sys"]}|{at.isoformat()}|{minutes}|{",".join(picked)}|{theme}'
+    return _cached_json(
+        GRAPH_CACHE, key, _days_sig(days, C["cfg"]),
+        lambda: render(rows, at, minutes, cfg=C["cfg"], fabs=picked,
+                       theme=theme).encode("utf-8"),
+        ctype="image/svg+xml; charset=utf-8")
 
 
 @app.route("/api/contrib")
@@ -2046,13 +2099,20 @@ def api_contrib():
     from contrib import explain_html
     from store_csv import read_day
     at = parse_dt(request.args.get("at")) or datetime.now()
-    rows = read_day(at.strftime("%Y%m%d"), C["cfg"]) or C["state"].get("last_rows") or []
-    try:
-        return app.response_class(explain_html(rows, at, C["cfg"]), mimetype="text/html")
-    except Exception as e:
-        return app.response_class(
-            f'<div class="empty">기여도 분해 실패 — {type(e).__name__}: {e}</div>',
-            mimetype="text/html")
+    day = at.strftime("%Y%m%d")
+    rows = read_day(day, C["cfg"]) or C["state"].get("last_rows") or []
+
+    def _build():
+        try:
+            return explain_html(rows, at, C["cfg"]).encode("utf-8")
+        except Exception as e:                          # noqa: BLE001
+            return (f'<div class="empty">기여도 분해 실패 — '
+                    f'{type(e).__name__}: {e}</div>').encode("utf-8")
+
+    # 그래프와 같은 이유로 캐시한다 (17.7ms — 같은 행을 다시 열면 그대로다)
+    return _cached_json(CONTRIB_CACHE, f'{C["sys"]}|{at.isoformat()}',
+                        _days_sig({day}, C["cfg"]), _build,
+                        ctype="text/html; charset=utf-8")
 
 
 @app.route("/api/accuracy")
@@ -2626,10 +2686,24 @@ def api_kpi():
 # ────────────────────────────── 케이스 ──────────────────────────────
 @app.route("/api/cases")
 def api_cases():
+    """★화면이 **3초마다** 부른다. 캐시가 없어서 부를 때마다 케이스 전부를
+    다시 직렬화하고 지문까지 내고는, 대개 304 라 그대로 버렸다.
+
+    재 본 값 (케이스 800건 = 2.9MB):
+        직렬화 25.7ms + 지문 3.4ms = 29.1ms  × 20회/분 × 사람 수
+        → 혼자면 0.6초/분, 다섯이면 2.9초/분, 열이면 5.8초/분을
+          **오직 이것 하나에** 쓴다. 그동안 GIL 을 쥐므로 다른 요청이 밀린다.
+        고객: "여러명이 들어오면 느려져" — 여기가 그 자리다.
+
+    이제 판번호(store.rev)가 그대로면 만들지도, 지문을 내지도 않는다.
+    케이스는 1분에 한 번 남짓 바뀌는데 20번씩 다시 만들 이유가 없다.
+    """
     C = rctx()
-    if request.args.get("all") == "1":
-        return jsonify({"cases": C["store"].cases})
-    return jsonify({"cases": C["store"].active()})
+    st = C["store"]
+    allf = request.args.get("all") == "1"
+    return _cached_json(CASES_CACHE, f'{C["sys"]}|{"all" if allf else "act"}',
+                        (st.rev, len(st.cases)),
+                        lambda: {"cases": st.cases if allf else st.active()})
 
 
 @app.route("/api/cases/<cid>")

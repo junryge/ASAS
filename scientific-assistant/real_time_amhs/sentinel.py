@@ -443,6 +443,10 @@ class CaseStore:
         #   **이미 잠금을 쥔 채** save() 를 부른다. 그냥 Lock 이면 제 잠금에
         #   제가 걸려 서버가 그 자리에서 멎는다.
         self._lock = threading.RLock()
+        # ★판번호 — 저장할 때마다 오른다. 화면이 3초마다 부르는 /api/cases 가
+        #   "지난번과 같은 판인가" 를 이 숫자 하나로 가른다 (전체를 다시
+        #   직렬화해 보고 비교하면 그게 곧 비용이다).
+        self.rev = 0
         self.cases: list[dict] = self._load()
 
     def _load(self) -> list[dict]:
@@ -469,6 +473,7 @@ class CaseStore:
           않았다(json.dump 는 쓸 때마다 GIL 을 놓는다). 잃는 것은 판단이다.
         """
         with self._lock:
+            self.rev += 1                      # 내용이 바뀌었다 — 화면 캐시를 깬다
             tmp = f"{self.path}.{os.getpid()}.{threading.get_ident()}.tmp"
             try:
                 with open(tmp, "w", encoding="utf-8") as f:

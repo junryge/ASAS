@@ -41,6 +41,10 @@ def dumps(obj) -> bytes:
       2~3배로 부푼다 — 1.5MB 짜리 응답에서는 그게 그대로 전송 시간이다.
       Content-Type 에 charset=utf-8 을 붙여 내보내므로 브라우저는 그대로 읽는다.
     """
+    # ★이미 바이트면 그대로 — HTML 한 장처럼 JSON 이 아닌 응답도 같은 캐시
+    #   (지문·304·gzip·한 번만 만들기)를 쓰려고 열어 둔다.
+    if isinstance(obj, (bytes, bytearray)):
+        return bytes(obj)
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 

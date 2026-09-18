@@ -203,11 +203,75 @@ class 서버에_제대로_붙었나(unittest.TestCase):
         body = self.s[i:i + 900]
         self.assertIn('request.path.startswith("/static/")', body)
         self.assertIn('"no-cache, must-revalidate"', body)
-        # 화면 한 장(dashboard.html)은 아예 저장하지 않는다 — 이건 예전부터
-        self.assertIn('resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"', self.s)
+
+    def _fn(self, name):
+        """그 함수의 **코드만** — 다음 @app.route 앞까지, 설명(독스트링)은 뺀다.
+        (설명에 옛 방식을 적어 둔 것까지 잡으면 시험이 거짓말을 한다)"""
+        i = self.s.index(name)
+        body = self.s[i:].split("\n@app.")[0]
+        if '"""' in body:
+            head, _, rest = body.partition('"""')
+            body = head + rest.partition('"""')[2]
+        return body
+
+    def test_화면_한_장도_안_바뀌었으면_304(self):
+        """★예전에는 no-store 로 아예 못 쓰게 막았다. 새 화면이 안 나오는
+        사고는 막았지만, **안 바뀌었어도 매번 354KB 를 통째로** 다시 받았다.
+        고객: "로드 할때 ... 느려져".
+
+        no-cache 는 '쓰지 마라' 가 아니라 '쓰기 전에 물어봐라' 다 — 안
+        바뀌었으면 304 한 줄(0 바이트), 바뀌었으면 새로 받는다. 새 화면이
+        안 나오는 사고는 그대로 막힌다."""
+        body = self._fn("def index():")
+        self.assertIn('"no-cache, must-revalidate"', body)
+        self.assertNotIn("no-store", body, "no-store 면 304 가 안 된다")
+        self.assertIn("_HTML_CACHE.get_or_build", body, "파일을 매번 다시 읽는다")
+        self.assertIn("http_cache.negotiate", body, "지문·304·gzip 을 안 탄다")
+        self.assertIn('_HTML_CACHE = http_cache.JsonCache(', self.s)
+
+    def test_바이트도_그대로_담긴다(self):
+        """HTML 한 장처럼 JSON 이 아닌 응답도 같은 캐시를 쓸 수 있어야 한다."""
+        self.assertIs(type(http_cache.dumps(b"<html>")), bytes)
+        self.assertEqual(http_cache.dumps(b"<html>"), b"<html>")
+        e = http_cache.JsonCache("h").get_or_build("k", (1, 2), lambda: b"<html>hi")
+        self.assertEqual(e.body, b"<html>hi")
+
+    def test_케이스_목록도_캐시를_탄다(self):
+        """★화면이 **3초마다** 부른다. 캐시가 없어서 부를 때마다 케이스 전부를
+        다시 직렬화하고 지문까지 내고는, 대개 304 라 그대로 버렸다.
+        재 본 값(800건 = 2.9MB): 29.1ms × 20회/분 × 사람 수
+        → 열이 보면 **오직 이것 하나에** 5.8초/분. 고객: "여러명이 들어오면 느려져"."""
+        body = self._fn("def api_cases():")
+        self.assertIn("_cached_json(CASES_CACHE", body)
+        self.assertIn("st.rev", body, "판번호로 '바뀌었나' 를 가려야 한다")
+        self.assertNotIn("jsonify(", body, "아직 매번 새로 만든다")
+        self.assertIn('CASES_CACHE = http_cache.JsonCache(', self.s)
+        sen = _read("sentinel.py")
+        self.assertIn("self.rev = 0", sen)
+        self.assertIn("self.rev += 1", sen, "저장할 때마다 판번호가 올라야 한다")
 
     def test_캐시_상태를_볼_수_있다(self):
-        self.assertIn('"caches": [c.stats() for c in (FEED_CACHE, CMP_CACHE)]', self.s)
+        """어느 캐시가 잘 맞고 있는지 화면에서 볼 수 있어야 한다 — 안 그러면
+        '캐시가 도는 건가' 를 또 추측으로 답하게 된다."""
+        i = self.s.index('"caches":')
+        line = self.s[i:i + 300]
+        for c in ("FEED_CACHE", "CMP_CACHE", "CASES_CACHE",
+                  "GRAPH_CACHE", "CONTRIB_CACHE", "_HTML_CACHE"):
+            self.assertIn(c, line, c)
+
+    def test_더블클릭_두_요청도_캐시를_탄다(self):
+        """고객: "더블클릭할때 느려져". 구간 그래프(18.8ms·91KB)와
+        기여도(17.7ms)를 같은 자리에서 다시 열 때마다 새로 만들었다."""
+        for fn, cache in (("def api_graph():", "GRAPH_CACHE"),
+                          ("def api_contrib():", "CONTRIB_CACHE")):
+            body = self._fn(fn)
+            self.assertIn("_cached_json(", body, fn)
+            self.assertIn(cache, body, fn)
+            self.assertIn("_days_sig(", body, fn + " — 원본이 바뀌면 다시 만들어야 한다")
+            self.assertIn("ctype=", body, fn + " — JSON 이 아니다")
+        # ★파일이 없으면 캐시를 안 쓴다 (없는 것을 '그대로' 라고 하면 안 된다)
+        d = self._fn("def _days_sig(")
+        self.assertIn("return None", d)
 
     def test_수집이_어디서_느린지_나눠_적는다(self):
         """'48초 걸렸다' 만으로는 우리 코드인지 주피터인지 모른다."""
