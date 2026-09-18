@@ -747,10 +747,30 @@ class 오래된_케이스는_보관으로(unittest.TestCase):
         return c
 
     def test_기본은_30일(self):
+        """★config.json 에 아무것도 안 적어도 30일이어야 한다.
+
+        현장 config.json 에는 이미 손댄 설정이 많다 — 이 기능 하나 때문에
+        그 파일을 갈아끼우게 하면 안 된다. 값은 **코드에** 있고, 설정은
+        바꾸고 싶을 때만 적는다.
+        """
         self.assertEqual(sentinel.CaseStore.RETENTION_DEFAULT, 30)
-        cfg = load_config()
-        self.assertEqual(cfg.get("policy", {}).get("case_retention_days"), 30,
-                         "config.json 에도 적혀 있어야 한다")
+        s = self._store([self._case("OLD", 40), self._case("NEW", 1)])
+        s.cfg = {"storage": {"cases_archive": os.path.join(self.tmp, "old")}}   # policy 없음
+        s.prune(now=self.now, force=True)
+        self.assertEqual([c["id"] for c in s.cases], ["NEW"],
+                         "설정이 없으면 30일이 아니다")
+        # 적혀 있다면 숫자여야 한다 (오타로 글자가 들어가도 30일로 돈다)
+        v = load_config().get("policy", {}).get("case_retention_days")
+        if v is not None:
+            self.assertIsInstance(v, int)
+
+    def test_보관_폴더도_설정_없이_정해진다(self):
+        """★여기서 실제로 돌려 보지 않는다 — 설정이 없으면 **운영 폴더**
+        (data/cases_old) 로 가기 때문이다. 시험이 운영 자리를 건드리면 안 된다.
+        기본값이 코드에 박혀 있는지만 본다."""
+        src = _read("sentinel.py")
+        self.assertIn('.get("cases_archive", "data/cases_old")', src,
+                      "설정이 없으면 어디로 갈지 코드가 정해 둬야 한다")
 
     def test_30일_넘은_것만_옮긴다(self):
         s = self._store([self._case("OLD", 40), self._case("EDGE", 29),
