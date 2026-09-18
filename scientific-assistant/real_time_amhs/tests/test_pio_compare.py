@@ -170,3 +170,82 @@ class 문서(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 기존_문서에_붙인다(unittest.TestCase):
+    """고객: "하나 하나식 분리해줘!! 기존 내용에다가!! 전후로 해서
+            M14A·M16HUB 각각 해달라고. 기존 내용 있었잖아".
+
+    ★새 문서를 따로 만들면 나중에 어느 쪽이 최신인지 알 수 없다. FAB 마다
+      **이미 있는 그 FAB 의 분석 문서 뒤에** 한 절로 붙인다.
+    """
+
+    def test_어느_문서에_붙일지_정해져_있다(self):
+        self.assertEqual(set(P.INTO), {"M14", "M16HUB"})
+        for code, name in P.INTO.items():
+            self.assertTrue(os.path.isfile(os.path.join(_BASE, "docs", name)),
+                            f"{code} 가 붙을 문서가 없다: {name}")
+
+    def test_기존_내용을_안_지운다(self):
+        import tempfile, shutil
+        src = os.path.join(_BASE, "docs", P.INTO["M14"])
+        tmp = tempfile.mkdtemp(prefix="pioinit")
+        try:
+            p = os.path.join(tmp, "doc.html")
+            raw = io.open(src, encoding="utf-8").read()
+            # ★이미 붙어 있으면 떼고 시작한다 — '붙기 전' 과 견주려는 것이다
+            if P.MARK0 in raw:
+                i, j = raw.index(P.MARK0), raw.index(P.MARK1) + len(P.MARK1)
+                raw = raw[:i] + raw[j:]
+            io.open(p, "w", encoding="utf-8").write(raw)
+            before = raw
+            key = "0. 한 줄로"                       # 기존 문서의 첫 절
+            self.assertIn(key, before)
+            rows = [("2026-09-13 11:%02d" % m, 40, 55) for m in range(10, 30)]
+            P.splice(p, P.fab_section(P.parse(_csv("m14", "t", rows))))
+            after = io.open(p, encoding="utf-8").read()
+            self.assertIn(key, after, "기존 내용이 사라졌다")
+            self.assertGreater(len(after), len(before), "붙은 게 없다")
+            self.assertIn("PIO_ERROR", after)
+            self.assertTrue(after.rstrip().endswith("</html>"), "문서가 깨졌다")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_두_번_돌려도_한_벌만_남는다(self):
+        """★다시 돌릴 때마다 쌓이면 문서가 못 쓰게 된다."""
+        import tempfile, shutil
+        tmp = tempfile.mkdtemp(prefix="pioinit")
+        try:
+            p = os.path.join(tmp, "doc.html")
+            shutil.copy(os.path.join(_BASE, "docs", P.INTO["M14"]), p)
+            rows = [("2026-09-13 11:%02d" % m, 40, 55) for m in range(10, 30)]
+            sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
+            P.splice(p, sec)
+            n1 = len(io.open(p, encoding="utf-8").read())
+            P.splice(p, sec)
+            h = io.open(p, encoding="utf-8").read()
+            self.assertEqual(len(h), n1, "두 번째가 덧쌓였다")
+            self.assertEqual(h.count(P.MARK0), 1)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_절_제목이_한_번만_나온다(self):
+        rows = [("2026-09-13 11:%02d" % m, 40, 55) for m in range(10, 30)]
+        sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
+        self.assertEqual(sec.count("<h2>"), 1, "제목이 두 번 찍힌다")
+
+    def test_2분_늘어난_것을_좋아졌다고_안_쓴다(self):
+        """M14 는 위험이 80 → 82분(경계에서 올라온 것 2분)이다.
+        그걸 초록으로 쓰면 고객이 잘못 읽는다."""
+        rows = [("2026-09-13 11:%02d" % m, 40, 40) for m in range(0, 40)]
+        rows += [("2026-09-13 12:%02d" % m, 45, 55) for m in range(0, 2)]
+        sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
+        self.assertIn("조금 올랐을 뿐입니다", sec)
+        self.assertIn("note miss", sec)
+
+    def test_5분_이상_올라오면_좋아진_것이다(self):
+        rows = [("2026-09-13 11:%02d" % m, 40, 40) for m in range(0, 40)]
+        rows += [("2026-09-13 12:%02d" % m, 45, 55) for m in range(0, 6)]
+        sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
+        self.assertIn("좋아졌습니다", sec)
+        self.assertIn("note good", sec)

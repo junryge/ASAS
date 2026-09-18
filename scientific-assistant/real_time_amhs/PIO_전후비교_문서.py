@@ -51,6 +51,17 @@ CUTS_BY_SYS = {            # 2026-09-18 고객이 알려 준 운영 값
 # 받은 자료의 컬럼명 → 관제 시스템 코드
 SYS_OF = {"M16HUBROOM": "M16HUB", "M14A": "M14"}
 
+# ★새 문서를 따로 만들지 않는다 — **이미 있는 그 FAB 의 분석 문서 뒤에 붙인다**
+#   (고객: "하나 하나식 분리해줘!! 기존 내용에다가!! M14A·M16HUB 각각").
+#   문서가 둘로 흩어지면 나중에 어느 쪽이 최신인지 알 수 없게 된다.
+INTO = {
+    "M14":    "M14_20260913_장애분석.html",      # M14A 2026-09-13 OHT 무언정지
+    "M16HUB": "M16HUB_데드락_분석.html",          # M16 HUB 데드락 — 점수가 왜 안 올랐나
+}
+# 붙인 자리를 표시해 둔다 — 다시 돌리면 이 사이만 갈아끼운다(중복으로 안 쌓인다)
+MARK0 = "<!-- PIO_ERROR 전/후 비교 (자동 생성 · PIO_전후비교_문서.py) -->"
+MARK1 = "<!-- /PIO_ERROR 전/후 비교 -->"
+
 
 def cuts_of(fab: str) -> tuple:
     """그 FAB 의 등급 컷. config.grade.by_sys 가 있으면 그것이 먼저다."""
@@ -491,27 +502,229 @@ def build(sets: list[dict]) -> str:
     return "".join(a)
 
 
+
+def fab_section(s: dict, title: str = "") -> str:
+    """한 FAB 의 전/후 비교 — **기존 분석 문서 뒤에 붙일** 한 절.
+
+    ★고객: "하나 하나식 분리해줘!! 기존 내용에다가!! M14A·M16HUB 각각".
+      새 문서를 따로 만들면 나중에 어느 쪽이 최신인지 알 수 없다.
+    """
+    a = []
+    c = cuts_of(s["fab"])
+    st, rows = stats(s["rows"], c), s["rows"]
+    pr = promote(rows, c)
+    title = title or f'PIO_ERROR 룰 추가 — 전 / 후 ({fabname(s["fab"])})'
+    a.append(f'<h2>{esc(title)} <span class=dim>— {esc(s["label"])}</span></h2>')
+    # 이 절만 떼어 봐도 뭘 잰 것인지 알게, 머리에 한 줄을 둔다
+    db, da = pr["before"]["danger"], pr["after"]["danger"]
+    # ★+2분을 '좋아졌다' 고 쓰면 거짓말이다. 경계에서 올라온 것이 5분 이상일
+    #   때만 초록으로 쓴다 (0. 한 줄로 의 판정과 같은 기준).
+    nup = len(pr["up"])
+    if da > db and nup >= 5:
+        good, word = True, "좋아졌습니다"
+    elif da > db:
+        good, word = False, "조금 올랐을 뿐입니다"
+    else:
+        good, word = False, "위험은 늘지 않았습니다"
+    up_txt = f' (경계에서 올라온 것 {nup}분)' if nup else ""
+    a.append(f'<div class="note {"good" if good else "miss"}">'
+             f'<b>{word} — 위험 이상 {db} → {da}분{up_txt}</b><br>'
+             f'기준은 <b>경계에 몰려 있던 것이 위험으로 올라갔나</b> 입니다. '
+             f'점수가 올라도 컷({c[0]}/{c[1]}/{c[2]})을 안 넘으면 화면은 그대로이고, '
+             f'경계만 늘면 “또 경계네” 가 되어 오히려 덜 보게 됩니다.</div>')
+    a.append('<table><tr><th></th><th class=n>정상</th><th class=n>경계</th>'
+             '<th class=n>위험</th><th class=n>초위험</th>'
+             '<th class=n>위험 이상</th><th class=n>경계 쏠림</th></tr>')
+    for tag, key, idx in (("변경 전", "before", 0), ("변경 후", "after", 1)):
+        q = pr[key]
+        a.append(f'<tr><td><b>{tag}</b></td>'
+                 + "".join(f'<td class=n>{st["cnt"][k][idx]}</td>' for k in LEVELS)
+                 + f'<td class=n><b>{q["danger"]}</b></td>'
+                 f'<td class=n>{q["share"]:.0f}%</td></tr>')
+    a.append('</table>')
+    if pr["up"]:
+        a.append(f'<p>경계 → 위험으로 올라간 분 <b>{len(pr["up"])}</b> · '
+                 f'위험({c[1]}) 문턱 5점 이내에 남은 분 <b>{pr["near5"]}</b> · '
+                 f'10점 이내 <b>{pr["near10"]}</b></p>')
+    c = cuts_of(s["fab"])
+    st, rows = stats(s["rows"], c), s["rows"]
+    pr = promote(rows, c)
+    if s.get("skew"):
+        a.append(f'<div class="note miss"><b>주의:</b> 두 열의 시각이 어긋난 행이 '
+                 f'{s["skew"]}개 있어 뺐습니다.</div>')
+
+    a.append('<h3>① 룰이 먹었나</h3><table>'
+             '<tr><th>점수가 오른 분</th><th class=n>올린 폭 평균</th>'
+             '<th class=n>최대</th><th class=n>내려간 분</th></tr>'
+             f'<tr><td class=n>{st["ch"]:,}분 / {st["n"]:,}분 '
+             f'({100*st["ch"]/st["n"]:.1f}%)</td>'
+             f'<td class=n>{st["avg"]:+.1f}점</td><td class=n>{st["max"]:+.0f}점</td>'
+             f'<td class=n>{st["down"]}</td></tr></table>')
+
+    a.append('<h3>② 화면이 달라졌나 <span class=dim>— 등급 분포(분)</span></h3>'
+             '<table><tr><th></th>' +
+             "".join(f'<th class=n>{k}</th>' for k in LEVELS) +
+             '<th class=n>최고점</th></tr>'
+             f'<tr><td>변경 전</td>{_lvrow(st["cnt"],0)}'
+             f'<td class=n>{st["hi_b"]:.0f}</td></tr>'
+             f'<tr><td>변경 후</td>{_lvrow(st["cnt"],1)}'
+             f'<td class=n>{st["hi_a"]:.0f}</td></tr></table>')
+    if st["moved"]:
+        a.append('<table><tr><th>등급이 바뀐 분</th><th class=n>분</th></tr>' +
+                 "".join(f'<tr class=hi><td>{esc(lb)} → <b>{esc(la)}</b></td>'
+                         f'<td class=n>{n}</td></tr>'
+                         for (lb, la), n in sorted(st["moved"].items(),
+                                                   key=lambda kv: -kv[1])) +
+                 '</table>')
+    else:
+        a.append('<div class="note miss"><b>등급이 바뀐 분: 0</b> — '
+                 '점수는 올랐지만 컷을 넘은 곳이 한 분도 없습니다. '
+                 '관제 화면은 전과 완전히 같습니다.</div>')
+
+    # 날짜별
+    a.append('<h3>날짜별</h3><table><tr><th>날짜</th><th class=n>분</th>'
+             '<th class=n>오른 분</th><th class=n>경계 이상 (전 → 후)</th>'
+             '<th class=n>최고점 (전 → 후)</th></tr>')
+    for day in sorted(st["days"]):
+        d = st["days"][day]
+        a.append(f'<tr><td>{day}</td><td class=n>{d["n"]:,}</td>'
+                 f'<td class=n>{d["ch"]:,}</td>'
+                 f'<td class=n>{d["wb"]} → {d["wa"]}</td>'
+                 f'<td class=n>{d["hb"]:.0f} → {d["ha"]:.0f}</td></tr>')
+    a.append('</table>')
+
+    # 오른 분이 어디까지 갔나
+    if st["changed"]:
+        buck = {}
+        for _, _, av in st["changed"]:
+            buck.setdefault(int(av) // 10 * 10, 0)
+            buck[int(av) // 10 * 10] += 1
+        mx = max(buck.values())
+        a.append('<h3>오른 분이 어디까지 갔나 <span class=dim>(변경 후 점수대)</span></h3>'
+                 '<table><tr><th class=n>점수대</th><th class=n>분</th><th></th></tr>')
+        for k in sorted(buck):
+            w = int(300 * buck[k] / mx)
+            over = ' <b class=okc>← 경계 위</b>' if k >= c[0] else ''
+            a.append(f'<tr><td class=n>{k}~{k+9}</td><td class=n>{buck[k]:,}</td>'
+                     f'<td><span class="bar" style="width:{w}px"></span>{over}</td></tr>')
+        a.append('</table>')
+        top = max(av for _, _, av in st["changed"])
+        if top < c[0]:
+            a.append(f'<div class="note miss">제일 높이 올라간 분도 <b>{top:.0f}점</b> — '
+                     f'경계({c[0]})까지 <b>{c[0]-top:.0f}점</b> 모자랍니다.</div>')
+
+    # ③ 알려진 사건
+    evs = [e for e in KNOWN if e["fab"] == s["fab"]]
+    if evs:
+        a.append('<h3>③ 잡고 싶던 것을 잡았나 <span class=dim>— 알려진 사건 구간</span></h3>')
+        a.append('<table><tr><th>사건</th><th class=n>구간</th><th class=n>분</th>'
+                 '<th class=n>오른 분</th><th class=n>구간 최고 (전 → 후)</th>'
+                 '<th class=n><b>위험 이상</b> (전 → 후)</th></tr>')
+        for e in evs:
+            w = window(rows, e["day"], e["from"], e["to"])
+            if not w:
+                continue
+            cb = sum(1 for _, b, _ in w if b >= c[1])
+            ca = sum(1 for _, _, av in w if av >= c[1])
+            a.append(f'<tr><td>{esc(e["what"])}<br><span class=dim>{esc(e["day"])}</span></td>'
+                     f'<td class=n>{esc(e["from"])}~{esc(e["to"])}</td>'
+                     f'<td class=n>{len(w)}</td>'
+                     f'<td class=n>{sum(1 for _,b,av in w if b!=av)}</td>'
+                     f'<td class=n>{max(b for _,b,_ in w):.0f} → '
+                     f'<b>{max(av for _,_,av in w):.0f}</b></td>'
+                     f'<td class=n>{cb} → <b class="{"okc" if ca>cb else "bad"}">{ca}</b></td></tr>')
+        a.append('</table>')
+        for e in evs:
+            w = window(rows, e["day"], e["from"], e["to"])
+            if not w:
+                continue
+            hi = max(av for _, _, av in w)
+            if hi < c[1]:
+                a.append(f'<div class="note miss"><b>{esc(e["what"])}</b> — 새 룰을 넣은 뒤에도 '
+                         f'구간 최고가 <b>{hi:.0f}점</b>이라 여전히 '
+                         f'<b>위험 아래</b>입니다 (위험까지 {c[1]-hi:.0f}점). '
+                         f'이 사건에 대해서는 PIO_ERROR 가 신호가 아닙니다.</div>')
+
+    # 배점을 키웠다면
+    ev = []
+    for e in evs:
+        ev += window(rows, e["day"], e["from"], e["to"])
+    a.append('<h3>배점을 키웠다면 <span class=dim>— 지금 올린 폭의 N 배였을 때 경계 이상 분</span></h3>'
+             '<table><tr><th class=n>배수</th><th class=n>경계 이상 분</th>'
+             + ('<th class=n>그중 사건 구간</th>' if ev else '') + '</tr>')
+    for mul, n, e in scale_table(rows, ev, c):
+        a.append(f'<tr{" class=hi" if mul==1 else ""}><td class=n>×{mul}</td>'
+                 f'<td class=n>{n:,}</td>'
+                 + (f'<td class=n>{e}</td>' if ev else '') + '</tr>')
+    a.append('</table>')
+    return "".join(a)
+
+
+def splice(path: str, html: str) -> str:
+    """기존 문서 뒤에 붙인다. 이미 붙어 있으면 그 자리만 갈아끼운다."""
+    doc = io.open(path, encoding="utf-8").read()
+    block = MARK0 + html + MARK1
+    if MARK0 in doc and MARK1 in doc:
+        i, j = doc.index(MARK0), doc.index(MARK1) + len(MARK1)
+        doc = doc[:i] + block + doc[j:]
+    else:
+        tail = "</div></body></html>"
+        if tail not in doc:
+            raise ValueError(f"문서 끝을 못 찾았다: {path}")
+        doc = doc.replace(tail, block + tail)
+    io.open(path, "w", encoding="utf-8").write(doc)
+    return path
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="PIO_ERROR 룰 전/후 비교 문서")
+    ap = argparse.ArgumentParser(description="PIO_ERROR 룰 전/후 비교")
     ap.add_argument("src", help="받은 노트북(.ipynb/.txt) 또는 CSV")
-    ap.add_argument("-o", "--out", default=OUT_DEFAULT)
+    ap.add_argument("-o", "--out", default=OUT_DEFAULT,
+                    help="합본 문서 자리 (--into 를 쓰면 안 만든다)")
+    ap.add_argument("--into", action="store_true", default=True,
+                    help="[기본] FAB 마다 **이미 있는 분석 문서 뒤에** 붙인다")
+    ap.add_argument("--standalone", action="store_true",
+                    help="붙이지 않고 합본 문서 한 장만 만든다")
     ns = ap.parse_args(argv)
 
     sets = [p for p in (parse(c) for c in read_cells(ns.src)) if p]
     if not sets:
         print("변경전/변경후 두 열을 가진 자료를 못 찾았습니다.", file=sys.stderr)
         return 2
-    os.makedirs(os.path.dirname(ns.out), exist_ok=True)
-    io.open(ns.out, "w", encoding="utf-8").write(build(sets))
+
     for s in sets:
         c = cuts_of(s["fab"])
         st = stats(s["rows"], c)
         pr = promote(s["rows"], c)
-        print(f'  {fabname(s["fab"]):<18} 컷 {c[0]}/{c[1]}/{c[2]} · 오른 분 {st["ch"]:>4}'
+        print(f'  {fabname(s["fab"]):<18} 컷 {c[0]}/{c[1]}/{c[2]}'
+              f' · 오른 분 {st["ch"]:>4}'
               f' · 등급 바뀐 분 {sum(st["moved"].values()):>3}'
               f' · 위험이상 {pr["before"]["danger"]} → {pr["after"]["danger"]}'
               f' · 경계→위험 {len(pr["up"])}')
-    print(f'→ {ns.out}')
+
+    if ns.standalone:
+        os.makedirs(os.path.dirname(ns.out), exist_ok=True)
+        io.open(ns.out, "w", encoding="utf-8").write(build(sets))
+        print(f"→ {ns.out}")
+        return 0
+
+    # ★기본은 **기존 문서에 붙이기**. FAB 마다 제 문서로 간다.
+    miss = []
+    for s in sets:
+        code = SYS_OF.get(s["fab"].upper(), s["fab"].upper())
+        name = INTO.get(code)
+        if not name:
+            miss.append(s["fab"])
+            continue
+        path = os.path.join(BASE_DIR, "docs", name)
+        if not os.path.isfile(path):
+            miss.append(f'{s["fab"]}({name} 없음)')
+            continue
+        splice(path, fab_section(s))
+        print(f'→ {os.path.join("docs", name)}  ({fabname(s["fab"])} 절 붙임)')
+    if miss:
+        print("붙일 문서를 못 찾음: " + ", ".join(miss), file=sys.stderr)
+        print("  (INTO 에 FAB → 문서 이름을 적어 주세요)", file=sys.stderr)
     return 0
 
 
