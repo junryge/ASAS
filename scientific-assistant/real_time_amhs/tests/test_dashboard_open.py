@@ -103,9 +103,12 @@ class OpeningScreen(unittest.TestCase):
         다섯이 위 줄만큼 커지면 화면이 카드로 가득 차서 무엇을 먼저 눌러야
         하는지가 사라진다."""
         def _h(sel):
-            m = re.search(re.escape(sel) + r"\{[^}]*min-height:(\d+)px", self.html)
+            # 화면 높이를 따라가게 바뀐 값은 clamp(아래끝,Nvh,위끝) 꼴이다.
+            # 계층은 화면이 넉넉할 때의 모습으로 따진다 → 위끝을 본다.
+            m = re.search(re.escape(sel) + r"\{[^}]*min-height:"
+                          r"(?:clamp\([^)]*?,\s*)?([\d.]+)px\)?", self.html)
             self.assertIsNotNone(m, sel + " 의 min-height 가 없다")
-            return int(m.group(1))
+            return float(m.group(1))
 
         def _cd(sel):
             m = re.search(re.escape(sel) + r" \.cd\{[^}]*font-size:([\d.]+)px", self.html)
@@ -159,10 +162,13 @@ class 새_오프닝_시안(unittest.TestCase):
         self.assertRegex(self.h, r':root\[data-theme="light"\]\{--oorb:\.\d+;')
         self.assertRegex(self.h, r':root\[data-theme="contrast"\]\{--oorb:\.\d+;')
 
-    def test_가로_스크롤을_막았다(self):
-        """구가 상자 밖으로 나가 있어 안 막으면 아래에 가로 막대가 생긴다."""
+    def test_스크롤을_막았다(self):
+        """가로: 구가 상자 밖으로 나가 있어 안 막으면 아래에 가로 막대가 생긴다.
+        세로: 고객이 "한 화면에 전부보이게 하지;;스크롤 내리지말자" 고 했다.
+        둘 다 한 줄(overflow:hidden)로 막는다."""
         i = self.h.index(".open{position:fixed")
-        self.assertIn("overflow-y:auto;overflow-x:hidden", self.h[i - 200:i + 200])
+        self.assertIn("overflow:hidden", self.h[i:i + 120])
+        self.assertNotIn("overflow-y:auto", self.h[i:i + 300])
 
     def test_지표는_실제_값으로_채운다(self):
         """시안의 1,284 · 240ms · 3 은 그림에 박힌 숫자다 — 그대로 두면 거짓말이다."""
@@ -217,6 +223,74 @@ class 새_오프닝_시안(unittest.TestCase):
         blk = self.h[i:self.h.index("];", i)]
         for c in ("'ALL'", "'M14'", "'M14B'", "'M16A'", "'M16B'", "'M16HUB'"):
             self.assertIn(c, blk, c)
+
+
+
+class 한_화면에_다_들어간다(unittest.TestCase):
+    """고객: "한 화면에 전부보이게 하지;;스크롤 내리지말자;;"
+
+    ★재는 법 — 브라우저 없이 볼 수 있는 것만 여기서 본다.
+      세로 여백과 글자 크기가 **화면 높이(vh)에 매달려 있는지**, 그리고 줄여도
+      안 들어가는 화면에서만 스크롤을 돌려주는지.
+      실제로 안 넘치는지는 크로미엄으로 여러 높이(1080·1000·900·864·768·720·640)
+      에서 재 봤다 — scrollHeight - clientHeight = 0, 여섯 단추 전부 화면 안.
+    ★왜 vh 냐 — 숫자를 하나로 박으면 1440 짜리 모니터에서 허전하거나 768 짜리
+      노트북에서 FAB 줄이 잘린다. clamp 으로 위아래를 묶어 둘 다 산다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _html()
+
+    def _rule(self, sel):
+        i = self.h.index(sel)
+        return self.h[i:self.h.index("}", i)]
+
+    def test_세로도_막는다(self):
+        r = self._rule(".open{position:fixed")
+        self.assertIn("overflow:hidden", r)
+        self.assertIn("align-items:center", r, "남는 높이는 위아래로 반씩")
+
+    def test_세로_여백이_화면_높이를_따라간다(self):
+        """padding·눈썹·표제·띠·테마·격자·꼬리말 — 세로로 자리를 먹는 것 전부."""
+        for sel, prop in (
+            (".open{position:fixed",                 "padding"),
+            (".oeye{display:flex",                   "padding-top"),
+            (".oask{max-width:860px",                "padding-top"),
+            (".oask h2{margin:0",                    "font-size"),
+            (".othm{display:flex",                   "padding-top"),
+            (".sysgrid{display:grid",                "padding-top"),
+            (".open .note{display:flex",             "padding-top"),
+            (".sysgrid .lead.solo .sys.hero{",       "padding"),
+            (".sys.fab{display:flex",                "min-height"),
+        ):
+            r = self._rule(sel)
+            m = re.search(re.escape(prop) + r":\s*clamp\([^)]*vh[^)]*\)", r)
+            self.assertTrue(m, "%s 의 %s 가 아직 고정 숫자다 — 낮은 화면에서 넘친다"
+                               % (sel.split("{")[0], prop))
+
+    def test_표제는_작아져도_읽힌다(self):
+        """clamp 의 아래끝이 너무 작으면 한 화면에 들어가도 못 읽는다."""
+        m = re.search(r"\.oask h2\{margin:0;font-size:clamp\((\d+)px,([\d.]+)vh,(\d+)px\)",
+                      self.h)
+        self.assertTrue(m, "표제 글자 clamp 을 못 찾았다")
+        lo, _, hi = int(m.group(1)), m.group(2), int(m.group(3))
+        self.assertGreaterEqual(lo, 28, "아래끝이 28px 밑이면 표제가 아니다")
+        self.assertEqual(hi, 64, "위끝은 시안 그대로 64px")
+
+    def test_줄여도_안_들어가면_스크롤을_돌려준다(self):
+        """★잘라 버리면 FAB 을 아예 못 고른다. 세로 600 아래·좁은 폭에서는
+        한 화면을 포기하고 스크롤을 준다 — 그게 마지막 안전장치다."""
+        i = self.h.index("@media(max-height:600px){")
+        self.assertIn("overflow-y:auto", self.h[i:i + 220])
+        j = self.h.index("@media(max-width:960px)")
+        self.assertIn("overflow-y:auto", self.h[j:j + 300])
+
+    def test_낮은_화면에서는_구를_줄인다(self):
+        """620px 짜리 구가 표제를 덮는다. 안쪽 고리가 px 로 박혀 있어 통째로 줄인다."""
+        self.assertRegex(self.h, r"@media\(max-height:900px\)\{ \.oorb\{transform:scale\(")
+        self.assertRegex(self.h, r"@media\(max-height:740px\)\{ \.oorb\{transform:scale\(")
+        i = self.h.index("@media(max-height:900px)")
+        self.assertIn("transform-origin:100% 0", self.h[i:i + 200], "기준점은 오른쪽 위 — 자리 고정")
 
 
 if __name__ == "__main__":
