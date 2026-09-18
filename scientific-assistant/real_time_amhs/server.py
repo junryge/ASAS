@@ -187,8 +187,18 @@ def get_ctx(sys: str | None = "ALL") -> dict:
     with CTX_LOCK:
         if s not in CTX:
             c = sys_cfg(CFG, s)
+            store = CaseStore(c)
+            # ★이 시스템 화면을 처음 열 때 한 번, 보관 기간(기본 30일)을 넘긴
+            #   케이스를 보관 파일로 옮긴다. 안 치우면 화면이 3초마다 부르는
+            #   /api/cases 가 날마다 무거워진다 (800건 = 2.9MB · 29ms).
+            #   ★저장소를 **만드는 것만으로** 파일이 바뀌면 안 되므로
+            #     (시험·도구가 그냥 만들어 볼 수 있다) 부르는 자리를 여기 둔다.
+            try:
+                store.prune(force=True)
+            except Exception as e:                      # noqa: BLE001
+                print(f"[케이스] ⚠️ 정리 건너뜀: {type(e).__name__}: {e}")
             CTX[s] = {
-                "sys": s, "cfg": c, "store": CaseStore(c),
+                "sys": s, "cfg": c, "store": store,
                 "state": _blank_state(),
                 "watched": 0.0,        # 마지막으로 이 시스템 화면이 물어본 시각
                 # 빈 구간 메움(backfill) 진행 상태

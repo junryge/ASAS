@@ -16,6 +16,7 @@ import json
 import os
 import re
 import threading
+import time
 from datetime import datetime, timedelta
 
 from lp_client import load_config
@@ -433,7 +434,17 @@ def hid_zones(tokens: str) -> list[str]:
 
 # ────────────────────────────── 케이스 ──────────────────────────────
 class CaseStore:
-    """활성/확인/종결 케이스 관리. 파일에 원자적 저장."""
+    """활성/확인/종결 케이스 관리. 파일에 원자적 저장.
+
+    ★아래 세 값은 **클래스 기본값**으로도 둔다. report.py 는 실시간 저장소를
+      건드리지 않으려고 CaseStore.__new__ 로 빈 껍데기를 만들어 쓰는데,
+      __init__ 을 안 타므로 인스턴스에 이 값들이 없다. 없으면 ingest 가
+      그 자리에서 터진다(실제로 리포트 구간조회가 그렇게 죽었다).
+    """
+
+    rev = 0                 # 판번호 — /api/cases 캐시가 본다
+    _pruned_at = 0.0        # 마지막으로 오래된 것을 치운 시각
+    prunable = True         # 임시 저장소는 False — 보관 파일을 건드리면 안 된다
 
     def __init__(self, cfg: dict | None = None):
         self.cfg = cfg or load_config()
@@ -447,7 +458,12 @@ class CaseStore:
         #   "지난번과 같은 판인가" 를 이 숫자 하나로 가른다 (전체를 다시
         #   직렬화해 보고 비교하면 그게 곧 비용이다).
         self.rev = 0
+        self._pruned_at = 0.0               # 마지막으로 오래된 것을 치운 시각
         self.cases: list[dict] = self._load()
+        # ★여기서 prune() 을 부르지 않는다. **만드는 것만으로 파일이 바뀌면**
+        #   시험이나 도구가 저장소를 그냥 만들어 보다가 운영 파일을 건드린다
+        #   (실제로 시험 한 번에 data/cases_old 가 생겼다). 서버가 뜰 때
+        #   server.py 가 한 번 부른다 — 부르는 자리를 눈에 보이게 둔다.
 
     def _load(self) -> list[dict]:
         if os.path.isfile(self.path):
@@ -487,6 +503,107 @@ class CaseStore:
                         pass
                 raise
 
+    # ── 오래된 케이스 치우기 ──────────────────────────────────────
+    # ★왜 필요한가 — 예전에는 지우는 코드가 아예 없어서 케이스가 영원히
+    #   쌓였다. 화면이 3초마다 부르는 /api/cases 가 그만큼 무거워지고
+    #   (800건 = 2.9MB), 저장도 느려진다(94ms). 날마다 조금씩 느려지던
+    #   이유가 이것이다. 고객이 정한 보관 기간: **30일**.
+    # ★지우지 않고 **옮긴다**. data/cases_old/YYYYMM.json 에 붙여 둔다 —
+    #   관제 기록을 말없이 없애면 나중에 "그때 그 건" 을 못 찾는다.
+    #   보관까지 끄려면 storage.cases_archive 를 빈 값으로 두면 된다.
+    # ★언제를 기준으로 하나 — 그 케이스의 **마지막 움직임**이다
+    #   (종결 시각 · 마지막 감지 · 없으면 연 시각). 30일 동안 아무 일도
+    #   없었던 건이면 화면에서 볼 일이 없다.
+    RETENTION_DEFAULT = 30
+
+    def _last_touch(self, c: dict) -> datetime | None:
+        for k in ("closed_at", "last_seen", "opened_at"):
+            v = c.get(k)
+            if v:
+                try:
+                    return datetime.fromisoformat(v)
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    def prune(self, now: datetime | None = None, force: bool = False) -> int:
+        """보관 기간을 넘긴 케이스를 보관 파일로 옮긴다. 옮긴 건수를 돌려준다.
+
+        ★한 시간에 한 번만 실제로 돈다(force 면 바로). ingest 마다 전체를
+          훑으면 그게 또 비용이다 — 하루 한 번만 줄어들어도 충분하다.
+        """
+        if not self.prunable:               # 리포트용 임시 저장소 등
+            return 0
+        days = self.cfg.get("policy", {}).get("case_retention_days",
+                                              self.RETENTION_DEFAULT)
+        try:
+            days = int(days)
+        except (TypeError, ValueError):
+            days = self.RETENTION_DEFAULT
+        if days <= 0:                       # 0 이하 = 안 치움 (옛 동작 그대로)
+            return 0
+        t = time.time()
+        if not force and t - self._pruned_at < 3600:
+            return 0
+        self._pruned_at = t
+
+        now = now or datetime.now()
+        cut = now - timedelta(days=days)
+        with self._lock:
+            old = [c for c in self.cases
+                   if (self._last_touch(c) or now) < cut]
+            if not old:
+                return 0
+            # ★보관에 실패하면 **안 치운다**. 관제 기록을 아무 데도 안 남기고
+            #   없애느니, 파일이 큰 채로 두고 경고를 보는 편이 낫다.
+            #   (보관을 아예 끈 설정이면 _archive 가 True 를 돌려준다 — 그때는
+            #    사람이 '버려도 된다' 고 정한 것이다.)
+            if not self._archive(old):
+                return 0
+            gone = {id(c) for c in old}
+            self.cases = [c for c in self.cases if id(c) not in gone]
+            self.save()
+        print(f"[케이스] {len(old)}건을 보관으로 옮김 "
+              f"(마지막 움직임이 {days}일 넘음, 남은 {len(self.cases)}건)")
+        return len(old)
+
+    def _archive(self, old: list[dict]) -> bool:
+        """옮긴 케이스를 달마다 한 파일에 붙여 둔다.
+
+        성공하면 True — 그때만 본 목록에서 뺀다. 실패하면 False 라 아무것도
+        안 없앤다(파일이 큰 채로 두고 경고를 보는 편이 낫다).
+        """
+        rel = self.cfg.get("storage", {}).get("cases_archive", "data/cases_old")
+        if not rel:
+            return True                     # 보관 안 함 — 사람이 그렇게 정했다
+        try:
+            d = os.path.join(BASE_DIR, rel)
+            os.makedirs(d, exist_ok=True)
+            by_month: dict[str, list[dict]] = {}
+            for c in old:
+                t = self._last_touch(c) or datetime.now()
+                by_month.setdefault(t.strftime("%Y%m"), []).append(c)
+            for ym, lst in by_month.items():
+                p = os.path.join(d, f"{ym}.json")
+                cur = []
+                if os.path.isfile(p):
+                    try:
+                        with open(p, "r", encoding="utf-8") as f:
+                            cur = json.load(f)
+                    except Exception:       # noqa: BLE001
+                        cur = []            # 깨진 보관본 때문에 관제가 멎으면 안 된다
+                have = {c.get("id") for c in cur}
+                cur.extend(c for c in lst if c.get("id") not in have)
+                tmp = f"{p}.{os.getpid()}.{threading.get_ident()}.tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(cur, f, ensure_ascii=False, indent=2)
+                os.replace(tmp, p)
+            return True
+        except Exception as e:              # noqa: BLE001
+            print(f"[케이스] ⚠️ 보관 실패 — **아무것도 안 치웁니다**: "
+                  f"{type(e).__name__}: {e}")
+            return False
+
     # ── 조회 ──
     def active(self) -> list[dict]:
         return [c for c in self.cases if c["status"] != "종결"]
@@ -521,6 +638,7 @@ class CaseStore:
     # ── 감지 반영 ──
     def ingest(self, area: str, dt: datetime, score: float, row: dict) -> dict:
         """감지 1건을 케이스에 반영 (신규 생성 또는 갱신)."""
+        self.prune(now=dt)                  # 한 시간에 한 번만 실제로 돈다
         with self._lock:
             g = grade(score, self.cfg)
             c = self._match(area, dt)

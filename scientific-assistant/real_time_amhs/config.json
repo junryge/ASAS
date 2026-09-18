@@ -331,7 +331,9 @@
     "suppression_window_min": 30,
     "_suppression_doc": "종결 후에도 이 시간 동안 같은 설비/위치 재발은 같은 케이스로 묶는다.",
     "close_requires_ack": true,
-    "_close_doc": "'이상 없음' 판정은 케이스를 닫지 않고 재확인 예약만 갱신한다."
+    "_close_doc": "'이상 없음' 판정은 케이스를 닫지 않고 재확인 예약만 갱신한다.",
+    "case_retention_days": 30,
+    "_retention_doc": "케이스 보관 기간(일). 마지막 움직임이 이보다 오래된 건은 data/cases_old/YYYYMM.json 으로 옮긴다. 0 이하면 안 치운다. ★안 치우면 /api/cases 가 날마다 무거워진다 (800건 = 2.9MB)."
   },
   "forecast": {
     "_doc": "선행 감지 — 최근 추세로 '임계 돌파 N분 전'을 미리 띄운다. 학습 불필요.",
@@ -425,7 +427,9 @@
       "file",
       "hot_area"
     ],
-    "_dedupe_doc": "시각(datetime) + 이 컬럼들이 같아야 같은 행. _id/file 을 넣어야 같은 분에 여러 행이 와도 안 버려진다. 없는 컬럼은 자동 무시."
+    "_dedupe_doc": "시각(datetime) + 이 컬럼들이 같아야 같은 행. _id/file 을 넣어야 같은 분에 여러 행이 와도 안 버려진다. 없는 컬럼은 자동 무시.",
+    "cases_archive": "data/cases_old",
+    "_cases_archive_doc": "옮긴 케이스를 달마다 한 파일로 모아 둔다. 빈 값이면 보관 없이 버린다."
   },
   "server": {
     "_doc": "데모스(5000번대)·코드어시(10009)와 겹치지 않는 독립 포트. host 0.0.0.0 = 외부(사내망) 접속 허용",

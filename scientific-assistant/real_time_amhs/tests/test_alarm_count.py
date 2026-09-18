@@ -710,3 +710,161 @@ class 케이스_저장이_서로_밟지_않는다(unittest.TestCase):
         t.start()
         t.join(timeout=5)
         self.assertEqual(done, [1], "잠금을 쥔 채 저장하면 멎는다 (RLock 이어야 한다)")
+
+
+class 오래된_케이스는_보관으로(unittest.TestCase):
+    """고객이 정한 보관 기간: **30일**.
+
+    예전에는 지우는 코드가 아예 없어서 케이스가 영원히 쌓였다. 화면이 3초마다
+    부르는 /api/cases 가 그만큼 무거워지고(800건 = 2.9MB · 29ms), 저장도
+    느려진다(94ms) — 날마다 조금씩 느려지던 이유가 이것이다.
+
+    ★지우지 않고 **옮긴다**. 관제 기록을 말없이 없애면 나중에 "그때 그 건" 을
+      못 찾는다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="caseret")
+        self.cfg = deepcopy(load_config())
+        self.cfg.setdefault("storage", {})["cases"] = os.path.join(self.tmp, "cases.json")
+        self.cfg["storage"]["cases_archive"] = os.path.join(self.tmp, "old")
+        self.cfg.setdefault("policy", {})["case_retention_days"] = 30
+        self.now = datetime(2026, 9, 18, 14, 0)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _store(self, cases):
+        s = sentinel.CaseStore(self.cfg)
+        s.cases = list(cases)
+        return s
+
+    def _case(self, cid, days_ago, key="last_seen", status="종결"):
+        t = (self.now - timedelta(days=days_ago)).isoformat()
+        c = {"id": cid, "area": "M16HUB", "status": status,
+             "opened_at": t, "level": "위험"}
+        c[key] = t
+        return c
+
+    def test_기본은_30일(self):
+        self.assertEqual(sentinel.CaseStore.RETENTION_DEFAULT, 30)
+        cfg = load_config()
+        self.assertEqual(cfg.get("policy", {}).get("case_retention_days"), 30,
+                         "config.json 에도 적혀 있어야 한다")
+
+    def test_30일_넘은_것만_옮긴다(self):
+        s = self._store([self._case("OLD", 40), self._case("EDGE", 29),
+                         self._case("NEW", 1)])
+        moved = s.prune(now=self.now, force=True)
+        self.assertEqual(moved, 1)
+        self.assertEqual([c["id"] for c in s.cases], ["EDGE", "NEW"])
+
+    def test_마지막_움직임을_본다(self):
+        """★연 시각이 오래돼도 **어제까지 감지되던** 건은 남아야 한다."""
+        c = self._case("LONG", 90, key="opened_at")
+        c["last_seen"] = (self.now - timedelta(days=2)).isoformat()
+        s = self._store([c])
+        s.prune(now=self.now, force=True)
+        self.assertEqual([x["id"] for x in s.cases], ["LONG"],
+                         "아직 살아 있는 케이스를 치웠다")
+
+    def test_옮긴_것은_보관_파일에_남는다(self):
+        s = self._store([self._case("OLD", 40)])
+        s.prune(now=self.now, force=True)
+        p = os.path.join(self.tmp, "old", "202608.json")
+        self.assertTrue(os.path.isfile(p), "보관 파일이 없다 — 기록이 사라졌다")
+        with open(p, encoding="utf-8") as f:
+            self.assertEqual([c["id"] for c in json.load(f)], ["OLD"])
+
+    def test_보관_파일에_두_번_안_쌓인다(self):
+        for _ in range(2):
+            s = self._store([self._case("OLD", 40)])
+            s.prune(now=self.now, force=True)
+        p = os.path.join(self.tmp, "old", "202608.json")
+        with open(p, encoding="utf-8") as f:
+            self.assertEqual(len(json.load(f)), 1, "같은 건이 보관 파일에 겹쳐 쌓인다")
+
+    def test_0_이면_안_치운다(self):
+        self.cfg["policy"]["case_retention_days"] = 0
+        s = self._store([self._case("OLD", 400)])
+        self.assertEqual(s.prune(now=self.now, force=True), 0)
+        self.assertEqual(len(s.cases), 1, "0 은 '안 치움' 이어야 한다")
+
+    def test_한_시간에_한_번만_돈다(self):
+        """★ingest 마다 전체를 훑으면 그게 또 비용이다."""
+        s = self._store([self._case("OLD", 40)])
+        self.assertEqual(s.prune(now=self.now, force=True), 1)
+        s.cases.append(self._case("OLD2", 40))
+        self.assertEqual(s.prune(now=self.now), 0, "바로 또 돌면 안 된다")
+        s._pruned_at = 0                                  # 한 시간 지난 셈
+        self.assertEqual(s.prune(now=self.now), 1)
+
+    def test_뜰_때_한_번_줄인다(self):
+        """파일이 이미 부풀어 있으면 서버가 뜨면서 줄어야 한다.
+
+        ★단, **만드는 것만으로는** 아무것도 안 바뀐다 — 시험이나 도구가
+          저장소를 그냥 만들어 보다가 운영 파일을 건드리면 안 된다.
+          (실제로 시험 한 번에 data/cases_old 가 생겼다.)
+          서버가 뜰 때 server.py 가 한 번 부른다."""
+        path = os.path.join(self.tmp, "cases.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([self._case("OLD", 40), self._case("NEW", 1)], f, ensure_ascii=False)
+        s = sentinel.CaseStore(self.cfg)
+        self.assertEqual([c["id"] for c in s.cases], ["OLD", "NEW"],
+                         "만들기만 했는데 벌써 치웠다")
+        s.prune(now=self.now, force=True)
+        self.assertEqual([c["id"] for c in s.cases], ["NEW"])
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual([c["id"] for c in json.load(f)], ["NEW"], "파일도 줄어야 한다")
+
+    def test_서버가_뜰_때_부른다(self):
+        src = _read("server.py")
+        i = src.index("store = CaseStore(c)")
+        self.assertIn("store.prune(force=True)", src[i:i + 700],
+                      "서버 어디서도 안 부르면 파일이 영원히 안 줄어든다")
+
+    def test_보관에_실패하면_안_치운다(self):
+        """★기록을 아무 데도 안 남기고 없애느니, 파일이 큰 채로 두고 경고를
+        보는 편이 낫다. 화면이 멎어서도 안 된다."""
+        self.cfg["storage"]["cases_archive"] = "/proc/못만드는곳/old"
+        s = self._store([self._case("OLD", 40)])
+        moved = s.prune(now=self.now, force=True)
+        self.assertEqual(moved, 0, "보관이 안 됐는데 치웠다 — 기록이 사라진다")
+        self.assertEqual([c["id"] for c in s.cases], ["OLD"])
+
+    def test_보관을_끄면_그냥_버린다(self):
+        """사람이 빈 값으로 정했으면 버려도 된다고 한 것이다."""
+        self.cfg["storage"]["cases_archive"] = ""
+        s = self._store([self._case("OLD", 40)])
+        self.assertEqual(s.prune(now=self.now, force=True), 1)
+        self.assertEqual(s.cases, [])
+
+    def test_리포트용_임시_저장소는_안_치운다(self):
+        """★리포트는 **지난 구간을 새로 구성해 보는** 자리라 30일 넘은 건이
+        잔뜩 나오는 게 정상이다. 거기서 치우면 리포트가 제 손으로 제 재료를
+        보관 파일로 옮겨 버린다."""
+        s = sentinel.CaseStore.__new__(sentinel.CaseStore)
+        s.cfg, s.cases = self.cfg, [self._case("OLD", 400)]
+        s._lock = threading.RLock()
+        s.path = os.path.join(self.tmp, ".report_tmp.json")
+        s.save = lambda: None
+        s.prunable = False
+        self.assertEqual(s.prune(now=self.now, force=True), 0)
+        self.assertEqual(len(s.cases), 1)
+        self.assertFalse(os.path.isdir(os.path.join(self.tmp, "old")),
+                         "임시 저장소가 보관 파일을 건드렸다")
+
+    def test_껍데기로_만들어도_안_터진다(self):
+        """report.py 는 CaseStore.__new__ 로 빈 껍데기를 만들어 쓴다 —
+        __init__ 을 안 타므로 판번호·마지막 청소 시각이 없다. 클래스
+        기본값이 없으면 ingest 가 그 자리에서 터진다(실제로 터졌다)."""
+        s = sentinel.CaseStore.__new__(sentinel.CaseStore)
+        self.assertEqual(s.rev, 0)
+        self.assertEqual(s._pruned_at, 0.0)
+        self.assertTrue(s.prunable)
+
+    def test_감지할_때마다_불린다(self):
+        src = _read("sentinel.py")
+        i = src.index("def ingest(")
+        self.assertIn("self.prune(", src[i:i + 400],
+                      "감지 경로에서 안 부르면 서버가 뜬 뒤로는 안 줄어든다")

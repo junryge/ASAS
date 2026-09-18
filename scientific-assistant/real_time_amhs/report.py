@@ -69,9 +69,14 @@ def cases_from_query(from_dt: str, to_dt: str, cfg: dict | None = None):
     # 조회 결과만으로 케이스를 새로 구성 (실시간 저장소를 건드리지 않는다)
     tmp = CaseStore.__new__(CaseStore)
     tmp.cfg, tmp.cases = cfg, []
-    tmp._lock = threading.Lock()
+    # ★RLock — 실시간 저장소와 같은 이유다 (ingest 가 잠금을 쥔 채 save 를 부른다)
+    tmp._lock = threading.RLock()
     tmp.path = os.path.join(BASE_DIR, "data", ".report_tmp.json")
     tmp.save = lambda: None                    # 임시 — 디스크에 쓰지 않는다
+    # ★오래된 케이스를 치우지 않는다. 여기는 **지난 구간을 새로 구성해 보는**
+    #   자리라 30일 넘은 건이 잔뜩 나오는 게 정상이고, 그걸 보관 파일로
+    #   옮겨 버리면 리포트가 제 손으로 제 재료를 치우는 꼴이 된다.
+    tmp.prunable = False
 
     floor = alarm_floor(cfg)
     for row in rows or []:
