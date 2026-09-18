@@ -615,16 +615,25 @@ let mapSettings = { ...DEFAULT_MAP_SETTINGS };
 // 3D 아이소메트리 상태 — 선언만 여기(아래 applyPageTheme 이 먼저 본다). 본체는 '3D 아이소메트리' 절.
 let show3D = false, v3d = null, v3dLoading = null, v3dLayoutSig = '';
 /* 3D 크기(레일 굵기·차량·설비·글자)
-   ★2026-09 고객이 화면에서 맞춰 보고 값을 정했다 —
+   ★2026-09 고객이 화면에서 맞춰 보고 **기본값**을 정했다 —
        레일 굵기 0.20 · 차량 0.40 · 설비 0.40 · 글자 0.80
-     그래서 '크기' 패널은 **띄우지 않는다**(sizeUI:false). 값은 oht3d.js 의
-     DEFAULTS 에 박혀 있고, 다시 맞출 일이 생기면 sizeUI 만 켜면 슬라이더가
-     그대로 나온다.
-   ★예전에 그 패널로 고쳐 저장해 둔 값이 localStorage 에 남아 있다. 그걸 계속
-     읽으면 **정해 준 기본값이 안 먹는다** — 한 번 지우고 다시 안 읽는다.
-     (관제 쪽에서 '정책을 바꿨는데 화면이 그대로' 로 이미 겪은 그 결이다.) */
-const V3D_SIZE_KEY = 'oht_world_v3d_size_v1';
-try { localStorage.removeItem(V3D_SIZE_KEY); } catch (e) {}
+     그 값은 oht3d.js 의 DEFAULTS 에 박혀 있다. 아무것도 안 만지면 늘 그 값이다.
+   ★'크기' 단추는 **다시 띄운다** (고객: "아이소매트리 크기 조정 하는거
+     어디있냐;;왜지워 그거;;"). 한 번 껐던 이유는 '사람마다 다르게 만져
+     화면이 제각각이 된다' 였는데, 맞춰 볼 수단이 아예 없어지는 쪽이 더
+     나빴다. 대신 슬라이더 판은 **닫힌 채로** 뜬다 — 단추를 눌러야 열려서
+     맵을 가리지 않는다. '기본값' 단추로 위 네 값으로 언제든 되돌아온다.
+   ★키를 v2 로 올린다. v1 에는 기본값을 정하기 **전에** 저장해 둔 값이 남아
+     있어서, 그대로 읽으면 정해 준 0.20/0.40/0.40/0.80 이 안 먹는다.
+     (관제 쪽 '정책을 바꿨는데 화면이 그대로' 와 같은 결이다 — 옛 키는 지운다.) */
+const V3D_SIZE_KEY = 'oht_world_v3d_size_v2';
+try { localStorage.removeItem('oht_world_v3d_size_v1'); } catch (e) {}
+function v3dSizeLoad() {
+  try { return JSON.parse(localStorage.getItem(V3D_SIZE_KEY)) || {}; } catch (e) { return {}; }
+}
+function v3dSizeSave(sz) {
+  try { localStorage.setItem(V3D_SIZE_KEY, JSON.stringify(sz)); } catch (e) {}
+}
 function loadMapSettings() {
   try {
     const raw = localStorage.getItem(MAP_SETTINGS_KEY);
@@ -1777,7 +1786,7 @@ function drawCarryDot(ctx, sx, sy, rr, kind, ang) {
 // 도면 길이) 중앙값 9.99, p10~p90 9.98~10.00 — 1 단위 = 10 mm 다.
 const V3D_SCALE = 0.01;
 // 3D 뷰어 판 번호 — oht3d.js 를 고쳐 올릴 때 같이 올린다 (브라우저 캐시 우회)
-const V3D_BUILD = '20260918a';
+const V3D_BUILD = '20260918b';
 
 // 2D 차량 상태 코드 → 3D 상태(0 운행 · 1 적재 · 2 정지 · 3 JAM · 4 OBS).
 // ★2D 의 색 규칙(drawMap)과 **같은 순서**로 판정한다. 7=JAM, 6=OBS, 2/8/9=정지,
@@ -1892,8 +1901,10 @@ async function open3D() {
         walls: false,                               // 벽 없음 — 돌려 보면 안쪽을 가리기만 한다 (고객 지시)
         dark: mapSettings.mapTheme === 'dark',
         colors: { state: v3dColors(), background: pal.bg, accent: '#1f6feb' },
-        // 크기는 oht3d.js DEFAULTS 의 값 그대로 (고객이 정한 0.20/0.40/0.40/0.80)
-        sizeUI: false,        // '크기' 패널 안 띄움 — 값이 사람마다 달라지지 않게
+        /* 크기 — 기본은 oht3d.js DEFAULTS (고객이 정한 0.20/0.40/0.40/0.80).
+           '크기' 판에서 고쳐 둔 것이 있으면 그 값으로 연다. */
+        ...v3dSizeLoad(),
+        sizeUI: true,         // '크기' 단추 — 눌러야 슬라이더 판이 열린다
         /* ★뷰어 안 HID Zone 패널을 아예 안 만든다 (고객: "아이소메트리 패널 빼라").
            화면 오른쪽 사이드바에 같은 목록(OHT 상태 · HID Zone)이 이미 있다 —
            둘을 같이 띄우면 맵이 양쪽에서 잘리고, 같은 표가 둘이라 어느 쪽이
@@ -1906,6 +1917,7 @@ async function open3D() {
         renderZoneList();
       });
       inst.on('vehicleclick', e => { selectedOHT = e.id; renderOHTList(); });
+      inst.on('sizechange', v3dSizeSave);   // '크기' 판에서 고치면 바로 저장된다
       return inst;
     })();
     try { v3d = await v3dLoading; }

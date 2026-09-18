@@ -114,11 +114,11 @@ class 뷰어에_보탠_것(unittest.TestCase):
                       "판·바 둘 다 배수를 타야 한다")
         self.assertIn("buildRails() {", self.s, "굵기를 바꾸면 다시 세워야 한다")
 
-    def test_크기_패널은_코드에_남아_있다(self):
-        """고객: "아이소메트리 [안에] 만들어야되" — 2D 설정과 섞지 않는다.
+    def test_크기_판이_아이소메트리_안에_있다(self):
+        """고객: "아이소메트리 [안에] 만들어야되" — 2D 설정(⚙)과 섞지 않는다.
 
-        ★2026-09: 크기를 정하고 나서 패널은 **안 띄운다**(sizeUI:false). 코드는
-          남겨 둔다 — 다시 맞출 때 sizeUI 만 켜면 슬라이더가 그대로 나온다.
+        ★2026-09: 기본값을 정하고 한동안 단추를 껐다가, 고객이 "크기 조정
+          하는거 어디있냐;;왜지워 그거" 해서 도로 띄웠다.
         """
         self.assertIn('data-a="size"', self.s)
         self.assertIn("class = 'o3d-size'", self.s.replace('className', 'class'))
@@ -128,13 +128,12 @@ class 뷰어에_보탠_것(unittest.TestCase):
         self.assertIn("this.emit('sizechange'", self.s, "화면이 저장할 수 있게 알려야 한다")
 
     def test_크기는_2D_설정과_섞지_않는다(self):
-        """★2026-09: 크기를 고객이 정하고 패널을 닫으면서 '이 브라우저에 저장'
-        도 그만뒀다. 저장해 둔 옛 값이 정해 준 기본값을 덮으면 안 되기 때문이다
-        (자세한 것은 화면에서_정한_기본값). 여기서는 2D 설정(⚙)과 섞이지
-        않았다는 것만 본다 — 2D 는 px 배수, 3D 는 m 배수라 뜻이 다르다."""
+        """3D 크기는 3D 안에서만 정한다 — 2D 는 px 배수, 3D 는 m 배수라 뜻이
+        다르다. 섞어 놓으면 ⚙ 에서 차량을 키웠을 때 3D 차량까지 같이 커진다.
+        (저장은 따로 한다 — 키도 따로다: 화면에서_정한_기본값 참고)"""
         self.assertNotIn("mapSettings.vehicleRadius", self.h.split("createOHT3D(box, {")[1][:900],
                          "3D 에 2D 의 px 크기를 넘기면 안 된다")
-        self.assertIn("sizeUI: false,", self.h)
+        self.assertIn("sizeUI: true,", self.h)
 
     def test_네_색만_준_옛_호출도_산다(self):
         self.assertIn("if (o.colors.state.length < ST_NAME.length)", self.s)
@@ -250,11 +249,15 @@ class 데이터층_실행(unittest.TestCase):
 
 
 class 화면에서_정한_기본값(unittest.TestCase):
-    """2026-09 고객이 화면에서 맞춰 보고 정한 값 — 이 값으로 열려야 한다.
+    """2026-09 고객이 화면에서 맞춰 보고 정한 값 — 아무것도 안 만지면 이 값이다.
 
         레일 굵기 0.20 · 차량 0.40 · 설비 0.40 · 글자 0.80
-    '크기' 패널은 안 띄운다. 값이 사람마다 달라지면 같은 화면을 봤다고 말할 수
-    없다 — 다시 맞출 일이 생기면 sizeUI:true 로 슬라이더를 꺼내면 된다.
+
+    '크기' 단추는 띄운다 (고객: "크기 조정 하는거 어디있냐;;왜지워 그거;;").
+    한 번 껐던 이유는 '값이 사람마다 달라진다' 였는데, 맞춰 볼 수단이 아예
+    없어지는 쪽이 더 나빴다. 대신 ① 판은 닫힌 채로 뜨고 ② '기본값' 단추가
+    언제나 위 네 값으로 되돌리고 ③ 저장 키를 v2 로 올려 기본값을 정하기
+    전에 저장된 값이 안 살아나게 했다.
     """
 
     @classmethod
@@ -267,19 +270,47 @@ class 화면에서_정한_기본값(unittest.TestCase):
                      ("portScale", "0.40"), ("textScale", "0.80")):
             self.assertRegex(self.j, r"%s:\s*%s\s*," % (k, re.escape(v)), k)
 
-    def test_크기_패널은_안_띄운다(self):
-        self.assertRegex(self.j, r"sizeUI:\s*false")
+    def test_크기_단추를_띄운다(self):
+        """고객: "아이소매트리 크기 조정 하는거 어디있냐;;왜지워 그거;;"
+
+        한 번 껐던 이유는 '사람마다 다르게 만져 화면이 제각각이 된다' 였는데,
+        맞춰 볼 수단이 아예 없어지는 쪽이 더 나빴다. 단추는 띄우되 슬라이더
+        판은 **닫힌 채로** 뜬다 — 단추를 눌러야 열려서 맵을 안 가린다."""
         self.assertIn("if (o.sizeUI) this._buildSizePanel(r, o);", self.j)
-        # 단추도 sizeUI 일 때만
-        self.assertIn("${o.sizeUI ? '<button class=\"o3d-btn\" data-a=\"size\"", self.j)
-        self.assertIn("sizeUI: false,", self.h, "화면에서도 끈 채로 연다")
+        self.assertIn("${o.sizeUI ? '<button class=\"o3d-btn\" data-a=\"size\"", self.j,
+                      "단추는 sizeUI 일 때만 만든다")
+        self.assertIn("sizeUI: true,", self.h, "화면이 단추를 켜고 연다")
+        self.assertRegex(self.j, r"sizeUI:\s*false",
+                         "라이브러리 기본은 그대로 false (다른 데서 쓸 때 안 뜬다)")
+        # 판은 .on 이 붙어야 열린다 — 만들 때는 안 붙인다
+        m = re.search(r"_buildSizePanel\(r, o\) \{.*?\n  \}", self.j, re.S).group(0)
+        self.assertNotIn("o3d-size on", m, "판이 열린 채로 뜬다 — 맵을 가린다")
+        self.assertIn("z.classList.toggle('on')", self.j, "단추로 여닫는다")
+
+    def test_고친_크기는_저장되고_다시_열린다(self):
+        """맞춰 놓고 새로고침하면 도로 돌아가면 맞출 이유가 없다."""
+        self.assertIn("function v3dSizeLoad()", self.h)
+        self.assertIn("function v3dSizeSave(sz)", self.h)
+        self.assertIn("...v3dSizeLoad(),", self.h, "저장해 둔 값으로 열어야 한다")
+        self.assertIn("inst.on('sizechange', v3dSizeSave)", self.h, "고치면 바로 저장")
+        self.assertIn("this.emit('sizechange'", self.j, "뷰어가 알려 줘야 한다")
 
     def test_옛_저장값이_기본값을_덮지_않는다(self):
-        """★'정책을 바꿨는데 화면이 그대로' 와 같은 결. 패널을 없앴으니
-        예전에 그 패널로 저장해 둔 값은 지우고 다시 안 읽는다."""
-        self.assertIn("localStorage.removeItem(V3D_SIZE_KEY)", self.h)
-        self.assertNotIn("v3dSizeLoad()", self.h)
-        self.assertNotIn("v3dSizeSave", self.h)
+        """★'정책을 바꿨는데 화면이 그대로' 와 같은 결. v1 에는 고객이
+        기본값(0.20/0.40/0.40/0.80)을 정하기 **전에** 저장해 둔 값이 남아
+        있다 — 그대로 읽으면 정해 준 값이 안 먹는다. 키를 올리고 옛 키는
+        지운다."""
+        self.assertIn("const V3D_SIZE_KEY = 'oht_world_v3d_size_v2';", self.h)
+        self.assertIn("localStorage.removeItem('oht_world_v3d_size_v1')", self.h)
+
+    def test_기본값_단추는_고객이_정한_값으로_되돌린다(self):
+        """★저장값으로 열렸을 때 그 저장값을 기준으로 잡으면 되돌릴 곳이
+        없어진다 — 누른 자리에 그대로 머문다. 돌아갈 자리는 DEFAULTS 다."""
+        m = re.search(r"this\.szDefault = \{[^}]*\}", self.j).group(0)
+        for k in ("DEFAULTS.railScale", "DEFAULTS.vehicleScale",
+                  "DEFAULTS.portScale", "DEFAULTS.textScale"):
+            self.assertIn(k, m, k)
+        self.assertNotIn("o.railScale", m, "화면이 넘긴 값(=저장값)을 기준으로 삼는다")
 
     def test_뷰어_안_패널은_아예_안_만든다(self):
         """고객: "아이소메트리 패널 빼라".

@@ -58,8 +58,9 @@ const DEFAULTS = {
   wallHeight: 7.5,
   wallCutHeight: 1.0,
   /* 크기 기본값 — 2026-09 고객이 화면에서 맞춰 보고 정한 값이다.
-     이 값으로 열리고, '크기' 패널은 닫아 둔다(sizeUI:false). 바꿀 일이 생기면
-     sizeUI:true 로 열어 슬라이더로 다시 맞추면 된다. */
+     '크기' 판의 '기본값' 단추는 언제나 이 네 값으로 되돌린다(szDefault).
+     ★라이브러리 기본은 sizeUI:false 다 (단추를 안 만든다). 월드모델파생
+       화면은 true 로 열어 단추를 띄운다 — 판 자체는 닫힌 채로 뜬다. */
   vehicleScale: 0.40,    // 차량
   railScale: 0.20,       // 레일 굵기 — 평행 레일이 붙어 보이지 않아야 한다 (위 주석)
   portScale: 0.40,       // 설비(포트) 상자
@@ -270,10 +271,9 @@ class Viewer {
     leg.innerHTML = ST_NAME.map((n, i) => `<span><i class="o3d-dot" style="background:${sc[i]}"></i>${n}</span>`).join('') +
       '<span>레일 원활<i class="o3d-hb"></i>정체</span>';
     r.appendChild(leg);
-    // 크기 패널 — 3D 안에서만 쓰는 값이라 2D 설정과 섞지 않는다 (고객: "따로 가야지")
-    // ★기본은 **안 만든다**. 크기는 DEFAULTS 에 고객이 정한 값으로 박혀 있고,
-    //   패널을 열어 두면 사람마다 다르게 만져 화면이 제각각이 된다.
-    //   다시 맞출 일이 생기면 sizeUI:true 로 열면 된다.
+    // 크기 판 — 3D 안에서만 쓰는 값이라 2D 설정과 섞지 않는다 (고객: "따로 가야지")
+    // ★sizeUI 일 때만 만든다. 만들어도 처음엔 닫혀 있다('크기' 단추로 연다)
+    //   — 열어 둔 채로 뜨면 맵을 가린다.
     if (o.sizeUI) this._buildSizePanel(r, o);
     this.dom.bar = bar;
     this.dom.ts = bar.querySelector('.o3d-ts');
@@ -292,8 +292,11 @@ class Viewer {
       + '<button class="o3d-btn" data-s="reset">기본값</button>';
     r.appendChild(sz);
     this.dom.size = sz;
-    this.szDefault = { rs: +o.railScale || DEFAULTS.railScale, vs: +o.vehicleScale || DEFAULTS.vehicleScale,
-                       ps: +o.portScale || DEFAULTS.portScale, ts: +o.textScale || DEFAULTS.textScale };
+    /* ★'기본값' 단추가 돌아갈 자리는 **DEFAULTS** 다. 화면이 저장해 둔 값으로
+       열리면 o.railScale 등이 곧 그 저장값이라, 그걸 기준으로 잡으면 되돌릴
+       곳이 없어진다 — 누른 자리에 그대로 머문다. */
+    this.szDefault = { rs: DEFAULTS.railScale, vs: DEFAULTS.vehicleScale,
+                       ps: DEFAULTS.portScale, ts: DEFAULTS.textScale };
     const SKEY = { rs: 'railScale', vs: 'vehicleScale', ps: 'portScale', ts: 'textScale' };
     sz.addEventListener('input', ev => {
       const k = ev.target.dataset.s;
