@@ -249,3 +249,67 @@ class 기존_문서에_붙인다(unittest.TestCase):
         sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
         self.assertIn("좋아졌습니다", sec)
         self.assertIn("note good", sec)
+
+
+class 그래프가_들어간다(unittest.TestCase):
+    """고객: "변경전·변경후 그래프도 보여줘야지. 그게 내용이 들어가 있어야 알지."
+
+    표의 숫자만으로는 **어디서** 올랐는지가 안 보인다. 두 곡선을 같은 자리에
+    겹쳐 놓고, 등급 컷과 사건 구간을 같이 그려야 '그래서 화면이 바뀌었나' 를
+    읽을 수 있다.
+    """
+
+    def _rows(self, day="2026-09-13"):
+        return [(f"{day} {h:02d}:{m:02d}", 30 + (h % 5) * 6, 30 + (h % 5) * 6 + (8 if m % 7 == 0 else 0))
+                for h in range(24) for m in range(60)]
+
+    def test_날마다_한_장(self):
+        rows = self._rows("2026-09-12") + self._rows("2026-09-13")
+        sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
+        self.assertEqual(sec.count("<svg"), 2, "날짜 수만큼 있어야 한다")
+        self.assertIn("변경 전 / 후 — 하루치 점수", sec)
+
+    def test_두_곡선을_같이_그린다(self):
+        sec = P.fab_section(P.parse(_csv("m14", "t", self._rows())))
+        self.assertEqual(sec.count("<polyline"), 2, "전·후 두 줄이어야 한다")
+        self.assertIn("변경 전", sec)
+        self.assertIn("변경 후", sec)
+
+    def test_등급_컷을_같이_그린다(self):
+        """★점수 곡선만 있으면 '그래서 화면이 바뀌었나' 를 못 읽는다."""
+        sec = P.fab_section(P.parse(_csv("m14", "t", self._rows())))
+        for nm, v in (("경계", 36), ("위험", 52), ("초위험", 72)):
+            self.assertIn(f">{nm} {v}<", sec, f"{nm} 컷 선이 없다")
+
+    def test_올라간_자리를_표시한다(self):
+        """두 곡선은 대부분 겹쳐 있어서(M14 는 2,880분 중 28분만 다르다)
+        곡선만 보면 어디가 바뀌었는지 눈에 안 들어온다."""
+        sec = P.fab_section(P.parse(_csv("m14", "t", self._rows())))
+        self.assertIn("#f59e0b", sec, "올라간 자리 표시가 없다")
+        self.assertIn("올라간 자리", sec)
+        self.assertIn("위험을 넘긴 자리", sec)
+
+    def test_사건_구간을_띠로_깐다(self):
+        rows = self._rows("2026-09-13")
+        sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
+        self.assertIn("OHT 무언정지", sec, "알려진 사건 구간이 그림에 없다")
+
+    def test_점수축은_0에서_100_고정(self):
+        """★날마다 자가 바뀌면 두 날을 견줄 수 없다."""
+        sec = P.fab_section(P.parse(_csv("m14", "t", self._rows())))
+        self.assertIn('y="', sec)
+        self.assertIn(">100<", sec)
+        self.assertIn(">0<", sec)
+
+    def test_기존_문서에_붙어도_그래프가_산다(self):
+        import tempfile, shutil
+        tmp = tempfile.mkdtemp(prefix="piog")
+        try:
+            p = os.path.join(tmp, "doc.html")
+            shutil.copy(os.path.join(_BASE, "docs", P.INTO["M14"]), p)
+            P.splice(p, P.fab_section(P.parse(_csv("m14", "t", self._rows()))))
+            h = io.open(p, encoding="utf-8").read()
+            i = h.index(P.MARK0)
+            self.assertIn("<svg", h[i:], "붙인 절에 그림이 없다")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

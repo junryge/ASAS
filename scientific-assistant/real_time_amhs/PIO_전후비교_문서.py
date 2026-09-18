@@ -224,6 +224,98 @@ def promote(rows, cuts) -> dict:
             "near10": sum(1 for a in near if cuts[1] - a <= 10)}
 
 
+
+# ────────────────────────────── 그림 ──────────────────────────────
+def chart(rows, cuts, day, events=()) -> str:
+    """하루치 전/후 점수 곡선 한 장 (인라인 SVG — 외부 파일이 필요 없다).
+
+    ★고객: "변경전·변경후 그래프도 보여줘야지. 그게 내용이 들어가 있어야 알지."
+      표의 숫자만으로는 '어디서' 올랐는지가 안 보인다. 두 곡선을 같은 자리에
+      겹쳐 놓으면 올라간 자리와 컷을 넘은 자리가 한눈에 보인다.
+    ★등급 컷 세 줄을 같이 그린다 — 점수 곡선만 있으면 '그래서 화면이
+      바뀌었나' 를 못 읽는다. 컷을 넘은 순간이 곧 화면이 바뀐 순간이다.
+    ★사건 구간은 옅은 띠로 깔아 둔다 (장애분석 문서에서 가져온 시각).
+    """
+    d = [r for r in rows if r[0].strftime("%Y-%m-%d") == day]
+    if not d:
+        return ""
+    W, H = 920, 210
+    L, R, T, B = 34, 10, 12, 22          # 여백
+    iw, ih = W - L - R, H - T - B
+    top = 100.0                           # 점수 축은 0~100 고정 (날마다 자가 바뀌면 못 견준다)
+    x = lambda i: L + iw * i / max(1, len(d) - 1)
+    y = lambda v: T + ih * (1 - min(v, top) / top)
+
+    a = [f'<svg viewBox="0 0 {W} {H}" width="100%" role="img" '
+         f'aria-label="{esc(day)} 변경 전/후 점수">'
+         '<style>.gx{stroke:#e5e7eb;stroke-width:1}'
+         '.cut{stroke-dasharray:4 3;stroke-width:1}'
+         '.lb{font:9.5px Consolas,monospace;fill:#9ca3af}'
+         '.ct{font:9.5px "Malgun Gothic",sans-serif}'
+         '.ev{fill:#111827;opacity:.05}'
+         '.evt{font:9.5px "Malgun Gothic",sans-serif;fill:#6b7280}</style>']
+    # 사건 구간 띠
+    idx = {r[0].strftime("%H:%M"): i for i, r in enumerate(d)}
+    for e in events:
+        i0, i1 = idx.get(e["from"]), idx.get(e["to"])
+        if i0 is None or i1 is None:
+            continue
+        a.append(f'<rect class=ev x="{x(i0):.1f}" y="{T}" '
+                 f'width="{max(1, x(i1)-x(i0)):.1f}" height="{ih}"/>')
+        a.append(f'<text class=evt x="{x(i0)+3:.1f}" y="{T+11}">{esc(e["what"])}</text>')
+    # 가로 눈금 + 등급 컷
+    for v in (0, 25, 50, 75, 100):
+        a.append(f'<line class=gx x1="{L}" y1="{y(v):.1f}" x2="{W-R}" y2="{y(v):.1f}"/>'
+                 f'<text class=lb x="2" y="{y(v)+3:.1f}">{v}</text>')
+    for v, nm, col in ((cuts[0], "경계", "#b45309"), (cuts[1], "위험", "#b91c1c"),
+                       (cuts[2], "초위험", "#7f1d1d")):
+        a.append(f'<line class=cut x1="{L}" y1="{y(v):.1f}" x2="{W-R}" y2="{y(v):.1f}" '
+                 f'stroke="{col}"/>'
+                 f'<text class=ct x="{W-R-2}" y="{y(v)-3:.1f}" text-anchor="end" '
+                 f'fill="{col}">{nm} {v}</text>')
+    # 시간 눈금
+    for hh in range(0, 24, 3):
+        i = idx.get(f"{hh:02d}:00")
+        if i is None:
+            continue
+        a.append(f'<line class=gx x1="{x(i):.1f}" y1="{T}" x2="{x(i):.1f}" y2="{T+ih}"/>'
+                 f'<text class=lb x="{x(i):.1f}" y="{H-8}" text-anchor="middle">{hh:02d}</text>')
+    # ★올라간 자리를 먼저 세로 막대로 깐다 — 두 곡선은 대부분 겹쳐 있어서
+    #   (M14 는 2,880분 중 28분만 다르다) 곡선만 보면 어디가 바뀌었는지
+    #   눈에 안 들어온다. 바뀐 분마다 전→후 만큼을 세워 두면 한눈에 보인다.
+    up = [(i, r) for i, r in enumerate(d) if r[1] != r[2]]
+    if up:
+        # ★최소 높이 5px — +7점짜리 변화도 눈에 들어와야 한다
+        def _seg(i, r):
+            y0, y1 = y(r[1]), y(r[2])
+            if abs(y0 - y1) < 5:
+                y0, y1 = (y0 + y1) / 2 + 2.5, (y0 + y1) / 2 - 2.5
+            return f'M{x(i):.1f},{y0:.1f}L{x(i):.1f},{y1:.1f}'
+        seg = "".join(_seg(i, r) for i, r in up)
+        a.append(f'<path d="{seg}" stroke="#f59e0b" stroke-width="2.4" fill="none"/>')
+        # 컷을 넘긴 분은 더 굵고 붉게 — '화면이 바뀐 순간' 이 그것이다
+        crs = [(i, r) for i, r in up if r[1] < cuts[1] <= r[2]]
+        if crs:
+            seg2 = "".join(f'M{x(i):.1f},{y(r[1]):.1f}L{x(i):.1f},{y(r[2]):.1f}'
+                           for i, r in crs)
+            a.append(f'<path d="{seg2}" stroke="#b91c1c" stroke-width="2.6" fill="none"/>')
+    # 두 곡선 — 전(연한 회색 굵게) 위에 후(청록)를 얹는다
+    for key, col, wid, op in ((1, "#6b7280", 2.6, .55), (2, "#4f46e5", 1.4, 1.0)):
+        pts = " ".join(f"{x(i):.1f},{y(r[key]):.1f}" for i, r in enumerate(d))
+        a.append(f'<polyline fill="none" stroke="{col}" stroke-width="{wid}" '
+                 f'stroke-linejoin="round" opacity="{op}" points="{pts}"/>')
+    a.append('</svg>')
+    nup = sum(1 for r in d if r[1] != r[2])
+    ncr = sum(1 for r in d if r[1] < cuts[1] <= r[2])
+    a.append('<p class=dim style="margin:2px 0 14px">'
+             '<b style="color:#9ca3af">━</b> 변경 전 &nbsp; '
+             '<b style="color:#4f46e5">━</b> 변경 후 &nbsp; '
+             f'<b style="color:#f59e0b">┃</b> 올라간 자리 {nup}분 &nbsp; '
+             f'<b style="color:#b91c1c">┃</b> 위험을 넘긴 자리 {ncr}분 &nbsp;·&nbsp; '
+             '점선은 등급 컷 &nbsp;·&nbsp; 옅은 띠는 알려진 사건 구간</p>')
+    return "".join(a)
+
+
 def window(rows, day: str, t0: str, t1: str):
     return [(t, b, a) for t, b, a in rows
             if t.strftime("%Y-%m-%d") == day and t0 <= t.strftime("%H:%M") <= t1]
@@ -546,6 +638,18 @@ def fab_section(s: dict, title: str = "") -> str:
         a.append(f'<p>경계 → 위험으로 올라간 분 <b>{len(pr["up"])}</b> · '
                  f'위험({c[1]}) 문턱 5점 이내에 남은 분 <b>{pr["near5"]}</b> · '
                  f'10점 이내 <b>{pr["near10"]}</b></p>')
+
+    # ── 그림 — 날마다 한 장. 표의 숫자가 '어디서' 생겼는지를 보여 준다 ──
+    evs = [e for e in KNOWN if SYS_OF.get(e["fab"].upper(), e["fab"].upper())
+           == SYS_OF.get(s["fab"].upper(), s["fab"].upper())]
+    days = sorted({t.strftime("%Y-%m-%d") for t, _, _ in rows})
+    a.append('<h3>변경 전 / 후 — 하루치 점수</h3>')
+    for day in days:
+        ev = [e for e in evs if e["day"] == day]
+        a.append(f'<p style="margin:14px 0 2px"><b>{esc(day)}</b>'
+                 + (f' <span class=dim>· {esc(" · ".join(e["what"] for e in ev))}</span>'
+                    if ev else '') + '</p>')
+        a.append(chart(rows, c, day, ev))
     c = cuts_of(s["fab"])
     st, rows = stats(s["rows"], c), s["rows"]
     pr = promote(rows, c)
