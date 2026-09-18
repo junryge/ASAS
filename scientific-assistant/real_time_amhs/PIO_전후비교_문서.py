@@ -227,92 +227,117 @@ def promote(rows, cuts) -> dict:
 
 # ────────────────────────────── 그림 ──────────────────────────────
 def chart(rows, cuts, day, events=()) -> str:
-    """하루치 전/후 점수 곡선 한 장 (인라인 SVG — 외부 파일이 필요 없다).
+    """하루치 — **변경 전 / 변경 후 / 차이** 를 칸을 나눠 따로 그린다.
 
-    ★고객: "변경전·변경후 그래프도 보여줘야지. 그게 내용이 들어가 있어야 알지."
-      표의 숫자만으로는 '어디서' 올랐는지가 안 보인다. 두 곡선을 같은 자리에
-      겹쳐 놓으면 올라간 자리와 컷을 넘은 자리가 한눈에 보인다.
-    ★등급 컷 세 줄을 같이 그린다 — 점수 곡선만 있으면 '그래서 화면이
-      바뀌었나' 를 못 읽는다. 컷을 넘은 순간이 곧 화면이 바뀐 순간이다.
-    ★사건 구간은 옅은 띠로 깔아 둔다 (장애분석 문서에서 가져온 시각).
+    ★고객: "그래프 변경전후 보이지도 않는데 어디가 올랐는지도 모르겠어.
+            따로따로 비교해서 그려야지, 한 그래프에 전부 다 그리면 어떻게 알아."
+      맞다. 두 곡선은 97% 가 겹쳐 있어서(M14 는 2,880분 중 28분만 다르다)
+      한 칸에 포개면 뒤 선이 앞 선을 덮어 아무것도 안 보인다.
+      칸을 셋으로 나눠 **같은 자(0~100)·같은 시간축**으로 세로로 쌓는다 —
+      위아래를 눈으로 훑으면 어디가 달라졌는지가 바로 보인다.
+        ① 변경 전   ② 변경 후   ③ 차이(후 − 전)
+    ★①②에는 등급 컷을 같이 그린다. 컷을 넘은 구간은 면을 칠한다 —
+      '점수가 얼마다' 가 아니라 '화면이 무슨 색이었나' 가 우리가 보는 것이다.
     """
     d = [r for r in rows if r[0].strftime("%Y-%m-%d") == day]
     if not d:
         return ""
-    W, H = 920, 210
-    L, R, T, B = 34, 10, 12, 22          # 여백
-    iw, ih = W - L - R, H - T - B
-    top = 100.0                           # 점수 축은 0~100 고정 (날마다 자가 바뀌면 못 견준다)
+    W = 920
+    PH, DH = 112, 56                      # 점수 칸 높이 · 차이 칸 높이
+    L, R, T, GAP = 40, 12, 14, 26
+    H = T + PH + GAP + PH + GAP + DH + 22
+    iw = W - L - R
+    top = 100.0
     x = lambda i: L + iw * i / max(1, len(d) - 1)
-    y = lambda v: T + ih * (1 - min(v, top) / top)
+    idx = {r[0].strftime("%H:%M"): i for i, r in enumerate(d)}
 
     a = [f'<svg viewBox="0 0 {W} {H}" width="100%" role="img" '
-         f'aria-label="{esc(day)} 변경 전/후 점수">'
+         f'aria-label="{esc(day)} 변경 전·후 따로 보기">'
          '<style>.gx{stroke:#e5e7eb;stroke-width:1}'
          '.cut{stroke-dasharray:4 3;stroke-width:1}'
          '.lb{font:9.5px Consolas,monospace;fill:#9ca3af}'
-         '.ct{font:9.5px "Malgun Gothic",sans-serif}'
+         '.ct{font:9px "Malgun Gothic",sans-serif}'
+         '.pn{font:11px "Malgun Gothic",sans-serif;font-weight:700;fill:#374151}'
          '.ev{fill:#111827;opacity:.05}'
-         '.evt{font:9.5px "Malgun Gothic",sans-serif;fill:#6b7280}</style>']
-    # 사건 구간 띠
-    idx = {r[0].strftime("%H:%M"): i for i, r in enumerate(d)}
-    for e in events:
-        i0, i1 = idx.get(e["from"]), idx.get(e["to"])
-        if i0 is None or i1 is None:
-            continue
-        a.append(f'<rect class=ev x="{x(i0):.1f}" y="{T}" '
-                 f'width="{max(1, x(i1)-x(i0)):.1f}" height="{ih}"/>')
-        a.append(f'<text class=evt x="{x(i0)+3:.1f}" y="{T+11}">{esc(e["what"])}</text>')
-    # 가로 눈금 + 등급 컷
-    for v in (0, 25, 50, 75, 100):
-        a.append(f'<line class=gx x1="{L}" y1="{y(v):.1f}" x2="{W-R}" y2="{y(v):.1f}"/>'
-                 f'<text class=lb x="2" y="{y(v)+3:.1f}">{v}</text>')
-    for v, nm, col in ((cuts[0], "경계", "#b45309"), (cuts[1], "위험", "#b91c1c"),
-                       (cuts[2], "초위험", "#7f1d1d")):
-        a.append(f'<line class=cut x1="{L}" y1="{y(v):.1f}" x2="{W-R}" y2="{y(v):.1f}" '
-                 f'stroke="{col}"/>'
-                 f'<text class=ct x="{W-R-2}" y="{y(v)-3:.1f}" text-anchor="end" '
-                 f'fill="{col}">{nm} {v}</text>')
-    # 시간 눈금
+         '.evt{font:9px "Malgun Gothic",sans-serif;fill:#6b7280}</style>']
+
+    def panel(y0, key, name, col, fill):
+        """점수 칸 하나 — 곡선 + 컷 + 위험 이상 면 칠하기."""
+        y = lambda v: y0 + PH * (1 - min(v, top) / top)
+        a.append(f'<text class=pn x="{L}" y="{y0-4:.0f}">{name}</text>')
+        for e in events:                                  # 사건 띠
+            i0, i1 = idx.get(e["from"]), idx.get(e["to"])
+            if i0 is None or i1 is None:
+                continue
+            a.append(f'<rect class=ev x="{x(i0):.1f}" y="{y0}" '
+                     f'width="{max(1, x(i1)-x(i0)):.1f}" height="{PH}"/>')
+            if key == 1:
+                a.append(f'<text class=evt x="{x(i0)+3:.1f}" y="{y0+10}">'
+                         f'{esc(e["what"])}</text>')
+        for v in (0, 50, 100):                            # 가로 눈금
+            a.append(f'<line class=gx x1="{L}" y1="{y(v):.1f}" x2="{W-R}" y2="{y(v):.1f}"/>'
+                     f'<text class=lb x="2" y="{y(v)+3:.1f}">{v}</text>')
+        for v, nm, cc in ((cuts[0], "경계", "#b45309"), (cuts[1], "위험", "#b91c1c"),
+                          (cuts[2], "초위험", "#7f1d1d")):
+            a.append(f'<line class=cut x1="{L}" y1="{y(v):.1f}" x2="{W-R}" y2="{y(v):.1f}" '
+                     f'stroke="{cc}"/>'
+                     f'<text class=ct x="{W-R-2}" y="{y(v)-2:.1f}" text-anchor="end" '
+                     f'fill="{cc}">{nm} {v}</text>')
+        # ★위험 이상인 분은 바닥에서 위험선까지 면을 칠한다 — 눈에 제일 먼저 든다
+        hot = [i for i, r in enumerate(d) if r[key] >= cuts[1]]
+        if hot:
+            a.append('<g fill="%s" opacity=".9">' % fill)
+            for i in hot:
+                a.append(f'<rect x="{x(i)-0.9:.1f}" y="{y(d[i][key]):.1f}" width="2.2" '
+                         f'height="{max(1, y(cuts[1])-y(d[i][key])):.1f}"/>')
+            a.append('</g>')
+        pts = " ".join(f"{x(i):.1f},{y(r[key]):.1f}" for i, r in enumerate(d))
+        a.append(f'<polyline fill="none" stroke="{col}" stroke-width="1.2" '
+                 f'stroke-linejoin="round" points="{pts}"/>')
+        for hh in range(0, 24, 3):
+            i = idx.get(f"{hh:02d}:00")
+            if i is not None:
+                a.append(f'<line class=gx x1="{x(i):.1f}" y1="{y0}" '
+                         f'x2="{x(i):.1f}" y2="{y0+PH}"/>')
+
+    nb = sum(1 for r in d if r[1] >= cuts[1])
+    na = sum(1 for r in d if r[2] >= cuts[1])
+    panel(T, 1, f"① 변경 전 — 위험 이상 {nb}분", "#6b7280", "#9ca3af")
+    panel(T + PH + GAP, 2, f"② 변경 후 — 위험 이상 {na}분", "#4f46e5", "#b91c1c")
+
+    # ③ 차이 칸 — 올린 폭만 막대로
+    dy0 = T + (PH + GAP) * 2
+    dif = [r[2] - r[1] for r in d]
+    mx = max(dif) if any(dif) else 1
+    nup = sum(1 for v in dif if v)
+    a.append(f'<text class=pn x="{L}" y="{dy0-4:.0f}">③ 차이(후 − 전) — 오른 분 {nup}</text>')
+    a.append(f'<line class=gx x1="{L}" y1="{dy0+DH:.0f}" x2="{W-R}" y2="{dy0+DH:.0f}"/>'
+             f'<text class=lb x="2" y="{dy0+DH+3:.0f}">0</text>'
+             f'<text class=lb x="2" y="{dy0+8:.0f}">+{mx:.0f}</text>')
+    a.append('<g fill="#f59e0b">')
+    for i, v in enumerate(dif):
+        if v:
+            h = max(2.0, DH * v / mx)
+            a.append(f'<rect x="{x(i)-0.7:.1f}" y="{dy0+DH-h:.1f}" width="1.8" '
+                     f'height="{h:.1f}"/>')
+    a.append('</g>')
+    # 위험을 넘긴 분은 붉게 덧칠
+    for i, r in enumerate(d):
+        if r[1] < cuts[1] <= r[2]:
+            a.append(f'<rect x="{x(i)-1.1:.1f}" y="{dy0}" width="2.6" height="{DH}" '
+                     f'fill="#b91c1c"/>')
     for hh in range(0, 24, 3):
         i = idx.get(f"{hh:02d}:00")
-        if i is None:
-            continue
-        a.append(f'<line class=gx x1="{x(i):.1f}" y1="{T}" x2="{x(i):.1f}" y2="{T+ih}"/>'
-                 f'<text class=lb x="{x(i):.1f}" y="{H-8}" text-anchor="middle">{hh:02d}</text>')
-    # ★올라간 자리를 먼저 세로 막대로 깐다 — 두 곡선은 대부분 겹쳐 있어서
-    #   (M14 는 2,880분 중 28분만 다르다) 곡선만 보면 어디가 바뀌었는지
-    #   눈에 안 들어온다. 바뀐 분마다 전→후 만큼을 세워 두면 한눈에 보인다.
-    up = [(i, r) for i, r in enumerate(d) if r[1] != r[2]]
-    if up:
-        # ★최소 높이 5px — +7점짜리 변화도 눈에 들어와야 한다
-        def _seg(i, r):
-            y0, y1 = y(r[1]), y(r[2])
-            if abs(y0 - y1) < 5:
-                y0, y1 = (y0 + y1) / 2 + 2.5, (y0 + y1) / 2 - 2.5
-            return f'M{x(i):.1f},{y0:.1f}L{x(i):.1f},{y1:.1f}'
-        seg = "".join(_seg(i, r) for i, r in up)
-        a.append(f'<path d="{seg}" stroke="#f59e0b" stroke-width="2.4" fill="none"/>')
-        # 컷을 넘긴 분은 더 굵고 붉게 — '화면이 바뀐 순간' 이 그것이다
-        crs = [(i, r) for i, r in up if r[1] < cuts[1] <= r[2]]
-        if crs:
-            seg2 = "".join(f'M{x(i):.1f},{y(r[1]):.1f}L{x(i):.1f},{y(r[2]):.1f}'
-                           for i, r in crs)
-            a.append(f'<path d="{seg2}" stroke="#b91c1c" stroke-width="2.6" fill="none"/>')
-    # 두 곡선 — 전(연한 회색 굵게) 위에 후(청록)를 얹는다
-    for key, col, wid, op in ((1, "#6b7280", 2.6, .55), (2, "#4f46e5", 1.4, 1.0)):
-        pts = " ".join(f"{x(i):.1f},{y(r[key]):.1f}" for i, r in enumerate(d))
-        a.append(f'<polyline fill="none" stroke="{col}" stroke-width="{wid}" '
-                 f'stroke-linejoin="round" opacity="{op}" points="{pts}"/>')
+        if i is not None:
+            a.append(f'<text class=lb x="{x(i):.1f}" y="{H-6}" text-anchor="middle">'
+                     f'{hh:02d}</text>')
     a.append('</svg>')
-    nup = sum(1 for r in d if r[1] != r[2])
     ncr = sum(1 for r in d if r[1] < cuts[1] <= r[2])
-    a.append('<p class=dim style="margin:2px 0 14px">'
-             '<b style="color:#9ca3af">━</b> 변경 전 &nbsp; '
-             '<b style="color:#4f46e5">━</b> 변경 후 &nbsp; '
-             f'<b style="color:#f59e0b">┃</b> 올라간 자리 {nup}분 &nbsp; '
-             f'<b style="color:#b91c1c">┃</b> 위험을 넘긴 자리 {ncr}분 &nbsp;·&nbsp; '
-             '점선은 등급 컷 &nbsp;·&nbsp; 옅은 띠는 알려진 사건 구간</p>')
+    a.append(f'<p class=dim style="margin:2px 0 16px">'
+             f'①②는 같은 자(0~100)·같은 시간축입니다 — 위아래를 훑어 견주십시오. '
+             f'면을 칠한 곳이 <b style="color:#b91c1c">위험 이상</b>이고, '
+             f'③의 주황 막대가 <b style="color:#f59e0b">올라간 자리</b>, '
+             f'붉은 막대가 <b style="color:#b91c1c">위험을 넘긴 자리({ncr}분)</b>입니다.</p>')
     return "".join(a)
 
 

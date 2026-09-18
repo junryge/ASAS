@@ -269,11 +269,30 @@ class 그래프가_들어간다(unittest.TestCase):
         self.assertEqual(sec.count("<svg"), 2, "날짜 수만큼 있어야 한다")
         self.assertIn("변경 전 / 후 — 하루치 점수", sec)
 
-    def test_두_곡선을_같이_그린다(self):
+    def test_전과_후를_칸을_나눠_따로_그린다(self):
+        """★고객: "한 그래프에 전부 다 그리면 어떻게 알아."
+        두 곡선은 97% 가 겹쳐 있어서 한 칸에 포개면 뒤 선이 앞 선을 덮는다.
+        칸을 셋으로 나눈다 — ① 변경 전 ② 변경 후 ③ 차이."""
         sec = P.fab_section(P.parse(_csv("m14", "t", self._rows())))
-        self.assertEqual(sec.count("<polyline"), 2, "전·후 두 줄이어야 한다")
-        self.assertIn("변경 전", sec)
-        self.assertIn("변경 후", sec)
+        self.assertIn("① 변경 전", sec)
+        self.assertIn("② 변경 후", sec)
+        self.assertIn("③ 차이(후 − 전)", sec)
+        self.assertEqual(sec.count("<polyline"), 2, "칸마다 곡선 하나씩")
+
+    def test_두_칸이_같은_자를_쓴다(self):
+        """★자가 다르면 위아래를 견줄 수 없다 — 둘 다 0~100 고정."""
+        sec = P.fab_section(P.parse(_csv("m14", "t", self._rows())))
+        self.assertEqual(sec.count(">100<"), 2, "칸마다 100 눈금")
+        self.assertIn("같은 자(0~100)·같은 시간축", sec)
+
+    def test_위험_이상인_구간은_면을_칠한다(self):
+        """'점수가 얼마다' 가 아니라 '화면이 무슨 색이었나' 가 우리가 보는 것이다."""
+        # 변경 전부터 위험(52) 위인 분 · 후에 위험으로 올라온 분을 같이 둔다
+        rows = [("2026-09-13 11:%02d" % m, 55, 60) for m in range(0, 20)]
+        rows += [("2026-09-13 12:%02d" % m, 40, 60) for m in range(0, 10)]
+        sec = P.fab_section(P.parse(_csv("m14", "t", rows)))
+        self.assertIn('fill="#b91c1c"', sec, "변경 후 위험 구간 칠이 없다")
+        self.assertIn('fill="#9ca3af"', sec, "변경 전 위험 구간 칠이 없다")
 
     def test_등급_컷을_같이_그린다(self):
         """★점수 곡선만 있으면 '그래서 화면이 바뀌었나' 를 못 읽는다."""
