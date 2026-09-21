@@ -51,15 +51,15 @@ CHROME = next((p for p in (
 #   hue  : sepia(약 39°) 에서 그 판 테마색까지 돌릴 각도
 PLATES = [
     dict(tag="7F · M14B", find="left:30px;top:20px;width:300px;height:210px",
-         img="m14b",   hue=135, op=".95", note="청록"),
+         img="m14b",   hue=135, op=".34", note="청록"),
     dict(tag="3F · M14A", find="left:30px;top:420px;width:300px;height:210px",
-         img="m14A",   hue=135, op=".95", note="청록"),
+         img="m14A",   hue=135, op=".34", note="청록"),
     dict(tag="M16 HUB",   find="left:360px;top:250px;width:340px;height:300px",
-         img="M16HUB", hue=164, op="1",   note="블루"),
+         img="M16HUB", hue=164, op=".40", note="블루"),
     dict(tag="6F · M16",  find="left:690px;top:20px;width:290px;height:220px",
-         img="M16A",   hue=0,   op=".92", note="앰버"),
+         img="M16A",   hue=0,   op=".34", note="앰버"),
     dict(tag="2F · M16",  find="left:690px;top:530px;width:290px;height:210px",
-         img="M16B",   hue=321, op=".92", note="레드"),
+         img="M16B",   hue=321, op=".34", note="레드"),
 ]
 CLS = "ohtlay"
 CAR_UP = {"m14b":"#3ad6c8", "m14A":"#3ad6c8", "M16HUB":"#8fd3ff",
@@ -68,8 +68,12 @@ CAR_DN = "#7aa7ff"          # 반대 방향은 원본 화면과 같은 파랑
 TARGET_W = 760          # 뽑아낼 도면 가로 (판이 300px 이라 이 정도면 넉넉하다)
 WHITE = 228             # 이보다 밝으면 '흰 바탕·격자' 로 보고 잘라낸다
 DARK  = 170             # 이보다 어두우면 레일로 본다
-NSEG  = 16              # 판 하나에서 쓸 레일 줄 수
-NCAR  = 3               # 레일 한 줄에 태울 OHT 수
+NSEG  = 70              # 판 하나에서 쓸 레일 줄 수 (레일망이 성기면 안 된다)
+NCAR  = 2               # 레일 한 줄에 태울 OHT 수
+RAIL_Z = 22             # ★레일을 바닥에서 몇 px 띄울지 — 이게 '아이소메트리'다
+CAR_Z  = 26             # 차는 레일 위에
+HANG_N = 3              # 레일 한 줄에 매달 행거 수
+CAR_SEG = 26            # 앞에서 몇 줄에만 차를 태울지 (너무 많으면 느리다)
 
 
 # ── ① 도면 다듬기 — 흰 여백 잘라내고, 선 굵히고, 줄인다 ─────────────
@@ -186,25 +190,53 @@ def plate_wh(find: str):
     return w, h
 
 
-def cars(p, segs) -> str:
-    """★도면 위에 OHT 를 태운다.
+def iso3d(p, segs) -> str:
+    """★핵심 — 도면을 **입체로 세운다**.
 
-    CSS 의 offset-path 로 **레일 선 자체를 길로 준다** — 판이 3D 로 기울어
-    있어도 차가 레일을 따라 간다(같은 좌표계라 각도가 저절로 맞는다).
-    자바스크립트를 한 줄도 안 넣는다.
+    고객: "각 맵을 아이소메트리로 하라고, 지금 평면이잖아."
+    맞다. 기운 판에 그림 한 장 깔아 놓은 건 여전히 납작한 그림이다.
+    실제 FAB 은 바닥 위로 **레일이 떠 있고** 거기 OHT 가 매달려 다닌다.
+    그래서 세 켜로 나눈다 — 기존 아이소메트리(oht3d.js) 와 같은 생각이다:
+
+        ① 바닥 (Z=0)        도면 — 설비 배치가 깔린 층
+        ② 레일 (Z=RAIL_Z)   도면에서 뽑은 레일을 **띄워서** 얹고, 바닥까지
+                            행거를 내려 매단다 → 여기서 높이가 생긴다
+        ③ 차  (Z=CAR_Z)     그 레일 위를 달린다
+
+    판이 이미 CSS 3D(preserve-3d) 라 translateZ 만 주면 진짜로 떠오른다.
+    자바스크립트는 안 쓴다.
     """
     W, H = plate_wh(p["find"])
+    up = CAR_UP.get(p["img"], "#3ad6c8")
     out = []
+
+    # ② 레일 — 띄운 들보 + 바닥으로 내린 행거
     for i, (x0, y0, x1, y1) in enumerate(segs):
+        ax, ay = x0 * W, y0 * H
+        bx, by = x1 * W, y1 * H
+        horiz = abs(bx - ax) >= abs(by - ay)
+        L = max(3.0, (bx - ax) if horiz else (by - ay))
+        out.append(
+            '<div class="ohtrail ohtrail-%s" style="left:%.1fpx;top:%.1fpx;'
+            'width:%.1fpx;height:%.1fpx"></div>'
+            % (p["img"], ax, ay, L if horiz else 2.2, 2.2 if horiz else L))
+        for k in range(HANG_N):                       # 행거 — 바닥까지 내린다
+            t = (k + .5) / HANG_N
+            hx, hy = ax + (bx - ax) * t, ay + (by - ay) * t
+            out.append('<div class="ohthang" style="left:%.1fpx;top:%.1fpx"></div>'
+                       % (hx, hy))
+
+    # ③ 차 — 레일 위. 긴 줄부터 CAR_SEG 개만 태운다 (많으면 느려진다)
+    for i, (x0, y0, x1, y1) in enumerate(segs[:CAR_SEG]):
         d = "M %.1f %.1f L %.1f %.1f" % (x0 * W, y0 * H, x1 * W, y1 * H)
         for k in range(NCAR):
-            back = ((i + k) % 3 == 2)                 # 셋에 하나는 반대 방향
+            back = ((i + k) % 3 == 2)
             dur = 7.0 + ((i * 7 + k * 3) % 9) * 0.55
             out.append(
-                '<div class="%s %s-%s%s" style="offset-path:path(\'%s\');'
+                '<div class="ohtcar ohtcar-%s%s" style="offset-path:path(\'%s\');'
                 'animation-duration:%.1fs;animation-delay:-%.1fs"></div>'
-                % ("ohtcar", "ohtcar", p["img"], " ohtcar-r" if back else "",
-                   d, dur, dur * k / NCAR + i * 0.37))
+                % (p["img"], " ohtcar-r" if back else "", d, dur,
+                   dur * k / NCAR + i * 0.37))
     return "".join(out)
 
 
@@ -222,12 +254,25 @@ def css(uri: dict) -> str:
                ".ohtcar{position:absolute;left:0;top:0;width:7px;height:7px;"
                "border-radius:1.5px;offset-rotate:0deg;offset-anchor:center;"
                "animation-name:ohtrun;animation-timing-function:linear;"
-               "animation-iteration-count:infinite;pointer-events:none}")
+               "animation-iteration-count:infinite;pointer-events:none;"
+               "transform:translateZ(" + str(CAR_Z) + "px)}")
     out.append(".ohtcar-r{animation-direction:reverse;background:#dbe6ff !important;"
                "box-shadow:0 0 10px " + CAR_DN + ",0 0 3px #fff !important}")
+    # ★레일·행거·차를 **띄운다** — 판이 preserve-3d 라 translateZ 가 먹는다
+    out.append(".ohtrail{position:absolute;border-radius:1px;pointer-events:none;"
+               "transform:translateZ(" + str(RAIL_Z) + "px)}")
+    out.append(".ohthang{position:absolute;width:1.2px;height:" + str(RAIL_Z) + "px;"
+               "transform-origin:0 0;transform:translateZ(" + str(RAIL_Z) + "px) "
+               "rotateX(-90deg);background:linear-gradient(180deg,"
+               "rgba(255,255,255,.55),rgba(255,255,255,.06));pointer-events:none}")
     for p in PLATES:
         c = CAR_UP.get(p["img"], "#3ad6c8")
-        out.append(".ohtcar-%s{background:#eafffd;box-shadow:0 0 10px %s,0 0 3px #fff}"
+        out.append(".ohtrail-%s{background:%s;"
+                   "box-shadow:0 0 9px %s,0 0 3px %s,0 1px 0 rgba(255,255,255,.5)}"
+                   % (p["img"], c, c, c))
+    for p in PLATES:
+        c = CAR_UP.get(p["img"], "#3ad6c8")
+        out.append(".ohtcar-%s{background:#ffffff;box-shadow:0 0 11px %s,0 0 4px #fff}"
                    % (p["img"], c))
     return "<style>" + "".join(out) + "</style>"
 
@@ -268,10 +313,11 @@ def main(argv=None):
         j = tpl.index(">", i) + 1
         blk = ('<div class="%s %s-%s" data-layout="%s"></div>' % (
                    CLS, CLS, p["img"], p["img"])
-               + cars(p, SEGS[p["img"]]))
+               + iso3d(p, SEGS[p["img"]]))
         tpl = tpl[:j] + blk + tpl[j:]
         print(f'  {p["tag"]:12s} ← {p["img"]:7s} ({p["note"]})'
-              f'  레일 {len(SEGS[p["img"]])}줄 · OHT {len(SEGS[p["img"]])*NCAR}대')
+              f'  레일 {len(SEGS[p["img"]])}줄(Z+{RAIL_Z}) · '
+              f'OHT {min(len(SEGS[p["img"]]), CAR_SEG)*NCAR}대')
 
     # ★"</script>" 를 그대로 쓰면 스크립트가 먼저 닫힌다 — 원본처럼 / 로
     js = json.dumps(tpl, ensure_ascii=False).replace("</", "<\\u002F")

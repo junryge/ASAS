@@ -80,6 +80,17 @@ const DEFAULTS = {
   jamMin: null,
   projection: 'persp',   // 'iso' = 아이소메트리(직교) · 'persp' = 원근
   walls: true,           // false 면 벽(외곽·layout.walls)을 아예 안 세운다
+  /* 바닥 색. null 이면 실제 FAB 바닥처럼 밝은 회색(0xd6d9dc) — 기본값이다.
+     다크 HMI 위에 얹는 화면(동간 브릿지)은 밝은 바닥판이 화면과 싸워서
+     어두운 색을 넘긴다. ★기본을 안 바꾼다 — 기존 화면은 그대로 돈다. */
+  floorColor: null,
+  /* false 면 바닥판·격자를 아예 안 깐다. 다른 그림(동간 브릿지의 CSS 3D
+     판) 위에 겹쳐 띄울 때 바닥이 그 판을 덮어 버린다. ★기본은 true. */
+  floor: true,
+  /* true 면 캔버스를 **투명**하게 쓴다 — 다른 그림 위에 겹쳐 띄울 때.
+     동간 브릿지 화면이 판(CSS 3D)마다 이 뷰어를 하나씩 얹는데, 배경이
+     칠해져 있으면 기운 판 위에 네모가 덮인다. ★기본은 false 다. */
+  transparent: false,
   dark: null,            // true/false 로 주면 그것, null 이면 prefers-color-scheme
   colors: {
     state: ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#f97316'],   // 운행·적재·정지·JAM·OBS
@@ -391,13 +402,16 @@ class Viewer {
   /* ---------------- Three 기본 ---------------- */
   _setup3D() {
     const T = this.T;
-    const r = new T.WebGLRenderer({ canvas: this.cv, antialias: true, preserveDrawingBuffer: false });
+    const r = new T.WebGLRenderer({ canvas: this.cv, antialias: true,
+      alpha: !!this.o.transparent, preserveDrawingBuffer: false });
+    if (this.o.transparent) r.setClearAlpha(0);
     r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     r.shadowMap.enabled = true;
     r.shadowMap.type = T.PCFSoftShadowMap;
     r.toneMapping = T.NeutralToneMapping;
     const scene = new T.Scene();
-    scene.background = new T.Color(this.o.colors.background);
+    scene.background = this.o.transparent ? null
+                     : new T.Color(this.o.colors.background);
     const camP = new T.PerspectiveCamera(32, 1, 0.3, 8000);
     // 아이소메트리 — 직교 카메라. 절두체는 applyCam 이 dist 로 매번 다시 잡는다.
     const camO = new T.OrthographicCamera(-1, 1, 1, -1, -4000, 8000);
@@ -692,16 +706,18 @@ class Viewer {
     //   등각으로 보면 그 옆면이 낮은 벽처럼 둘러싼다 (고객: "벽 남아있어").
     //   벽을 안 세울 때는 그 테두리도 같이 없애야 '벽이 없다' 가 된다.
     const noWall = this.o.walls === false;
+    const noFloor = this.o.floor === false;
     const floor = noWall
-      ? new T.Mesh(new T.PlaneGeometry(W, D), this.mat(0xd6d9dc, { r: 0.9 }))
+      ? new T.Mesh(new T.PlaneGeometry(W, D),
+                   this.mat(this.o.floorColor ?? 0xd6d9dc, { r: 0.9 }))
       : new T.Mesh(new T.BoxGeometry(W, 0.8, D),
           [this.mat(0xbfc3c8), this.mat(0xbfc3c8), this.mat(0xd6d9dc, { r: 0.9 }), this.mat(0x9aa0a6), this.mat(0xeef0f2), this.mat(0xeef0f2)]);
     if (noWall) { floor.rotation.x = -Math.PI / 2; floor.position.y = 0; }
     else floor.position.y = -0.4;
     floor.receiveShadow = true;
-    W0.add(floor);
+    if (!noFloor) W0.add(floor);
     const gp = [], step = 1.2;
-    if (W / step < 1500 && D / step < 1500) {
+    if (!noFloor && W / step < 1500 && D / step < 1500) {
       for (let x = -W / 2 + step; x < W / 2; x += step) gp.push(x, 0.005, -D / 2, x, 0.005, D / 2);
       for (let z = -D / 2 + step; z < D / 2; z += step) gp.push(-W / 2, 0.005, z, W / 2, 0.005, z);
       const gg = new T.BufferGeometry();
@@ -1319,7 +1335,8 @@ class Viewer {
       if (hb) hb.classList.remove('on');
     }
     if (p.dark !== undefined) { this.o.dark = p.dark; this.applyTheme(); this.domDirty = true; for (const L of this.labelPool.values()) L.txt = ''; }
-    if (p.background) { this.o.colors.background = p.background; if (this.scene) this.scene.background.set(p.background); }
+    if (p.background) { this.o.colors.background = p.background;
+      if (this.scene && this.scene.background) this.scene.background.set(p.background); }
     if (Array.isArray(p.stateColors) && p.stateColors.length) {
       const sc = [...p.stateColors, ...DEFAULTS.colors.state.slice(p.stateColors.length)];
       this.o.colors.state = sc;

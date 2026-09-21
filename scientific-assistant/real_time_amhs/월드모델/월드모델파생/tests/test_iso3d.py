@@ -97,7 +97,21 @@ class 뷰어에_보탠_것(unittest.TestCase):
         self.assertIn("this.walls = this.o.walls === false ? [] :", self.s, "walls:false 면 외곽 벽도 안 세워야 한다")
         # ★바닥이 0.8 m 상자면 그 옆면이 낮은 벽처럼 둘러싼다 — 벽을 뺄 땐 평면이어야 한다
         self.assertIn("const noWall = this.o.walls === false;", self.s)
-        self.assertIn("? new T.Mesh(new T.PlaneGeometry(W, D), this.mat(0xd6d9dc, { r: 0.9 }))", self.s)
+        self.assertIn("? new T.Mesh(new T.PlaneGeometry(W, D),", self.s)
+        # 바닥 색은 밖에서 줄 수 있지만 **기본은 예전 그대로**여야 한다
+        self.assertIn("this.mat(this.o.floorColor ?? 0xd6d9dc, { r: 0.9 })", self.s)
+        self.assertIn("floorColor: null,", self.s, "기본은 null — 예전 화면이 안 바뀐다")
+
+    def test_겹쳐_띄우려면_투명해야_한다(self):
+        """동간 브릿지 화면은 판(CSS 3D)마다 이 뷰어를 하나씩 얹는다.
+
+        ★배경이 칠해져 있으면 기운 판 위에 네모가 덮인다. 그래서 캔버스를
+          투명하게 쓰는 길을 뒀다 — **기본은 false** 라 예전 화면은 그대로다.
+        """
+        self.assertIn("transparent: false,", self.s, "기본은 불투명")
+        self.assertIn("alpha: !!this.o.transparent", self.s)
+        self.assertIn("if (this.o.transparent) r.setClearAlpha(0);", self.s)
+        self.assertIn("scene.background = this.o.transparent ? null", self.s)
 
     def test_레일이_평행_간격보다_좁다(self):
         """실물 M14A: 평행 레일 사이 중앙값 0.30 m. 판 0.56 m 를 그대로 쓰면 83% 가 겹친다.
