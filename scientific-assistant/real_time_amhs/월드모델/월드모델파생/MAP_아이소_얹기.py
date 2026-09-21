@@ -14,14 +14,19 @@
   "M16EUV → M16A 패널명 변경, 색상도 빨간색으로" · "M166F → M16B 로 변경" ·
   "M14B 패널 아래로 그리고 앞으로" · "동간 브릿지 통합 반송 현황 말고 FAB별 실시간 상황표" ·
   "ISOMETRIC VIEW 범례 삭제" · "오른쪽 열 삭제 — 나중에 따로 여기서 메세지 만들꺼야" ·
-  "수정하기 버튼 만들어줘 — 패널, 맵 수정 가능하게, 맵 추가도 가능하게".
+  "수정하기 버튼 만들어줘 — 패널, 맵 수정 가능하게, 맵 추가도 가능하게" ·
+  "OHT_Bridge_Monitor.html 색상변경가능하게 해주라. 바탕화면" ·
+  "현재 마우스로 움직이는 왼쪽으로 하는 부분은 ctrl 누르면 변경되게 해주라" ·
+  "패널 M16HUBOHT 라고 있는데 M16HUBROOM 이라고 표기 변경해주라" ·
+  "배경색상이 어두워서 기존에 다크,화이트,네이비,고대비 적용 가능하게 해주라".
 
 어떻게 되어 있나
 ────────────────────────────────────────────────────────────────────
   이 스크립트는 **틀(고객 원본)을 거의 안 건드린다**. 하는 일은 셋뿐이다:
 
   ① 틀에 이름표를 단다 — data-bm-plate(판) · data-bm-card / data-bm-name(패널) ·
-     data-bm-area(오른쪽 열·KPI·범례·안내·단추 줄) · data-bm-text(제목).
+     data-bm-area(오른쪽 열·KPI·범례·안내·단추 줄) · data-bm-text(제목) ·
+     data-bm-bg(바탕·무대·격자·빛 — 색을 바꿀 자리).
      패널 transform 에는 translate3d(var(--bmx),var(--bmy),var(--bmz)) 를 끼워
      둔다 — 틀이 드래그·줌마다 transform 을 다시 써도 위치가 안 풀린다.
   ② 설정 JSON(<script id="bm-config">)을 만든다 — 판마다 맵(레일·설비 좌표),
@@ -81,13 +86,14 @@ CARDS = {
     "M16LFT":   dict(hide=True),                  # "M16LFT 패널삭제"
     "M16EUV":   dict(name="M16A", tone="red"),    # "M16EUV → M16A, 빨간색으로"
     "M166F":    dict(name="M16B"),                # "M166F → M16B 로 변경"
+    "M16HUBOHT": dict(name="M16HUBROOM"),         # "M16HUBOHT → M16HUBROOM 으로 표기 변경"
     "M14B":     dict(dx=-320, dy=420, dz=-150),   # "M14B 패널 아래로 그리고 앞으로" — 보는 쪽(판 왼쪽 앞) 밖으로 빼서 레일과 안 겹친다
 }
 AREAS = {"aside": dict(hide=True),                # "오른쪽 열 — 방해된다"
          "legend": dict(hide=True),               # "ISOMETRIC VIEW 범례 삭제"
          "kpi": dict(hide=True)}                  # "IN TRANSIT · CAPACITY · ALARM · LOCAL 삭제 — 필요없어"
 TEXTS = {"title": "FAB별 실시간 상황표",           # "동간 브릿지 통합 반송 현황 말고"
-         "hint": "DRAG TO ORBIT · RIGHT-DRAG TO MOVE · SCROLL TO ZOOM"}   # 오른쪽 끌기 = 이동
+         "hint": "DRAG TO ORBIT · CTRL+DRAG TO MOVE · SCROLL TO ZOOM"}    # Ctrl + 왼쪽 끌기 = 이동
 
 # ── 틀에서 이름표 달 자리 (고객 마크업 그대로의 앞머리) ──────────────────
 AREA_FIND = {
@@ -101,6 +107,14 @@ TEXT_FIND = {
     "subtitle": ">AMHS · INTER-BUILDING BRIDGE</div>",
     "title":    ">동간 브릿지 통합 반송 현황</div>",
     "hint":     ">DRAG TO ORBIT · 360° / SCROLL TO ZOOM</div>",
+}
+# 바탕화면 — 색 바꿀 자리 ("바탕화면 색상변경가능하게 해주라")
+#   틀이 --t 를 style 에 달고 다시 쓰므로 편집기는 인라인이 아니라 스타일시트로 덮는다.
+BG_FIND = {
+    "page":  '<div style="--t:{{ spd }}',                      # 뿌리 — 화면 전체
+    "stage": '<section style="flex:4 1 560px',                 # 무대 판
+    "grid":  '<div style="position:absolute;inset:0;background-image:linear-gradient(rgba(58,214,200,.045) 1px',
+    "glow":  '<div style="position:absolute;inset:0;background:radial-gradient(60% 50% at 50% 45%',
 }
 # 무대 — 오른쪽 끌기 이동(translate) 을 틀의 transform 앞에 끼운다
 SCENE_FIND = "transform-style:preserve-3d;transform:{{ sceneT }}"
@@ -261,7 +275,7 @@ def default_config(cache_dir=CACHE_DIR, log=print):
     return dict(version=1, saved=False,
                 plates=[dict(key=p["key"], tag=p["tag"], col=p["col"]) for p in PLATES],
                 maps=maps, cards=json.loads(json.dumps(CARDS)),
-                areas=json.loads(json.dumps(AREAS)), texts=dict(TEXTS))
+                areas=json.loads(json.dumps(AREAS)), texts=dict(TEXTS), bg={})
 
 
 # ── 틀 손질 ────────────────────────────────────────────────────────
@@ -306,6 +320,11 @@ def tag_template(tpl):
             raise SystemExit(f"글자를 못 찾았다: {k}")
         s = tpl.rfind("<div", 0, s)
         tpl = _attr(tpl, s, f'data-bm-text="{k}"')
+    # 바탕화면
+    for k, f in BG_FIND.items():
+        if tpl.count(f) != 1:
+            raise SystemExit(f"바탕 자리를 못 찾았다: {k}  ({f})")
+        tpl = _attr(tpl, tpl.find(f), f'data-bm-bg="{k}"')
     # 무대
     if tpl.count(SCENE_FIND) != 1:
         raise SystemExit("무대(sceneT)를 못 찾았다")

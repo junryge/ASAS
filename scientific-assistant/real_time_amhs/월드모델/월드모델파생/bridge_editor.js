@@ -14,8 +14,9 @@
  *   · 열 때 — HTML 에 든 기본 설정 · 이 브라우저에 남긴 설정 · 고른 JSON 파일 중
  *     **제일 나중에 저장한 것**으로 뜬다. 다른 PC 에서는 '불러오기' 로 그 JSON 을 고른다.
  *     (MAP_아이소_얹기.py 를 돌리면 옆의 설정 JSON 을 HTML 기본값으로 굳혀 준다)
- *   · 마우스 — 왼쪽 끌기 돌리기 · 휠 줌 (틀 그대로) · **오른쪽 끌기 = 화면 이동** ·
- *     수정 창이 열려 있으면 패널 끌기 = 옮기기 (Shift = 높이).
+ *   · 마우스 — 왼쪽 끌기 돌리기 · 휠 줌 (틀 그대로) · **Ctrl + 왼쪽 끌기 = 화면 이동**
+ *     (오른쪽 끌기도 그대로 된다) · 수정 창이 열려 있으면 패널 끌기 = 옮기기 (Shift = 높이).
+ *   · 바탕화면 색 — '화면' 칸에서 바탕·무대·격자·빛 색을 고른다. 고른 것만 바뀐다.
  *
  * 지키는 것 — 틀(React 번들)과 싸우지 않는다
  *   · 틀이 그린 요소는 **빼지 않는다**. 숨길 때는 display 만, 옮길 때는 CSS 변수
@@ -56,6 +57,21 @@
   };
   var TONE_NAMES = { '': '원래 색', teal: '청록', blue: '파랑', amber: '앰버', red: '빨강' };
 
+  /* 바탕화면 — 틀에 박힌 원래 색 (고른 게 없으면 이 색 그대로 둔다) */
+  var BG_DEF = { page: '#121c28', stage: '#0c131b', grid: '#3ad6c8', glow: '#3ad6c8' };
+  var BG_NAMES = { page: '바탕 (화면 전체)', stage: '무대 (판이 놓인 칸)', grid: '격자', glow: '은은한 빛' };
+  var BG_FG = '#e8eff6';                       // 틀의 글자색
+  /* 고객: "배경색상이 어두워서 기존에 다크,화이트,네이비,고대비 적용 가능하게 해주라" */
+  var BG_PRESETS = [
+    { name: '다크', bg: {} },                       // 틀이 원래 쓰던 색 그대로 (아무것도 안 덮는다)
+    { name: '화이트', bg: { page: { col: '#eef2f7', fg: '#16212e' }, stage: { col: '#fbfcfe' },
+                          grid: { col: '#54677c', a: .10 }, glow: { col: '#54677c', a: .06 } } },
+    { name: '네이비', bg: { page: { col: '#15294a' }, stage: { col: '#0f1e39' },
+                          grid: { col: '#7aa6ff' }, glow: { col: '#7aa6ff' } } },
+    { name: '고대비', bg: { page: { col: '#000000', flat: true, fg: '#ffffff' }, stage: { col: '#000000', flat: true },
+                          grid: { col: '#ffffff', a: .16 }, glow: { hide: true } } }
+  ];
+
   function $(s, r) { return (r || document).querySelector(s); }
   function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
@@ -79,7 +95,7 @@
   function norm(c) {
     c.version = c.version || 1;
     c.texts = c.texts || {}; c.areas = c.areas || {}; c.cards = c.cards || {};
-    c.maps = c.maps || {}; c.plates = c.plates || [];
+    c.maps = c.maps || {}; c.plates = c.plates || []; c.bg = c.bg || {};
   }
 
   function boot() {
@@ -136,7 +152,7 @@
   // ─────────────────────────────────────────────────────────────── 적용
   function applyAll() {
     snapshot();
-    applyTexts(); applyAreas(); ensurePlates(); applyMaps(); applyCards();
+    applyTexts(); applyAreas(); applyBg(); ensurePlates(); applyMaps(); applyCards();
     var vp = CFG.view && CFG.view.pan;
     setPan(vp ? vp[0] : 0, vp ? vp[1] : 0);
   }
@@ -157,6 +173,51 @@
       e.style.display = hide ? 'none' : o.display;
     });
     // 오른쪽 열이 빠지면 무대가 넓어진다 — 틀의 ResizeObserver 가 알아서 다시 맞춘다
+  }
+
+  // 바탕화면 — 틀이 style 을 통째로 다시 쓰는 자리라(--t 가 들어 있다) 인라인이 아니라
+  // 스타일시트에 박는다. 안 고른 자리는 규칙을 안 만든다 = 틀 색 그대로.
+  function luma(hex) {                         // 0(검정) ~ 1(흰색)
+    var h = String(hex || '#000').replace('#', '');
+    var r = parseInt(h.substr(0, 2), 16) || 0, g = parseInt(h.substr(2, 2), 16) || 0, b = parseInt(h.substr(4, 2), 16) || 0;
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  }
+  // 그러데이션 끝 색. 어두운 색은 틀 비율 그대로, 밝은 색은 살짝만 — 흰 바탕이 잿빛이 안 되게
+  function dim(hex, t) { var l = luma(hex); return mul(hex, t + (1 - t) * l * l); }
+
+  function mul(hex, t) {                       // 색을 t 배로 — 틀의 그러데이션 비율 그대로
+    var h = String(hex || '#000').replace('#', '');
+    return '#' + [0, 2, 4].map(function (i) {
+      var v = Math.round(parseInt(h.substr(i, 2), 16) * t);
+      return ('0' + Math.max(0, Math.min(255, v || 0)).toString(16)).slice(-2);
+    }).join('');
+  }
+
+  var BG_A = { grid: .045, glow: .10 };        // 격자·빛의 원래 진하기
+  function bgCss() {
+    var b = CFG.bg || {}, out = [], p = b.page, st = b.stage, g = b.grid, w = b.glow;
+    function rule(k, body) { out.push('[data-bm-bg="' + k + '"]{' + body + ' !important}'); }
+    function alpha(o, k) { return o.a == null ? BG_A[k] : Math.max(0, Math.min(1, +o.a)); }
+    if (p && p.col) rule('page', 'background:' + (p.flat ? p.col :
+      'radial-gradient(1400px 900px at 45% 25%,' + p.col + ' 0%,' + dim(p.col, .53) + ' 55%,' + dim(p.col, .31) + ' 100%)'));
+    if (p && p.fg) rule('page', 'color:' + p.fg);
+    if (st && st.col) rule('stage', 'background:' + (st.flat ? st.col :
+      'linear-gradient(180deg,' + st.col + ' 0%,' + dim(st.col, .66) + ' 100%)'));
+    if (g && g.hide) rule('grid', 'display:none');
+    else if (g && (g.col || g.a != null)) {
+      var gc = hexA(g.col || BG_DEF.grid, alpha(g, 'grid'));
+      rule('grid', 'background-image:linear-gradient(' + gc + ' 1px,transparent 1px),linear-gradient(90deg,' + gc + ' 1px,transparent 1px)');
+    }
+    if (w && w.hide) rule('glow', 'display:none');
+    else if (w && (w.col || w.a != null))
+      rule('glow', 'background:radial-gradient(60% 50% at 50% 45%,' + hexA(w.col || BG_DEF.glow, alpha(w, 'glow')) + ',transparent 70%)');
+    return out.join('\n');
+  }
+
+  function applyBg() {
+    var s = $('#bm-bg-style');
+    if (!s) { s = document.createElement('style'); s.id = 'bm-bg-style'; document.head.appendChild(s); }
+    s.textContent = bgCss();
   }
 
   function applyCards() {
@@ -577,7 +638,8 @@
 
   function drawCards() {
     var h = '<p class="bm-hint"><b>화면에서 패널을 마우스로 끌면 옮겨진다</b> — 그냥 끌기 = 바닥 위 좌우·앞뒤, ' +
-            '<b>Shift + 끌기 = 높이</b>. 패널을 누르면 여기 그 칸으로 온다. 위치 단위는 px.</p>';
+            '<b>Shift + 끌기 = 높이</b>. 패널을 누르면 여기 그 칸으로 온다. 위치 단위는 px. ' +
+            '(<b>Ctrl + 끌기</b> 는 패널이 아니라 화면 이동이다)</p>';
     $$('[data-bm-card]').forEach(function (card) {
       var n = card.getAttribute('data-bm-card'), c = CFG.cards[n] || {}, o = ORIG.get(card) || {};
       h += '<div class="bm-item' + (sel === n ? ' bm-on' : '') + '" data-card="' + esc(n) + '"><div class="bm-row"><label><input type="checkbox" data-path="card.' + esc(n) +
@@ -606,7 +668,32 @@
       h += '<div class="bm-row"><label><input type="checkbox" data-path="area.' + a[0] + '"' +
         (CFG.areas[a[0]] && CFG.areas[a[0]].hide ? '' : ' checked') + '> ' + a[1] + '</label></div>';
     });
-    return h + '</div>';
+    return h + '</div>' + drawBg();
+  }
+
+  // 바탕화면 — 고객: "바탕화면 색상변경가능하게 해주라"
+  function drawBg() {
+    var h = '<div class="bm-item"><div class="bm-row"><b>바탕화면</b><span class="bm-sub">고른 자리만 바뀐다</span></div>' +
+      '<div class="bm-row">' + BG_PRESETS.map(function (p, i) {
+        return '<button class="bm-btn" data-act="bgpreset" data-key="' + i + '">' + p.name + '</button>';
+      }).join('') + '</div></div>';
+    return h + ['page', 'stage', 'grid', 'glow'].map(bgRow).join('');
+  }
+  function bgRow(k) {
+    var b = (CFG.bg || {})[k] || {};
+    var h = '<div class="bm-item"><div class="bm-row"><b style="flex:1">' + BG_NAMES[k] + '</b>' +
+      '<button class="bm-btn" data-act="bgreset" data-key="' + k + '">원래대로</button></div><div class="bm-row">';
+    if (k === 'grid' || k === 'glow')
+      h += '<label><input type="checkbox" data-path="bg.' + k + '.show"' + (b.hide ? '' : ' checked') + '> 보이기</label>';
+    h += '<label>색 <input type="color" data-path="bg.' + k + '.col" value="' + (b.col || BG_DEF[k]) + '"></label>';
+    if (k === 'page' || k === 'stage')
+      h += '<label><input type="checkbox" data-path="bg.' + k + '.flat"' + (b.flat ? ' checked' : '') + '> 단색</label>';
+    if (k === 'page')
+      h += '<label>글자색 <input type="color" data-path="bg.page.fg" value="' + (b.fg || BG_FG) + '"></label>';
+    if (k === 'grid' || k === 'glow')
+      h += '<label class="bm-num">진하기 <input type="number" min="0" max="1" step="0.01" data-path="bg.' + k +
+           '.a" value="' + (b.a == null ? BG_A[k] : b.a) + '"></label>';
+    return h + '</div></div>';
   }
   function origText(k) { var e = $('[data-bm-text="' + k + '"]'); return e && ORIG.get(e) ? ORIG.get(e).text : ''; }
 
@@ -628,6 +715,8 @@
       CFG.plates = CFG.plates.filter(function (p) { return p.key !== key; });
       delete CFG.maps[key]; ensurePlates(); changed(); draw();
     } else if (act === 'cardreset') { delete CFG.cards[key]; applyCards(); changed(); draw(); }
+    else if (act === 'bgreset') { if (CFG.bg) delete CFG.bg[key]; applyBg(); changed(); draw(); }
+    else if (act === 'bgpreset') { CFG.bg = clone(BG_PRESETS[+key].bg); applyBg(); changed(); draw(); }
     else if (act === 'import') load();
     else if (act === 'revert') {
       if (!confirm('연 때 설정으로 되돌릴까?')) return;
@@ -659,6 +748,14 @@
       if (v) delete CFG.areas[p[1]]; else CFG.areas[p[1]] = { hide: true };
       applyAreas();
       setTimeout(applyMaps, 300);           // 무대 크기가 바뀌었다 — 판 크기는 그대로라 맵도 그대로지만 한 번 더
+    } else if (kind === 'bg') {
+      CFG.bg = CFG.bg || {};
+      var bb = CFG.bg[p[1]] = CFG.bg[p[1]] || {};
+      if (p[2] === 'show') { if (v) delete bb.hide; else bb.hide = true; }
+      else if (v === false || v === '') delete bb[p[2]];
+      else bb[p[2]] = v;
+      if (!Object.keys(bb).length) delete CFG.bg[p[1]];
+      applyBg();
     } else if (kind === 'text') {
       if (v === '') delete CFG.texts[p[1]]; else CFG.texts[p[1]] = v;
       applyTexts();
@@ -698,8 +795,10 @@
     });
   }
 
-  // ─────────────────────────────────────────────────────────────── 오른쪽 끌기 = 화면 이동
-  //   고객: "마우스 오른쪽 버튼 클릭하면 왼쪽 오른쪽으로 위로 아래로 이동되게 해주라".
+  // ─────────────────────────────────────────────── Ctrl + 왼쪽 끌기 (· 오른쪽 끌기) = 화면 이동
+  //   고객: "마우스 오른쪽 버튼 클릭하면 왼쪽 오른쪽으로 위로 아래로 이동되게 해주라" ·
+  //        "현재 마우스로 움직이는 왼쪽으로 하는 부분은 ctrl 누르면 변경되게 해주라"
+  //        → Ctrl 을 누른 채 왼쪽으로 끌면 돌리기 대신 이동. 놓으면 도로 돌리기.
   //   틀의 무대 transform 앞에 translate(var(--bmpx),var(--bmpy)) 를 끼워 두었다 —
   //   틀이 돌리기·줌마다 transform 을 다시 써도 이동은 안 풀린다. RESET 이면 0 으로.
   var pan = [0, 0];
@@ -714,7 +813,8 @@
     if (!stage) return;
     stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     document.addEventListener('mousedown', function (e) {
-      if (e.button !== 2 || !stage.contains(e.target) || (ui && ui.contains(e.target))) return;
+      if (!stage.contains(e.target) || (ui && ui.contains(e.target))) return;
+      if (!(e.button === 2 || (e.button === 0 && e.ctrlKey))) return;
       e.preventDefault(); e.stopPropagation();
       pd = { x: e.clientX, y: e.clientY, p: pan.slice() };
       document.documentElement.classList.add('bm-panning');
@@ -755,7 +855,7 @@
              dz: -dv / (s * Math.max(.15, Math.sin(a.rx))) };
   }
   document.addEventListener('mousedown', function (e) {
-    if (!ui || e.button !== 0) return;
+    if (!ui || e.button !== 0 || e.ctrlKey) return;      // ★Ctrl 은 화면 이동 — 패널을 안 집는다
     var card = e.target.closest && e.target.closest('[data-bm-card]');
     if (!card) return;
     // ★틀(React)은 문서 위쪽 뿌리에서 듣는다 — 여기(document, 잡는 단계)에서 멈추면 돌리기가 안 걸린다

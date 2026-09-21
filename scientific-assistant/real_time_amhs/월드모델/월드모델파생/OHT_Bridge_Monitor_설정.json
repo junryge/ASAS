@@ -165917,7 +165917,8 @@
   },
   "M16HUBOHT": {
    "dx": -21,
-   "dy": 177
+   "dy": 177,
+   "name": "M16HUBROOM"
   }
  },
  "areas": {
@@ -165933,14 +165934,15 @@
  },
  "texts": {
   "title": "FAB별 실시간 상황표",
-  "hint": "DRAG TO ORBIT · RIGHT-DRAG TO MOVE · SCROLL TO ZOOM"
+  "hint": "DRAG TO ORBIT · CTRL+DRAG TO MOVE · SCROLL TO ZOOM"
  },
  "builtAt": "2026-09-21T13:22:29.000Z",
- "savedAt": "2026-09-21T13:26:58.549Z",
+ "savedAt": "2026-09-21T22:56:29.000Z",
  "view": {
   "pan": [
    -123,
    -1
   ]
- }
+ },
+ "bg": {}
 }
