@@ -4,6 +4,11 @@
 고객이 준 쿼리(MSG_ID=2 · 30초 묶음)로 바꾸되 "다시 원본 할 수도 있다" 고 해서
 예전 쿼리를 지우지 않고 프로필로 남겼다.
 
+★2026-09-21 — 고객: "월드모델파생 원본 그대로 search MSG_ID==\"2\" 이거 추가해라"
+  (간소는 이미 있다). 그래서 **상세(raw)** 에도 거르는 줄 하나를 더했다. 묶지
+  않는 것도, 컬럼이 다 오는 것도 그대로다. 거르는 줄조차 없는 완전한 원본은
+  logpresso_query_원본_raw쿼리.py.bak 에 있고, 아래에서 그것도 함께 본다.
+
 ★pandas·requests 없이 돌아야 한다 (폐쇄망·이 시험 환경 둘 다). 그래서 모듈을
   import 하지 않고 쿼리 만드는 토막만 떼어 exec 한다 — 배포되는 그 코드다.
 """
@@ -72,10 +77,27 @@ class 쿼리두벌(unittest.TestCase):
         ):
             self.assertIn(piece, q, piece)
 
-    def test_예전_쿼리도_그대로_남아_있다(self):
-        self.assertIn(f'table from={F} to={T} {TBL} | sort _time', self.q("raw"))
-        self.assertNotIn("MSG_ID", self.q("raw"), "raw 는 거르지 않는다")
-        self.assertNotIn("datetrunc", self.q("raw"))
+    def test_상세는_원본에_MSG_ID_2_한_줄만_더한_것이다(self):
+        """고객: "원본 그대로 search MSG_ID==\"2\" 이거 추가해라" — 더한 건 그 줄뿐이다."""
+        q = self.q("raw")
+        self.assertIn(f'table from={F} to={T} {TBL} | search MSG_ID == "2" | sort _time', q)
+
+    def test_상세는_묶지_않는다(self):
+        """★간소와 갈리는 지점. 묶으면 1초 단위가 사라져 재생이 성큼성큼 간다."""
+        q = self.q("raw")
+        self.assertNotIn("datetrunc", q)
+        self.assertNotIn("stats", q)
+        self.assertNotIn("by VEHICLE", q)
+
+    def test_상세는_컬럼을_고르지_않는다(self):
+        """★거르는 줄만 더했으니 컬럼은 여전히 전부 온다 — first(...) 가 없어야 한다."""
+        self.assertNotIn("first(", self.q("raw"))
+
+    def test_상세와_간소의_거르는_줄이_같다(self):
+        """한 글자라도 다르면 둘 중 하나는 로그프레소가 문법 오류를 낸다."""
+        line = '| search MSG_ID == "2"'
+        self.assertIn(line, self.q("raw"))
+        self.assertIn(line, self.q("agg30"))
 
     def test_remote_로_감싼다(self):
         for pf in ("agg30", "raw"):
@@ -131,6 +153,7 @@ class 배선(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(APP, self.BAK)), self.BAK + " 가 없다")
         o = _read(self.BAK)
         self.assertIn("inner = f'table from={from_dt} to={to_dt} {table} | sort _time'", o)
+        # ★상세(raw)에도 MSG_ID=2 를 더한 뒤로, 거르는 줄조차 없는 원본은 여기뿐이다.
         self.assertNotIn("MSG_ID", o)
 
 

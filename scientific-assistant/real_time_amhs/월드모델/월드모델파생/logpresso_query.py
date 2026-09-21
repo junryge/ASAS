@@ -126,8 +126,12 @@ class QueryCancelled(RuntimeError):
 # 쿼리 두 벌
 # ───────────────────────────────────────────────────────────
 def _q_raw(from_dt: str, to_dt: str, table: str) -> str:
-    """예전 쿼리 — 원본 그대로."""
-    return f'table from={from_dt} to={to_dt} {table} | sort _time'
+    """예전 쿼리 — 원본 그대로 + MSG_ID=2 만 (2026-09-21 고객 요청, 이 줄 하나만 더함)."""
+    return (
+        f'table from={from_dt} to={to_dt} {table}'
+        ' | search MSG_ID == "2"'
+        ' | sort _time'
+    )
 
 
 def _q_agg30(from_dt: str, to_dt: str, table: str) -> str:
