@@ -5,18 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>건물간 브릿지 OHT — 아이소메트리 샘플</title>
 <!--
-  FAB 건물 셋을 세우고 그 사이를 잇는 브릿지·리프트를 타고 넘어가는 OHT.
-  2026-09-21 · 아이소메트리(oht3d.js) 와 같은 차량 색·같은 등각으로 그린다.
+  FAB 층판을 어긋나게 펼쳐 놓고, 그 사이를 잇는 리프트(서 있는 통로)와
+  컨베이어·브릿지(건너가는 통로)를 타고 넘어가는 OHT 를 그린다. 2026-09-21
 
-    M14 동   3F(M14A) · 7F(M14B)
-    M16 HUB ROOM
-    M16 동   2F · 6F
-
+  ★층을 물리적으로 포개면 아래층이 안 보인다. 받은 그림이 층을 **어긋나게**
+    편 이유가 그것이다 — 여기서도 그렇게 한다. 같은 동은 같은 색이고
+    동 이름 띠를 달아 둔다.
   ★숫자는 한 개도 안 박혀 있다. 카드 값은 비어 있고(–) OHTBridge.set() 으로
     꽂는다 — 샘플에 숫자가 박히면 그 숫자가 돌아다닌다.
-  ★건물 크기·통로 자리는 아직 실측이 아니다. 그림에서 읽히는 관계(어느 층이
-    어느 건물에 있고 무엇이 무엇을 잇는지)만 맞춰 뒀다. 실제 좌표가 오면
-    BLDG · ROUTES 두 덩이만 갈아끼우면 된다.
+  ★층 크기·통로 자리는 아직 실측이 아니다. 그림에서 읽히는 관계만 맞춰 뒀다.
+    실제가 오면 PLATE · ROUTES 두 덩이만 갈아끼우면 된다.
+  · 차량 색은 아이소메트리(oht3d.js) 의 state 색과 같다.
   · file:// 로 열어도 된다 (외부 파일·ES 모듈 안 쓴다).
 -->
 <style>
@@ -24,48 +23,54 @@
 html,body{height:100%}
 body{margin:0;background:#fff;color:#1c2430;overflow:hidden;
  font:13px/1.45 system-ui,-apple-system,"Segoe UI","Malgun Gothic",sans-serif}
-#root{position:relative;width:100%;height:100%;overflow:hidden;
- background:radial-gradient(130% 100% at 50% 0%,#fdfdfe 0%,#eff3f8 100%)}
+#root{position:relative;width:100%;height:100%;overflow:hidden;background:#fff}
 svg{position:absolute;inset:0;width:100%;height:100%;display:block}
 #sc{touch-action:none;cursor:grab} #sc.drag{cursor:grabbing}
 #ld{pointer-events:none;z-index:2} #ld.off{display:none}
 
-#bar{position:absolute;left:10px;top:10px;right:10px;z-index:5;
+#bar{position:absolute;left:12px;top:12px;right:12px;z-index:5;
  display:flex;gap:5px;align-items:center;flex-wrap:wrap;pointer-events:none}
 #bar>*{pointer-events:auto}
-.btn{font:12px/1 inherit;color:#1c2430;background:rgba(255,255,255,.95);
- border:1px solid #d5dbe3;border-radius:6px;padding:6px 10px;cursor:pointer}
-.btn:hover{background:#eef2f7}
-.btn.on{background:#1f6feb;border-color:#1f6feb;color:#fff}
-.sep{width:1px;height:20px;background:#d5dbe3;margin:0 3px}
-.ttl{font:700 13px inherit;background:rgba(255,255,255,.95);border:1px solid #d5dbe3;
- border-radius:6px;padding:6px 10px}
-.ttl.w{font-weight:400}
-input[type=range]{width:88px;vertical-align:middle}
+.btn{font:12px/1 inherit;color:#334155;background:#fff;border:1px solid #dbe3ec;
+ border-radius:7px;padding:7px 11px;cursor:pointer;box-shadow:0 1px 2px rgba(20,40,70,.05)}
+.btn:hover{background:#f4f7fb}
+.btn.on{background:#2f7fd0;border-color:#2f7fd0;color:#fff;box-shadow:0 1px 3px rgba(47,127,208,.3)}
+.sep{width:1px;height:20px;background:#e3e9f0;margin:0 4px}
+.ttl{font:700 13px inherit;color:#334155;background:#fff;border:1px solid #dbe3ec;
+ border-radius:7px;padding:7px 11px;box-shadow:0 1px 2px rgba(20,40,70,.05)}
+.ttl.w{font-weight:400;color:#64748b}
+input[type=range]{width:86px;vertical-align:middle;accent-color:#2f7fd0}
 
 #cards{position:absolute;inset:0;z-index:3;pointer-events:none}
 #cards.off{display:none}
 .card{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;
- background:#fff;border:1.4px solid #79c2ea;border-radius:6px;min-width:118px;
- box-shadow:0 2px 6px rgba(20,40,70,.14);text-align:center;overflow:hidden}
-.card .id{font:700 12px inherit;color:#2f6f2f;padding:3px 9px 2px;line-height:1.25}
-.card .fl{border-top:1px solid #e0e7ee;font-size:11px;padding:3px 9px;white-space:nowrap;
- color:#38424e}
-.card .fl i{font-style:normal;color:#79c2ea;font-weight:700;padding:0 2px}
-.card .vv{border-top:1px solid #e0e7ee;padding:2px 9px 3px;
- font:700 13px ui-monospace,Consolas,monospace}
-.card .vv s{text-decoration:none;color:#9aa4b0;font-weight:600;font-size:11.5px}
-.card .vv em{font-style:normal;color:#c6ccd4;font-weight:600}
-.card.over{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.16)}
-.card.over .id{color:#b91c1c}
+ background:#fff;border:1.6px solid #8ccbec;border-radius:8px;min-width:136px;
+ box-shadow:0 4px 12px rgba(30,60,100,.12),0 1px 3px rgba(30,60,100,.08);
+ text-align:center;overflow:hidden}
+.card .id{font:700 13.5px inherit;color:#3a7d3a;padding:6px 12px 5px;line-height:1.2;
+ letter-spacing:.2px}
+.card .fl{border-top:1px solid #e8eef4;font-size:12px;padding:5px 12px;white-space:nowrap;
+ color:#334155}
+.card .fl i{font-style:normal;color:#8ccbec;font-weight:700;padding:0 4px}
+.card .vv{border-top:1px solid #e8eef4;padding:4px 12px 5px;
+ font:700 14px ui-monospace,Consolas,monospace;color:#1e293b}
+.card .vv s{text-decoration:none;color:#94a3b8;font-weight:600;font-size:12.5px}
+.card .vv em{font-style:normal;color:#cbd5e1;font-weight:600}
+.card.over{border-color:#ef4444;box-shadow:0 0 0 3.5px rgba(239,68,68,.15),
+ 0 4px 12px rgba(180,30,30,.16)}
+.card.over .id{color:#c0392b}
 
-#leg{position:absolute;left:10px;bottom:10px;z-index:4;background:rgba(255,255,255,.95);
- border:1px solid #d5dbe3;border-radius:7px;padding:6px 10px;font-size:11.5px;line-height:1.65}
-#leg b{display:block;font-size:10.5px;color:#6a7686;font-weight:700;margin-bottom:1px}
-#leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:3px;vertical-align:-1px}
-#leg .g{display:inline-block;width:14px;height:8px;border-radius:2px;margin:0 3px 0 8px;vertical-align:0}
-#hint{position:absolute;right:10px;bottom:10px;z-index:4;color:#8a96a6;font-size:11px;
- background:rgba(255,255,255,.9);border:1px solid #e3e8ee;border-radius:6px;padding:4px 8px}
+#leg{position:absolute;left:12px;bottom:12px;z-index:4;background:#fff;
+ border:1px solid #e3e9f0;border-radius:8px;padding:8px 12px;font-size:11.5px;
+ line-height:1.7;color:#475569;box-shadow:0 2px 6px rgba(20,40,70,.06)}
+#leg b{display:block;font-size:10.5px;color:#94a3b8;font-weight:700;
+ margin-bottom:2px;letter-spacing:.3px}
+#leg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;
+ vertical-align:-1px}
+#leg s{text-decoration:none;display:inline-block;width:15px;height:8px;border-radius:2px;
+ margin:0 4px 0 10px;vertical-align:0}
+#hint{position:absolute;right:12px;bottom:12px;z-index:4;color:#94a3b8;font-size:11px;
+ background:#fff;border:1px solid #e3e9f0;border-radius:7px;padding:5px 9px}
 </style>
 </head>
 <body>
@@ -83,6 +88,7 @@ input[type=range]{width:88px;vertical-align:middle}
     <span class="sep"></span>
     <button class="btn on" id="bCard">카드</button>
     <button class="btn on" id="bName">이름</button>
+    <button class="btn on" id="bStk">설비</button>
     <span class="sep"></span>
     <button class="btn" id="bFit">⤢ 전체보기</button>
     <button class="btn" id="bPng">이미지 저장</button>
@@ -94,9 +100,8 @@ input[type=range]{width:88px;vertical-align:middle}
     <span><i style="background:#f59e0b"></i>정지</span>
     <span><i style="background:#ef4444"></i>JAM</span>
     <span><i style="background:#f97316"></i>OBS</span>
-    <span class="g" style="background:#5b93cf"></span>브릿지
-    <span class="g" style="background:#8fbfe4"></span>리프트
-    <span class="g" style="background:#98a3b0"></span>층 레일
+    <s style="background:#bcdcf4"></s>리프트
+    <s style="background:#7f96b3"></s>컨베이어·브릿지
   </div>
   <div id="hint">드래그 이동 · 휠 확대 · 더블클릭 전체보기</div>
 </div>
@@ -104,84 +109,95 @@ input[type=range]{width:88px;vertical-align:middle}
 <script>
 "use strict";
 /* ═══════════════════════════════════════════════════════════════════
-   1. 아이소 투영 하나로 건물·통로·차량을 전부 찍는다
-      u 왼쪽→오른쪽 · v 안쪽(깊이) · h 높이
+   1. 아이소 투영 — 기존 아이소메트리와 같은 등각
    ═══════════════════════════════════════════════════════════════════ */
-const KX = 6.1, KY = 3.15, KH = 4.3;
+const KX = 6.4, KY = 3.25, KH = 4.4;
 const P   = (u, v, h) => [(u - v) * KX, (u + v) * KY - (h || 0) * KH];
-const dep = (u, v, h) => u + v + (h || 0) * 0.9;      // 클수록 카메라에 가깝다
+const dep = (u, v, h) => u + v + (h || 0) * 0.85;
 
 /* ═══════════════════════════════════════════════════════════════════
-   2. FAB 건물 — 층판을 쌓고 네 귀에 기둥을 세운다.
-      ★유리상자로 만들었다가 아무것도 안 보였다. 벽은 안 그리고 **층과 기둥**
-        으로 건물을 읽게 한다 — 안에서 도는 OHT 가 가려지지 않는다.
+   2. 층판 — 동마다 색이 같고, **어긋나게** 편다
+      (포개면 아래층이 안 보인다. 받은 그림이 어긋나게 편 이유다.)
    ═══════════════════════════════════════════════════════════════════ */
-const BLDG = [
-  { id:'M14', name:'M14',          u:-48, v: 0, w:42, d:30, top:48,
-    slab:'#dcebc4', edge:'#bdd3a0', post:'#c3d6a8',
-    floors:[ {id:'F3', name:'3F', tag:'M14A', h:12},
-             {id:'F7', name:'7F', tag:'M14B', h:40} ] },
-  { id:'HUB', name:'M16 HUB ROOM', u: 14, v: 2, w:36, d:26, top:22,
-    slab:'#cdd1d7', edge:'#a9aeb6', post:'#b5bac2',
-    floors:[ {id:'HUB', name:'', tag:'', h:12} ] },
-  { id:'M16', name:'M16',          u: 68, v:-6, w:44, d:42, top:40,
-    slab:'#f7e9b4', edge:'#dfcb8c', post:'#e6d69c',
-    floors:[ {id:'F2', name:'2F', tag:'', h: 6},
-             {id:'F6', name:'6F', tag:'', h:32} ] },
+const T_PLATE = 2.4;
+const PLATE = [
+  { id:'F7',  bld:'M14', name:'7F',  u:-14, v:-14, w:36, d:20, h:42, c:'g' },
+  { id:'F3',  bld:'M14', name:'3F',  u:-40, v:  8, w:36, d:20, h:12, c:'g' },
+  { id:'HUB', bld:'HUB', name:'M16 HUB ROOM', u:14, v:0, w:42, d:28, h:12, c:'k' },
+  { id:'F6',  bld:'M16', name:'6F',  u: 52, v:-20, w:38, d:22, h:36, c:'y' },
+  { id:'F2',  bld:'M16', name:'2F',  u: 54, v: 14, w:38, d:22, h: 0, c:'y' },
 ];
+const PL = Object.fromEntries(PLATE.map(p => [p.id, p]));
+/* 동 이름 띠 — 어느 층이 어느 동인지 */
+const BAND = [
+  { bld:'M14', name:'M14 동', on:'F7',  du: 2, dv:-4 },
+  { bld:'M16', name:'M16 동', on:'F6',  du: 2, dv:-4 },
+];
+const PAL = {                       /* 윗면 · 앞왼쪽 · 앞오른쪽 */
+  g: { t:'#e2edcf', tl:'#f0f6e6', l:'#b9cc98', r:'#cbdaad', ink:'#4f6b35' },
+  y: { t:'#f8ecbb', tl:'#fdf6dc', l:'#dcc984', r:'#ebdb9f', ink:'#8a6f1e' },
+  k: { t:'#cfd3d9', tl:'#e4e7eb', l:'#a2a7af', r:'#b6bbc3', ink:'#4b5563' },
+};
 
 /* ═══════════════════════════════════════════════════════════════════
-   3. 길 — path 로 적는다. 꺾이면 꺾인 대로 통로가 선다.
-        세로 토막 = 리프트 · 가로 토막 = 브릿지(건물 사이) 또는 층 레일
-      loop:true 면 끝에서 처음으로 돌아간다 (그 층을 도는 길)
+   3. 길 — path 의 꺾인 점만 적는다
+        세로 토막 = 리프트 · 가로 토막 = 컨베이어/브릿지 또는 층 레일
    ★값(현재/기준)은 여기 없다. OHTBridge.set() 으로 꽂는다.
    ═══════════════════════════════════════════════════════════════════ */
 const ROUTES = [
   { id:'M14B', from:'M14B', to:'M14B LFT', lanes:2, loop:true, kind:'rail',
-    path:[[-42,6,40],[-14,6,40],[-14,24,40],[-42,24,40]],
-    pin:[-28,6,40], off:[-146,  34] },
+    path:[[-8,-9,42],[14,-9,42],[14,1,42],[-8,1,42]],
+    pin:[3,-9,42], slot:[152,140] },
 
-  { id:'M14LFT', from:'M14B', to:'M16 HUB', lanes:2, kind:'mix',
-    path:[[-10,9,40],[-10,9,13],[14,9,13]],
-    pin:[-10,9,27], off:[ -40,-104] },
+  { id:'M14LFT', from:'M14B', to:'M16 HUB', lanes:3, kind:'lift',
+    path:[[18,-4,42],[18,-4,13]],
+    pin:[18,-4,30], slot:[452,146] },
 
   { id:'M14A', from:'M14A', to:'M14A CNV', lanes:2, loop:true, kind:'rail',
-    path:[[-42,8,12],[-18,8,12],[-18,26,12],[-42,26,12]],
-    pin:[-42,17,12], off:[-126, 128] },
+    path:[[-34,13,12],[-12,13,12],[-12,23,12],[-34,23,12]],
+    pin:[-34,13,12], slot:[152,286] },
 
-  { id:'M14CNV', from:'M14A CNV', to:'M16 HUB', lanes:2, kind:'bridge',
-    path:[[-14,24,12],[14,24,12]],
-    pin:[0,24,12], off:[-70, 116] },
+  { id:'M14CNV', from:'M14A CNV', to:'M16 HUB', lanes:2, kind:'conv',
+    path:[[-8,21,12],[20,21,12]],
+    pin:[4,21,12], slot:[152,566] },
 
   { id:'M16HUBOHT', from:'M16 HUB', to:'M16 2F/6F', lanes:3, loop:true, kind:'rail',
-    path:[[18,6,12],[46,6,12],[46,24,12],[18,24,12]],
-    pin:[32,6,12], off:[ 4,-114] },
+    path:[[19,4,12],[51,4,12],[51,24,12],[19,24,12]],
+    pin:[35,4,12], slot:[770,146] },
 
   { id:'M16HUBMLUD', from:'HUB MLUD', to:'M16 HUB', lanes:1, kind:'rail',
-    path:[[26,28,12],[26,20,12],[40,20,12]],
-    pin:[26,28,12], off:[ 32, 116] },
+    path:[[26,27,12],[26,19,12],[40,19,12]],
+    pin:[26,27,12], slot:[690,632] },
 
-  { id:'M16LFT', from:'M16 HUB', to:'M16 6F', lanes:2, kind:'mix',
-    path:[[50,8,13],[76,8,13],[76,8,32]],
-    pin:[76,8,24], off:[ 120,-56] },
+  { id:'M16LFT', from:'M16 HUB', to:'M16 6F', lanes:2, kind:'lift',
+    path:[[54,-2,12],[54,-2,36]],
+    pin:[54,-2,26], slot:[1208,286] },
 
   { id:'M166F', from:'M16 LFT', to:'M16 6F', lanes:2, loop:true, kind:'rail',
-    path:[[80,-2,32],[108,-2,32],[108,14,32],[80,14,32]],
-    pin:[94,-2,32], off:[ 108,-96] },
+    path:[[60,-15,36],[86,-15,36],[86,-5,36],[60,-5,36]],
+    pin:[73,-15,36], slot:[1208,140] },
 
-  { id:'M16EUV', from:'M16 LFT', to:'M16 2F', lanes:1, kind:'mix',
-    path:[[84,18,13],[84,18,6],[104,18,6]],
-    pin:[84,18,10], off:[ 158,  6] },
+  { id:'M16EUV', from:'M16 LFT', to:'M16 2F', lanes:1, kind:'lift',
+    path:[[64,17,12],[64,17,1],[84,17,1]],
+    pin:[74,17,1], slot:[1208,432] },
 
-  { id:'M16LFT2F', from:'M16 HUB', to:'M16 2F', lanes:2, kind:'mix',
-    path:[[50,28,13],[80,28,13],[80,28,6]],
-    pin:[80,28,9], off:[ 140, 100] },
+  { id:'M16LFT2F', from:'M16 HUB', to:'M16 2F', lanes:2, kind:'lift',
+    path:[[56,22,12],[56,22,1],[56,32,1],[80,32,1]],
+    pin:[68,32,1], slot:[1208,578] },
 ];
 
-/* 차량 색 — oht3d.js 의 state 색과 같아야 한다 (0 운행·1 적재·2 정지·3 JAM·4 OBS) */
 const ST_COL = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#f97316'];
-const C_BRIDGE = '#5b93cf', C_LIFT = '#8fbfe4', C_RAIL = '#98a3b0';
-const DEMO_N = 4;                    /* 보기용 대수. 실제는 set(id,{n:…}) */
+const DEMO_N = 4;
+
+/* 설비 무리 — 받은 그림의 상자 더미. 보기용이다(대수와 상관없다) */
+const STACKS = [
+  { p:'F7',  u: 6, v:-11, nx:3, nz:2 },
+  { p:'F3',  u:-36, v: 10, nx:3, nz:2 },
+  { p:'HUB', u: 17, v:  2, nx:2, nz:2 },
+  { p:'HUB', u: 44, v: 20, nx:2, nz:2 },
+  { p:'F6',  u: 54, v:-17, nx:3, nz:2 },
+  { p:'F2',  u: 70, v: 22, nx:3, nz:2 },
+];
 
 /* ═══════════════════════════════════════════════════════════════════
    4. 바탕
@@ -197,20 +213,40 @@ function shade(hex, f) {
   const m = v => Math.max(0, Math.min(255, Math.round(v + (f < 0 ? v * f : (255 - v) * f))));
   return '#' + [m(n>>16&255), m(n>>8&255), m(n&255)].map(x => x.toString(16).padStart(2,'0')).join('');
 }
+
+/* 그림자·그라데이션 — 이게 있고 없고가 입체로 읽히느냐를 가른다 */
+const defs = el('defs');
+defs.innerHTML = `
+ <filter id="sh" x="-30%" y="-30%" width="180%" height="190%">
+   <feDropShadow dx="0" dy="9" stdDeviation="7" flood-color="#2b3f5c" flood-opacity=".20"/>
+ </filter>
+ <filter id="shs" x="-40%" y="-40%" width="200%" height="200%">
+   <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#2b3f5c" flood-opacity=".22"/>
+ </filter>
+ <linearGradient id="gShaft" x1="0" y1="0" x2="0" y2="1">
+   <stop offset="0%"  stop-color="#eaf5fd" stop-opacity=".92"/>
+   <stop offset="55%" stop-color="#c3ddf3" stop-opacity=".62"/>
+   <stop offset="100%" stop-color="#a9cde9" stop-opacity=".48"/>
+ </linearGradient>`
+ + Object.entries(PAL).map(([k, c]) =>
+   `<linearGradient id="gT-${k}" x1="0" y1="0" x2=".7" y2="1">
+      <stop offset="0%" stop-color="${c.tl}"/><stop offset="100%" stop-color="${c.t}"/>
+    </linearGradient>`).join('');
+svg.appendChild(defs);
+
 const gWorld = el('g'); svg.appendChild(gWorld);
 const gScene = el('g'), gCar = el('g');
 gWorld.appendChild(gScene); gWorld.appendChild(gCar);
 
-/* 축에 나란한 상자 하나 — 층판·기둥·통로가 전부 이것 하나로 선다.
-   보이는 면은 셋: 윗면 · v 가 큰 앞왼쪽 면 · u 가 큰 앞오른쪽 면 */
-function box(u0, v0, u1, v1, h0, h1, col, o, g, line) {
+/* 축에 나란한 상자 — 층판·통로·설비·차량이 전부 이것 하나로 선다 */
+function box(u0, v0, u1, v1, h0, h1, top, left, right, g, o, stroke) {
   const T = [P(u0,v0,h1), P(u1,v0,h1), P(u1,v1,h1), P(u0,v1,h1)];
   const B = [P(u0,v0,h0), P(u1,v0,h0), P(u1,v1,h0), P(u0,v1,h0)];
   const a = (o == null) ? 1 : o;
-  g.appendChild(poly([T[3],T[2],B[2],B[3]], { fill: shade(col,-.26), 'fill-opacity':a }));
-  g.appendChild(poly([T[2],T[1],B[1],B[2]], { fill: shade(col,-.12), 'fill-opacity':a }));
-  g.appendChild(poly(T, Object.assign({ fill: col, 'fill-opacity':a },
-    line ? { stroke:line, 'stroke-width':.8 } : {})));
+  g.appendChild(poly([T[3],T[2],B[2],B[3]], { fill:left,  'fill-opacity':a }));
+  g.appendChild(poly([T[2],T[1],B[1],B[2]], { fill:right, 'fill-opacity':a }));
+  g.appendChild(poly(T, Object.assign({ fill:top, 'fill-opacity':a },
+    stroke ? { stroke, 'stroke-width':.9, 'stroke-linejoin':'round' } : {})));
 }
 function text(u, v, h, s, o) {
   const p = P(u, v, h);
@@ -222,7 +258,8 @@ function text(u, v, h, s, o) {
 /* ═══════════════════════════════════════════════════════════════════
    5. 상태
    ═══════════════════════════════════════════════════════════════════ */
-const STATE = { play:true, spd:1, carS:1, card:true, name:true, view:{ s:1, x:0, y:0 } };
+const STATE = { play:true, spd:1, carS:1, card:true, name:true, stk:true,
+                view:{ s:1, x:0, y:0 } };
 const VAL = Object.fromEntries(ROUTES.map(r => [r.id, { cur:null, ref:null, n:DEMO_N, st:null }]));
 const OVER = 1.5;     /* ★위험으로 볼 선 — 현장 규칙을 못 받았다. 여기 한 줄이다. */
 const over = v => (v.cur != null && v.ref) ? (v.cur / v.ref >= OVER) : false;
@@ -235,16 +272,17 @@ function prep(r) {
   r._seg = []; r._acc = [0];
   for (let i = 1; i < p.length; i++) {
     const a = p[i-1], b = p[i];
-    const L = Math.hypot(b[0]-a[0], b[1]-a[1], (b[2]-a[2]) * .7) || 1e-6;
-    r._seg.push({ a, b, L, vert: (a[0]===b[0] && a[1]===b[1]),
+    const L = Math.hypot(b[0]-a[0], b[1]-a[1], (b[2]-a[2]) * .75) || 1e-6;
+    r._seg.push({ a, b, L, vert:(a[0]===b[0] && a[1]===b[1]),
                   alongU: Math.abs(b[0]-a[0]) >= Math.abs(b[1]-a[1]) });
     r._acc.push(r._acc[i-1] + L);
   }
   r._len = r._acc[r._acc.length-1];
 }
 ROUTES.forEach(prep);
-const HALF = r => 1.5 + (r.lanes - 1) * 1.35;          // 통로 반너비
-const LANE = (r, i) => (i - (r.lanes - 1) / 2) * 2.7;  // 차선 치우침
+const HALF = r => (r.kind === 'lift' ? 1.8 : r.kind === 'rail' ? 0.85 : 1.35)
+                  + (r.lanes - 1) * (r.kind === 'rail' ? 1.05 : 1.45);
+const LANE = (r, i) => (i - (r.lanes - 1) / 2) * 2.9;
 
 function at(r, t, lane) {
   const d = (t % 1) * r._len;
@@ -252,105 +290,108 @@ function at(r, t, lane) {
   const s = r._seg[i], k = (d - r._acc[i]) / s.L, o = LANE(r, lane);
   const u = s.a[0] + (s.b[0]-s.a[0]) * k, v = s.a[1] + (s.b[1]-s.a[1]) * k;
   const h = s.a[2] + (s.b[2]-s.a[2]) * k;
-  if (s.vert)     return [u + o, v, h];
-  if (s.alongU)   return [u, v + o, h + 1.3];
-  return [u + o, v, h + 1.3];
+  if (s.vert)   return [u + o, v, h];
+  if (s.alongU) return [u, v + o, h + 1.5];
+  return [u + o, v, h + 1.5];
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   7. 세우기 — 카메라에서 먼 것부터
+   7. 세우기
    ═══════════════════════════════════════════════════════════════════ */
 const CARS = [];
 function build() {
   while (gScene.firstChild) gScene.removeChild(gScene.firstChild);
   CARS.length = 0;
   const job = [];
-  BLDG.forEach(b => job.push({ k: dep(b.u + b.w/2, b.v + b.d/2, 0), f: () => bldg(b) }));
+  PLATE.forEach(p => job.push({ k: dep(p.u + p.w/2, p.v + p.d/2, p.h), f: () => plate(p) }));
   ROUTES.forEach(r => {
     const c = r.path.reduce((s,p) => [s[0]+p[0], s[1]+p[1], s[2]+p[2]], [0,0,0])
                     .map(x => x / r.path.length);
-    job.push({ k: dep(c[0], c[1], c[2]) + 1, f: () => road(r) });
+    job.push({ k: dep(c[0], c[1], c[2]) + 1.5, f: () => road(r) });
   });
+  if (STATE.stk) STACKS.forEach(s => job.push(
+    { k: dep(s.u, s.v, PL[s.p].h) + 1.2, f: () => stack(s) }));
   job.sort((a, b) => a.k - b.k).forEach(o => o.f());
   ROUTES.forEach(r => {
     const n = Math.max(0, VAL[r.id].n | 0);
     for (let i = 0; i < n; i++)
       CARS.push({ r, t: i / n, lane: i % r.lanes, i,
-                  sp: (1.0 + Math.random() * .25) * 9 / r._len });
+                  sp: (1 + Math.random() * .2) * 8 / r._len });
   });
   layCards();
 }
 
-/* 건물 한 채 — 바닥 · 층판 · 네 귀 기둥 · 옥상 띠 */
-function bldg(b) {
-  const g = el('g'); gScene.appendChild(g);
-  const { u, v, w, d, top } = b, U = u + w, V = v + d;
-  const PW = 1.8;                                   // 기둥 굵기
-  // 바닥 그림자 겸 부지
-  g.appendChild(poly([P(u-2,v-2,0), P(U+2,v-2,0), P(U+2,V+2,0), P(u-2,V+2,0)],
-    { fill:'#000', 'fill-opacity':.055 }));
-  const lv = b.floors.slice().sort((a, c) => a.h - c.h);
-  const tiers = lv.map(f => f.h).concat([top]);
-  let from = 0;
-  tiers.forEach((H, n) => {
-    // 그 칸의 네 귀 기둥
-    [[u,v],[U-PW,v],[u,V-PW],[U-PW,V-PW]].forEach(([pu, pv]) =>
-      box(pu, pv, pu+PW, pv+PW, from, H, b.post, 1, g));
-    from = H;
-    if (n < lv.length) {                            // 층판
-      box(u, v, U, V, H - 1.2, H, b.slab, 1, g, '#ffffff');
-      if (STATE.name && lv[n].name) {
-        g.appendChild(text(u + 2.2, V - 2.0, H, lv[n].name + (lv[n].tag ? '  ' + lv[n].tag : ''),
-          { fill:'#55604c', 'font-size':9.5, 'font-weight':700 }));
-      }
-    } else {                                        // 옥상
-      box(u, v, U, V, H - 1.2, H, shade(b.slab, .18), .92, g, '#ffffff');
-    }
-  });
-  if (STATE.name) g.appendChild(text(u + w/2, v + d/2, top + 2.6, b.name,
-    { fill:'#3b4450', 'font-size':13, 'font-weight':800, 'text-anchor':'middle',
-      'letter-spacing':'.5px' }));
+/* 층판 한 장 — 그림자 + 그라데이션 윗면 + 두 옆면 */
+function plate(p) {
+  const g = el('g', { filter:'url(#sh)' }); gScene.appendChild(g);
+  const c = PAL[p.c], U = p.u + p.w, V = p.v + p.d;
+  box(p.u, p.v, U, V, p.h - T_PLATE, p.h, `url(#gT-${p.c})`, c.l, c.r, g, 1, '#ffffff');
+  if (!STATE.name) return;
+  const hub = (p.id === 'HUB');
+  g.appendChild(text(hub ? p.u + p.w/2 : p.u + 2.4, hub ? V - 2.2 : V - 2.4, p.h,
+    p.name, { fill:c.ink, 'font-size': hub ? 12 : 10.5, 'font-weight':700,
+              'text-anchor': hub ? 'middle' : 'start', 'letter-spacing':'.3px' }));
+  const bd = BAND.find(b => b.on === p.id);
+  if (bd) g.appendChild(text(p.u + bd.du, p.v + bd.dv, p.h, bd.name,
+    { fill:c.ink, 'font-size':13, 'font-weight':800, 'fill-opacity':.75,
+      'letter-spacing':'.6px' }));
 }
 
-/* 길 한 줄 — 토막마다 통로를 세우고 방향을 찍는다 */
+/* 설비 무리 — 받은 그림의 상자 더미 */
+function stack(s) {
+  const g = el('g', { filter:'url(#shs)' }); gScene.appendChild(g);
+  const h = PL[s.p].h, k = 2.3, gp = 3.5;
+  for (let z = 0; z < s.nz; z++) for (let x = 0; x < s.nx; x++) {
+    const u = s.u + x * gp, v = s.v + z * gp;
+    box(u, v, u + k, v + k, h, h + k*1.15, '#ccd5e2', '#8c99ad', '#a7b2c3', g, 1, '#eef2f8');
+  }
+}
+
+/* 길 한 줄 */
 function road(r) {
   const g = el('g'); gScene.appendChild(g);
   const R = HALF(r);
   r._seg.forEach(s => {
     const [u0,v0,h0] = s.a, [u1,v1,h1] = s.b;
-    if (s.vert) {                                   // 리프트 — 서 있는 통로
-      box(u0-R, v0-R, u0+R, v0+R, Math.min(h0,h1) - 1, Math.max(h0,h1), C_LIFT, .62, g);
-    } else {
-      const col = r.kind === 'rail' ? C_RAIL : C_BRIDGE;
-      const op  = r.kind === 'rail' ? .72 : .95;
-      if (s.alongU) box(Math.min(u0,u1), v0-R, Math.max(u0,u1), v0+R, h0-1.4, h0, col, op, g);
-      else          box(u0-R, Math.min(v0,v1), u0+R, Math.max(v0,v1), h0-1.4, h0, col, op, g);
-    }
-  });
-  // 방향 표시 — 오르내림은 갈매기, 건너감은 화살
-  r._seg.forEach(s => {
-    const n = Math.max(2, Math.round(s.L / 6));
-    for (let k = 1; k < n; k++) {
-      const q = [s.a[0]+(s.b[0]-s.a[0])*k/n, s.a[1]+(s.b[1]-s.a[1])*k/n,
-                 s.a[2]+(s.b[2]-s.a[2])*k/n];
-      const m = P(q[0], q[1], q[2] + (s.vert ? 0 : 0.5));
-      const up = Math.sign(s.b[2] - s.a[2]);
-      const dd = s.vert
-        ? `M${m[0]-5},${m[1]+up*1.6} L${m[0]},${m[1]-up*1.6} L${m[0]+5},${m[1]+up*1.6}`
-        : `M${m[0]-2.6},${m[1]-3} L${m[0]+2.6},${m[1]} L${m[0]-2.6},${m[1]+3}`;
-      g.appendChild(el('path', { d:dd, fill:'none', stroke:'#f2f8ff',
-        'stroke-width':1.3, 'stroke-opacity':.85, 'stroke-linecap':'round' }));
+    if (s.vert) {                      /* 리프트 — 맑은 유리 기둥 */
+      const lo = Math.min(h0,h1), hi = Math.max(h0,h1);
+      box(u0-R, v0-R, u0+R, v0+R, lo, hi, 'url(#gShaft)', '#a9cde9', '#c9e2f5', g, .72);
+      const n = Math.max(2, Math.round((hi-lo)/5)), up = Math.sign(h1-h0);
+      for (let k = 1; k < n; k++) {
+        const m = P(u0, v0, lo + (hi-lo)*k/n), w = R*KX*.75;
+        g.appendChild(el('path', { d:`M${m[0]-w},${m[1]+up*2} L${m[0]},${m[1]-up*2} L${m[0]+w},${m[1]+up*2}`,
+          fill:'none', stroke:'#ffffff', 'stroke-width':1.5, 'stroke-opacity':.8,
+          'stroke-linecap':'round', 'stroke-linejoin':'round' }));
+      }
+    } else {                           /* 컨베이어·브릿지 또는 층 레일 */
+      /* ★층 레일을 두껍게 그렸더니 판이 주차장처럼 보였다. 레일은 가늘고
+         밝게, 건물 사이를 건너는 브릿지만 또렷하게 — 그래야 '넘어가는 길'
+         이 눈에 먼저 든다. */
+      const rail = (r.kind === 'rail'), T = rail ? .7 : 1.7;
+      const top = rail ? '#c2cad6' : '#8298b6', l = rail ? '#96a0b0' : '#5d7091',
+            rr  = rail ? '#adb6c4' : '#6e84a4', op = rail ? .92 : .97;
+      if (s.alongU) box(Math.min(u0,u1), v0-R, Math.max(u0,u1), v0+R, h0-T, h0, top, l, rr, g, op);
+      else          box(u0-R, Math.min(v0,v1), u0+R, Math.max(v0,v1), h0-T, h0, top, l, rr, g, op);
+      if (!rail) {
+        const n = Math.max(2, Math.round(s.L/6));
+        for (let k = 1; k < n; k++) {
+          const m = P(s.a[0]+(s.b[0]-s.a[0])*k/n, s.a[1]+(s.b[1]-s.a[1])*k/n, h0 + .4);
+          g.appendChild(el('path', { d:`M${m[0]-2.8},${m[1]-3.2} L${m[0]+2.8},${m[1]} L${m[0]-2.8},${m[1]+3.2}`,
+            fill:'none', stroke:'#e8eef7', 'stroke-width':1.4, 'stroke-opacity':.9,
+            'stroke-linecap':'round', 'stroke-linejoin':'round' }));
+        }
+      }
     }
   });
 }
 
 /* 차 한 대 */
 function car(u, v, h, st, g) {
-  const k = 1.1 * STATE.carS, t = k * .95, c = ST_COL[st % 5];
+  const k = 1.15 * STATE.carS, t = k * 1.0, c = ST_COL[st % 5];
   const T = [P(u-k,v-k,h+t), P(u+k,v-k,h+t), P(u+k,v+k,h+t), P(u-k,v+k,h+t)];
-  g.appendChild(poly([T[3],T[2],P(u+k,v+k,h),P(u-k,v+k,h)], { fill: shade(c,-.32) }));
-  g.appendChild(poly([T[2],T[1],P(u+k,v-k,h),P(u+k,v+k,h)], { fill: shade(c,-.16) }));
-  g.appendChild(poly(T, { fill:c }));
+  g.appendChild(poly([T[3],T[2],P(u+k,v+k,h),P(u-k,v+k,h)], { fill: shade(c,-.34) }));
+  g.appendChild(poly([T[2],T[1],P(u+k,v-k,h),P(u+k,v+k,h)], { fill: shade(c,-.17) }));
+  g.appendChild(poly(T, { fill: shade(c,.10) }));
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -394,19 +435,20 @@ function placeCards() {
   ROUTES.forEach(r => {
     const q = P(r.pin[0], r.pin[1], r.pin[2]);
     const px = q[0] * STATE.view.s + STATE.view.x, py = q[1] * STATE.view.s + STATE.view.y;
-    const cx = px + r.off[0], cy = py + r.off[1], d = CARD[r.id];
+    const cx = r.slot[0], cy = r.slot[1], d = CARD[r.id];   /* ★화면 가장자리 고정 */
     d.style.left = ((cx - vb.x) * sc + ox) + 'px';
     d.style.top  = ((cy - vb.y) * sc + oy) + 'px';
     const hot = d.classList.contains('over');
     ld.appendChild(el('line', { x1:cx, y1:cy, x2:px, y2:py,
-      stroke: hot ? '#ef4444' : '#79c2ea', 'stroke-width':1.3,
-      'stroke-opacity': hot ? .9 : .75, 'stroke-dasharray':'4 3' }));
-    ld.appendChild(el('circle', { cx:px, cy:py, r:3, fill: hot ? '#ef4444' : '#79c2ea' }));
+      stroke: hot ? '#ef4444' : '#8ccbec', 'stroke-width':1.4,
+      'stroke-opacity': hot ? .85 : .7, 'stroke-dasharray':'5 4' }));
+    ld.appendChild(el('circle', { cx:px, cy:py, r:3.4,
+      fill:'#fff', stroke: hot ? '#ef4444' : '#8ccbec', 'stroke-width':2 }));
   });
 }
 
 /* ── 밖에서 값을 꽂는 길 ──────────────────────────────────────────
-     OHTBridge.set('M14LFT', { cur: …, ref: …, n: …, st: … })            */
+     OHTBridge.set('M14LFT', { cur: …, ref: …, n: 대수, st: 0~4 })       */
 window.OHTBridge = {
   set(id, o) {
     if (!VAL[id]) return;
@@ -432,7 +474,7 @@ function apply() {
 }
 function fit() {
   const bb = gWorld.getBBox(), vb = svg.viewBox.baseVal;
-  const padX = 158, padY = 62, BIAS = 12;          // 좌우는 카드 자리를 비운다
+  const padX = 292, padY = 150, BIAS = 30;  /* ★가장자리는 카드 자리다 */
   const s = Math.min((vb.width - padX*2) / bb.width, (vb.height - padY*2) / bb.height);
   STATE.view.s = s;
   STATE.view.x = vb.x + vb.width/2 - (bb.x + bb.width/2) * s;
@@ -452,9 +494,9 @@ svg.addEventListener('wheel', e => { e.preventDefault();
   const b = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal, k = vb.width / b.width;
   const mx = (e.clientX - b.left) * k + vb.x, my = (e.clientY - b.top) * k + vb.y;
   const s2 = Math.max(.25, Math.min(6, STATE.view.s * (e.deltaY < 0 ? 1.12 : 1/1.12)));
-  const r = s2 / STATE.view.s;
-  STATE.view.x = mx - (mx - STATE.view.x) * r;
-  STATE.view.y = my - (my - STATE.view.y) * r;
+  const rr = s2 / STATE.view.s;
+  STATE.view.x = mx - (mx - STATE.view.x) * rr;
+  STATE.view.y = my - (my - STATE.view.y) * rr;
   STATE.view.s = s2; apply(); }, { passive:false });
 svg.addEventListener('dblclick', fit);
 addEventListener('resize', placeCards);
@@ -470,6 +512,8 @@ $('bCard').onclick = e => { STATE.card = !STATE.card;
   e.target.classList.toggle('on', STATE.card); };
 $('bName').onclick = e => { STATE.name = !STATE.name;
   e.target.classList.toggle('on', STATE.name); build(); apply(); };
+$('bStk').onclick = e => { STATE.stk = !STATE.stk;
+  e.target.classList.toggle('on', STATE.stk); build(); apply(); };
 $('bFit').onclick = fit;
 $('bPng').onclick = () => {
   const b = svg.getBoundingClientRect();
