@@ -230,6 +230,7 @@
     // 색 — 처음 모습으로 되돌린 뒤 새 색
     o.props.forEach(function (r) { r[0].style.setProperty(r[1], r[2]); });
     var ne = $('[data-bm-name]', card);
+    // 제목 색은 그냥 둔다 — injectStyle 의 [data-bm-name]{color:#fff !important} 이 이긴다
     if (ne) { ne.textContent = c.name || o.name; ne.style.color = o.nameColor; }
     if (c.tone && TONES[c.tone]) {
       var to = TONES[c.tone];
@@ -954,6 +955,10 @@
       '.bm-btn:hover{border-color:#3ad6c8;color:#fff}.bm-pri{background:rgba(58,214,200,.16);border-color:rgba(58,214,200,.55)}',
       '.bm-warn{border-color:#5c3034;color:#ffb0b0}',
       '.bm-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:2147483001;background:#0e161f;border:1px solid #3ad6c8;color:#e8eff6;padding:9px 16px;border-radius:8px;font:12px "IBM Plex Sans KR",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.5)}',
+      // 고객: "패널 제목이 안보이네 이거는 무조건 흰색으로 해주지"
+      //   제목 셋(M14A·M16HUBOHT·M166F)은 틀이 색을 안 줘서 바탕 글자색을 물려받는다 —
+      //   바탕을 화이트로 하면 어두운 색을 물려받아 어두운 패널 위에서 묻혔다.
+      '[data-bm-name]{color:#fff !important}',
       '.bm-hl{outline:2px dashed #fff !important;outline-offset:3px;animation:bmblink .8s ease-in-out infinite}',
       '.bm-editing [data-bm-card]{cursor:move !important}',
       '.bm-editing [data-bm-card]:hover{outline:1px dashed rgba(255,255,255,.55);outline-offset:3px}',
