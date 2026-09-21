@@ -36,6 +36,7 @@ addEventListener('error', ev => boom(ev.error || ev.message));
 addEventListener('unhandledrejection', ev => boom(ev.reason));
 
 const DATA = await (await fetch('/static/브릿지_레이아웃.json')).json();
+const ISO_EL = Math.atan(1 / Math.SQRT2);   // oht3d 등각 고도 35.264°
 
 /* 판 찾기 — 고객 마크업의 인라인 style 로 찾는다 (클래스가 없다) */
 function findPlate(f) {
@@ -104,6 +105,9 @@ for (let i = 0; i < DATA.fabs.length; i++) {
     /* ★판이 화면에서 200~300px 밖에 안 된다. oht3d 기본값(레일 0.2 m)은
        한 FAB 을 꽉 채워 볼 때 맞춘 값이라 여기선 한 픽셀도 안 된다. */
     railScale: 2.2, vehicleScale: 2.0, portScale: 1.2, textScale: 0.6,
+    /* ★레일 높이 4.6m 를 그대로 쓰면 도면이 판 위로 붕 떠서 어긋나
+       보인다. 판이 바닥이니 레일은 판에 바짝 붙인다. */
+    railHeight: 1.6,
   });
   v.setLayout({ nodes: L.nodes, edges: L.edges, zones: L.zones, ports: L.ports });
   v.resize();
@@ -137,15 +141,21 @@ function place() {
     if (!pe) continue;
     const r = pe.getBoundingClientRect();
     if (!r.width || !r.height) continue;
-    /* ★판 크기 그대로 잡으면 viewAll 이 여백을 두어 도면이 쭈그러든다.
-       조금 크게 잡고 가운데를 맞춘다 — 도면이 판을 꽉 채운다. */
-    const K = 1.55;
-    const w = Math.max(40, r.width * K), h = Math.max(30, r.height * K);
+    /* ★판과 도면의 **각을 맞춘다**.
+       판은 CSS rotateX(60°) 라 바닥이 세로로 cos60 = 0.500 만큼 눌린다.
+       oht3d 등각은 고도 35.264° 라 sin35.264 = 0.577 만큼 눌린다.
+       그대로 겹치면 도면이 판보다 세로로 15% 길다 — 그래서 canvas 를
+       1/0.866 만큼 높게 잡고 scaleY(0.866) 으로 눌러 판에 맞춘다.
+       K 는 viewAll 이 두는 여백을 되돌리는 값이다. */
+    const K = 1.62, SY = Math.cos(60 * Math.PI / 180) / Math.sin(ISO_EL);
+    const w = Math.max(40, r.width * K), h = Math.max(30, r.height * K / SY);
     const s = o.box.style;
     const nx = (r.left - (w - r.width) / 2) + 'px';
     const ny = (r.top - (h - r.height) / 2) + 'px';
     if (s.left !== nx || s.top !== ny || s.width !== w + 'px' || s.height !== h + 'px') {
       s.left = nx; s.top = ny; s.width = w + 'px'; s.height = h + 'px';
+      s.transform = `scaleY(${SY})`;
+      s.transformOrigin = 'center';
       o.v.resize();
     }
   }
