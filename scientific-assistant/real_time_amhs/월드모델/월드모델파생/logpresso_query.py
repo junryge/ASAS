@@ -135,7 +135,9 @@ def _q_raw(from_dt: str, to_dt: str, table: str) -> str:
 
 
 def _q_agg30(from_dt: str, to_dt: str, table: str) -> str:
-    """고객이 준 쿼리 — MSG_ID=2 만, 30초로 묶어 차량당 한 줄.
+    """고객이 준 쿼리 — MSG_ID=2 만, 25초로 묶어 차량당 한 줄.
+       (2026-09-21 고객이 30초 → 25초로 바꿈. 프로필 이름 agg30 은 그대로다 —
+        화면·main.py·브라우저에 저장된 선택이 이 이름을 쓴다.)
 
     ★2026-09-18 — 컬럼 세 개를 **더했다** (고객: "상세는 되는데 왜 간소는 안 되냐").
         STOCK_INFO             적재 여부      → 적재 색이 안 나와 전부 공차로 보였다
@@ -150,7 +152,7 @@ def _q_agg30(from_dt: str, to_dt: str, table: str) -> str:
         f'table from={from_dt} to={to_dt} {table}'
         ' | search MSG_ID == "2"'
         ' | sort _time'
-        ' | eval _time = datetrunc(_time, "30s")'
+        ' | eval _time = datetrunc(_time, "25s")'
         ' | stats first(ADDRESS) as ADDRESS, first(DISTANCE) as DISTANCE,'
         ' first(NEXT_ADDRESS) as NEXT_ADDRESS, first(EDGE) as EDGE,'
         ' first(CARRIER) as CARRIER, first(STATUS) as STATUS,'

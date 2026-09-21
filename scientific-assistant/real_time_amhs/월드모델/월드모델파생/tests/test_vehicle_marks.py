@@ -143,7 +143,8 @@ class 삼각형_안의_점(unittest.TestCase):
         # 묶는 기준·거르는 조건은 그대로 — 행 수가 늘면 간소를 만든 뜻이 없어진다
         self.assertIn("by VEHICLE, _time", body)
         self.assertIn('search MSG_ID == "2"', body)
-        self.assertIn('datetrunc(_time, "30s")', body)
+        # 묶는 간격은 2026-09-21 고객이 30 → 25 초로 바꿨다 (컬럼·기준은 그대로)
+        self.assertIn('datetrunc(_time, "25s")', body)
         self.assertIn("상세 · 간소 둘 다</b> 나옵니다", self.h, "설정창에도 적어야 한다")
 
     def test_아이소메트리는_안_건드렸다(self):

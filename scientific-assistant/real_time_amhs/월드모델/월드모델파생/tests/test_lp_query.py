@@ -67,7 +67,7 @@ class 쿼리두벌(unittest.TestCase):
             f'table from={F} to={T} {TBL}',
             '| search MSG_ID == "2"',
             '| sort _time',
-            '| eval _time = datetrunc(_time, "30s")',
+            '| eval _time = datetrunc(_time, "25s")',   # 2026-09-21 고객이 30 → 25 로
             '| stats first(ADDRESS) as ADDRESS, first(DISTANCE) as DISTANCE,',
             'first(NEXT_ADDRESS) as NEXT_ADDRESS, first(EDGE) as EDGE,',
             'first(CARRIER) as CARRIER, first(STATUS) as STATUS,',
