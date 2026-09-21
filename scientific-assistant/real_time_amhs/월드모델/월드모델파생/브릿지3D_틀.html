@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>동간 브릿지 통합 반송 현황 — 3D</title>
+<!--
+  ★이 화면의 3D 는 **월드모델파생이 이미 쓰고 있는 아이소메트리 그대로**다
+    (static/js/oht3d/oht3d.js · three.js r169). 새로 그리지 않았다 —
+    레일·행거·설비·차량·툴바·마우스 돌리기·HID Zone 패널이 전부 그것이다.
+    고객: "그냥 기존에 사용하던 아이소메트리 하면 되잖아, 잘 만들어 둔 걸 왜 안 써."
+
+  달라진 것 하나 — oht3d 의 노드에 **높이(z)** 를 넣었다. 예전엔 {id,x,y} 뿐이라
+  동을 전부 한 바닥에 깔 수밖에 없었다(고객: "건물마다 틀린데 왜 한 판에 전부
+  다 그리냐"). 이제 M14B 는 7F, M14A 는 3F, HUB, M16 6F·2F 가 제 높이에 서고
+  브릿지가 층과 층 사이를 비스듬히 잇는다. ★z 를 안 주면 0 이라 기존 화면은
+  하나도 안 바뀐다.
+
+  브릿지3D_만들기.py 가 도면에서 레일을 뽑아 이 틀에 끼운다.
+-->
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:radial-gradient(1400px 900px at 45% 25%,#121c28 0%,#0a0e14 55%,#06080c 100%);
+ color:#e8eff6;font-family:'IBM Plex Sans KR',system-ui,-apple-system,"Malgun Gothic",sans-serif;
+ padding:18px 20px 18px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+header{display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap;flex:0 0 auto}
+.eyebrow{font:10px/1.4 ui-monospace,Consolas,monospace;letter-spacing:.12em;color:#5c7183}
+h1{font-size:21px;font-weight:700;letter-spacing:-.015em;margin-top:5px}
+.kpis{display:flex;gap:9px;flex-wrap:wrap}
+.kpi{background:linear-gradient(160deg,rgba(28,42,58,.7),rgba(14,21,29,.7));
+ border:1px solid #1f2d3d;border-radius:9px;padding:9px 15px;min-width:92px}
+.kpi b{display:block;font:9.5px/1 ui-monospace,Consolas,monospace;letter-spacing:.14em;
+ color:#6b8093;font-weight:400}
+.kpi span{font:600 22px/1.25 ui-monospace,Consolas,monospace}
+.kpi.alarm{background:linear-gradient(160deg,rgba(58,28,32,.7),rgba(24,14,16,.7));border-color:#47262b}
+.kpi.alarm b{color:#a87a7e} .kpi.alarm span{color:#ff6b6b}
+.teal{color:#3ad6c8}
+main{flex:1;display:flex;gap:14px;min-height:0}
+#stage{flex:4 1 560px;min-width:0;position:relative;border:1px solid #17212d;
+ border-radius:14px;overflow:hidden;background:#080c12}
+aside{flex:1 1 262px;max-width:318px;display:flex;flex-direction:column;gap:11px;overflow:auto}
+.card{background:linear-gradient(180deg,#0d141c,#0a0f15);border:1px solid #17212d;
+ border-radius:12px;padding:14px}
+.card h2{font:600 12px/1 ui-monospace,Consolas,monospace;letter-spacing:.1em;
+ color:#8fa3b5;margin-bottom:9px}
+.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #141d27;
+ cursor:pointer}
+.row:last-child{border-bottom:none}
+.row:hover{background:#101a24}
+.row i{width:3px;height:29px;border-radius:2px;flex:0 0 auto}
+.row .t{flex:1;min-width:0}
+.row .t b{display:block;font:700 12.5px/1.3 ui-monospace,Consolas,monospace}
+.row .t s{text-decoration:none;display:block;font-size:11px;color:#8fa3b5;margin-top:2px}
+.row .v{font:700 17px/1 ui-monospace,Consolas,monospace;white-space:nowrap}
+.row .v em{font-style:normal;font-size:12px;color:#5c7183;font-weight:600}
+.row.over .v{color:#ff6b6b}
+.alarmbox{background:linear-gradient(180deg,rgba(44,20,22,.75),rgba(20,11,12,.75));
+ border:1px solid #47262b;border-radius:12px;padding:14px}
+.alarmbox h2{color:#ff8f8f} .alarmbox h2::before{content:"● ";font-size:9px;vertical-align:2px}
+.alarmbox p{font-size:12.5px;line-height:1.55}
+#boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+ color:#5c7183;font:12px ui-monospace,monospace;z-index:20}
+#err{position:fixed;left:12px;bottom:12px;z-index:999;max-width:62vw;background:#2b1416;
+ border:1px solid #5c3034;color:#ffb4b4;border-radius:8px;padding:9px 12px;
+ font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;display:none}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="eyebrow">AMHS · INTER-BUILDING BRIDGE · 월드모델파생 아이소메트리</div>
+    <h1>동간 브릿지 통합 반송 현황</h1>
+  </div>
+  <div style="flex:1"></div>
+  <div class="kpis">
+    <div class="kpi"><b>IN TRANSIT</b><span class="teal" id="kTransit">–</span></div>
+    <div class="kpi"><b>FAB</b><span id="kFab">–</span></div>
+    <div class="kpi alarm"><b>ALARM</b><span id="kAlarm">–</span></div>
+    <div class="kpi"><b>LOCAL</b><span id="kClock">--:--</span></div>
+  </div>
+</header>
+
+<main>
+  <section id="stage"><div id="boot">월드모델파생 아이소메트리를 세우는 중…</div></section>
+  <aside>
+    <div class="card"><h2>BRIDGE STATUS</h2><div id="bridges"></div></div>
+    <div class="card"><h2>FAB · 층</h2><div id="fabs"></div></div>
+    <div class="alarmbox"><h2>ACTIVE ALARM</h2><p id="alarmTxt">–</p></div>
+  </aside>
+</main>
+<div id="err"></div>
+
+<script type="module">
+"use strict";
+/* ★three 를 정적으로 불러 THREE 로 넘긴다 — oht3d 가 동적 import 를 안 하게.
+   (번들러 페이지에서 동적 import 가 로더와 겹쳐 멈춘 적이 있다.) */
+import * as THREE from '/static/js/oht3d/three.module.min.js';
+import { createOHT3D } from '/static/js/oht3d/oht3d.js';
+
+const boom = e => { const b = document.getElementById('err');
+  b.style.display = 'block'; b.textContent = String(e && e.stack || e);
+  console.error(e); };
+addEventListener('error', ev => boom(ev.error || ev.message));
+addEventListener('unhandledrejection', ev => boom(ev.reason));
+
+const D = /*__DATA__*/;
+const $ = i => document.getElementById(i);
+
+/* ── 3D — 월드모델파생 아이소메트리 **그대로** ──────────────────── */
+const v3d = await createOHT3D($('stage'), {
+  THREE,
+  coordScale: 1,          // 이미 m 로 만들어 넘긴다
+  flipY: true,
+  projection: 'iso',      // 등각으로 연다 (바 단추로 원근 전환 가능)
+  dark: true,
+  walls: false,           // 벽 안 세운다 (고객 지시)
+  ports: true,
+  ui: true,               // ★뷰어 제 툴바·범례·툴팁 그대로
+  panel: true, panelOpen: false,
+  sizeUI: true,           // '크기' 판 — 레일·차량·설비·글자 배수
+  colors: { background: '#080c12' },
+  /* ★동이 저마다 제 높이에 떠 있으니 바닥판·격자는 오히려 방해다.
+     (한 바닥에 깔던 시절의 것) */
+  floor: false,
+  /* 무대가 800m x 400m 다 — 한 FAB(200m) 기준 기본값이면 화면에서 안 보인다 */
+  railScale: 2.0, vehicleScale: 1.8, portScale: 1.1, textScale: 0.8,
+});
+v3d.setLayout({ nodes: D.nodes, edges: D.edges, zones: D.zones, ports: D.ports });
+v3d.viewAll();
+$('boot').remove();
+
+/* ── 오른쪽 패널 ────────────────────────────────────────────────── */
+const VAL = {};                     // ★숫자는 여기 없다 — 피드가 꽂을 자리
+D.bridges.forEach(b => VAL[b.id] = { cur: null, ref: null });
+const OVER = 1.5;                   // ★위험으로 볼 선 — 현장 규칙이 오면 이 한 줄
+function side() {
+  $('bridges').innerHTML = D.bridges.map(b => {
+    const v = VAL[b.id], hot = v.cur != null && v.ref && v.cur / v.ref >= OVER;
+    return `<div class="row${hot ? ' over' : ''}" data-zone="브릿지 · ${b.id}">
+      <i style="background:${b.col}"></i>
+      <div class="t"><b>${b.id}</b><s>${b.frm} ▸ ${b.to}</s></div>
+      <div class="v">${v.cur ?? '–'}<em> / ${v.ref ?? '–'}</em></div></div>`;
+  }).join('');
+  $('fabs').innerHTML = D.fabs.map(f => `<div class="row" data-zone="${f.zone}">
+      <i style="background:${f.col}"></i>
+      <div class="t"><b>${f.zone}</b><s>${f.w}m × ${Math.round(f.h)}m · 높이 ${f.z}m</s></div>
+      <div class="v" data-fab="${f.key}">–</div></div>`).join('');
+  document.querySelectorAll('[data-zone]').forEach(el =>
+    el.onclick = () => v3d.focusZone(el.dataset.zone));   // 눌러서 그 동으로
+}
+side();
+globalThis.OHTBridge = {
+  set(id, o) { if (VAL[id]) { Object.assign(VAL[id], o || {}); side(); } },
+  clear() { Object.keys(VAL).forEach(k => VAL[k] = { cur: null, ref: null }); side(); },
+  view: v3d, bridges: D.bridges.map(b => b.id),
+};
+
+/* ── 차 — 보기용. 실제는 재생 프레임이 setVehicles 로 준다 ───────── */
+const CARS = [];
+let vid = 0;
+for (const z of D.zones) {
+  const n = z.id.startsWith('브릿지') ? 5 : D.vperzone;
+  for (let i = 0; i < n; i++)
+    CARS.push({ id: 'V' + (++vid), edge: z.edges[(i * 5) % z.edges.length],
+                ratio: Math.random(), sp: 0.05 + Math.random() * 0.05,
+                state: i % 7 === 3 ? 1 : 0, zone: z.id });
+}
+const HOT = D.bridges.find(b => b.id === 'M16LFT2F');
+if (HOT) CARS.filter(c => c.zone === '브릿지 · ' + HOT.id)
+  .forEach((c, i) => { c.state = i % 2 ? 3 : 2; c.sp = 0; });
+
+function tick() {
+  for (const c of CARS) if (c.sp) { c.ratio += c.sp * 0.25; if (c.ratio > 1) c.ratio -= 1; }
+  v3d.setVehicles(CARS.map(c => ({
+    id: c.id, edge: c.edge, ratio: c.ratio, state: c.state,
+    speed_mpm: Math.round(c.sp * 1800), loaded: c.state === 1 ? 1 : 0 })));
+  const cnt = {};
+  for (const c of CARS) cnt[c.zone] = (cnt[c.zone] || 0) + 1;
+  document.querySelectorAll('[data-fab]').forEach(el => {
+    const f = D.fabs.find(x => x.key === el.dataset.fab);
+    el.textContent = cnt[f.zone] ?? '–';
+  });
+  $('kTransit').textContent = CARS.filter(c => c.sp).length;
+  $('kFab').textContent = D.fabs.length;
+  $('kAlarm').textContent = CARS.some(c => c.state >= 2) ? 1 : 0;
+}
+tick(); setInterval(tick, 250);
+
+const clock = () => { const d = new Date();
+  $('kClock').textContent = String(d.getHours()).padStart(2, '0') + ':'
+                          + String(d.getMinutes()).padStart(2, '0'); };
+clock(); setInterval(clock, 10000);
+$('alarmTxt').textContent = HOT
+  ? `${HOT.id} 구간에 정지·JAM 차량이 있습니다 — ${HOT.frm} ▸ ${HOT.to}`
+  : '없음';
+</script>
+</body>
+</html>

@@ -102,6 +102,30 @@ class 뷰어에_보탠_것(unittest.TestCase):
         self.assertIn("this.mat(this.o.floorColor ?? 0xd6d9dc, { r: 0.9 })", self.s)
         self.assertIn("floorColor: null,", self.s, "기본은 null — 예전 화면이 안 바뀐다")
 
+    def test_노드에_높이를_줄_수_있다(self):
+        """동간 브릿지는 동마다 층이 다르다 — 한 바닥에 깔면 못 읽는다.
+
+        고객: "건물마다 틀린데 왜 한 판에 전부 다 그리냐."
+        ★예전 노드는 {id,x,y} 뿐이라 높이가 없었다. z 를 넣되 **기본은 0** 이라
+          기존 화면(M14A 한 장)은 하나도 안 바뀐다.
+        """
+        self.assertIn("z: +n.z || 0", self.s, "노드가 높이를 받아야 한다")
+        self.assertIn("function zOnPoly(", self.s, "꺾인 점마다 높이를 이어야 한다")
+        # 레일·행거·차량·설비·존이 전부 그 높이에 서야 한다 — 하나만 빠져도 어긋난다
+        for w, why in (("H + (mz || 0)", "레일"), ("H + (nd.z || 0)", "행거"),
+                       ("H + (p.z || 0)", "차량"), ("p.z || 0, Z(p.y)", "설비"),
+                       ("zz + 0.02", "존 바닥판")):
+            self.assertIn(w, self.s, f"{why} 가 층 높이를 안 쓴다")
+
+    def test_높이를_안_주면_예전_그대로다(self):
+        """★이게 안 지켜지면 잘 돌던 M14A 아이소메트리가 같이 망가진다."""
+        import re
+        # z 가 둘 다 0 이면 zs 를 아예 안 만든다 (예전 경로 그대로)
+        self.assertIn("const zs = (za || zb)", self.s)
+        self.assertIn("? cum.map(c => za + (zb - za)", self.s)
+        self.assertIn(": null;", self.s)
+        self.assertIn("if (!zs) return 0;", self.s, "zs 가 없으면 높이는 0")
+
     def test_겹쳐_띄우려면_투명해야_한다(self):
         """동간 브릿지 화면은 판(CSS 3D)마다 이 뷰어를 하나씩 얹는다.
 

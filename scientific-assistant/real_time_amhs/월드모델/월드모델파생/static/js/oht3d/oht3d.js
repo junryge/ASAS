@@ -123,6 +123,16 @@ function polyCum(pts) {
   for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
   return c;
 }
+/* ★노드 높이(z) 를 꺾인 점마다 이어 준다 — 층이 다른 동을 잇는 브릿지는
+   이 값이 기울어지면서 경사로가 된다. z 를 안 주면 전부 0 이라 예전과 같다. */
+function zOnPoly(zs, cum, t) {
+  if (!zs) return 0;
+  let i = 1;
+  while (i < cum.length - 1 && cum[i] < t) i++;
+  const seg = (cum[i] - cum[i - 1]) || 1e-9;
+  const a = clamp((t - cum[i - 1]) / seg, 0, 1);
+  return zs[i - 1] + (zs[i] - zs[i - 1]) * a;
+}
 function pointOnPoly(pts, cum, t) {
   let i = 1;
   while (i < cum.length - 1 && cum[i] < t) i++;
@@ -630,7 +640,9 @@ class Viewer {
     if (!L || !Array.isArray(L.nodes) || !Array.isArray(L.edges)) throw new Error('setLayout: nodes / edges 배열 필요');
     const sc = this.o.coordScale, fy = this.o.flipY ? -1 : 1;
     const P = (x, y) => [+x * sc, +y * sc * fy];
-    const nodes = L.nodes.map(n => { const [x, y] = P(n.x, n.y); return { id: String(n.id), x, y, in: [], out: [] }; });
+    /* z = 그 노드가 선 높이(m). 동마다 층이 다르면 여기로 준다. 없으면 0. */
+    const nodes = L.nodes.map(n => { const [x, y] = P(n.x, n.y);
+      return { id: String(n.id), x, y, z: +n.z || 0, in: [], out: [] }; });
     const nIdx = new Map(nodes.map((n, i) => [n.id, i]));
     const edges = [];
     for (const e of L.edges) {
@@ -641,8 +653,13 @@ class Viewer {
       const cum = polyCum(pts), glen = cum[cum.length - 1];
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+      /* 꺾인 점마다의 높이 — 두 끝 노드 사이를 길이 비로 나눈다 */
+      const za = nodes[a].z, zb = nodes[b].z;
+      const zs = (za || zb)
+        ? cum.map(c => za + (zb - za) * (glen > 0 ? c / glen : 0))
+        : null;
       const i = edges.length;
-      edges.push({ i, id: String(e.id ?? `${e.from}-${e.to}`), from: a, to: b, pts, cum, glen,
+      edges.push({ i, id: String(e.id ?? `${e.from}-${e.to}`), from: a, to: b, pts, cum, zs, glen,
         len: e.length_mm != null ? e.length_mm / 1000 : glen, vmax: (+e.max_speed_mpm || 300) / 60, zone: -1, bb: [x0, y0, x1, y1] });
       nodes[a].out.push(i);
       nodes[b].in.push(i);
@@ -652,22 +669,26 @@ class Viewer {
     const zones = [];
     for (const z of L.zones || []) {
       const zi = zones.length;
-      let bb = [Infinity, Infinity, -Infinity, -Infinity], cnt = 0;
+      let bb = [Infinity, Infinity, -Infinity, -Infinity], cnt = 0, zsum = 0;
       for (const id of z.edges || []) {
         const ei = eIdx.get(String(id));
         if (ei == null) continue;
         const e = edges[ei];
         e.zone = zi; cnt++;
+        zsum += (nodes[e.from].z + nodes[e.to].z) / 2;     // ★그 존이 선 높이
         bb = [Math.min(bb[0], e.bb[0]), Math.min(bb[1], e.bb[1]), Math.max(bb[2], e.bb[2]), Math.max(bb[3], e.bb[3])];
       }
+      const zz0 = z.z != null ? +z.z : (cnt ? zsum / cnt : 0);
       const pad = 1;
-      zones.push({ id: String(z.id), bb: cnt ? [bb[0] - pad, bb[1] - pad, bb[2] + pad, bb[3] + pad] : null });
+      zones.push({ id: String(z.id), z: zz0,      // ★그 존(동)이 선 높이
+        bb: cnt ? [bb[0] - pad, bb[1] - pad, bb[2] + pad, bb[3] + pad] : null });
     }
     let b = [Infinity, Infinity, -Infinity, -Infinity];
     for (const e of edges) b = [Math.min(b[0], e.bb[0]), Math.min(b[1], e.bb[1]), Math.max(b[2], e.bb[2]), Math.max(b[3], e.bb[3])];
     const ports = (L.ports || []).map(p => {
       const [x, y] = P(p.x, p.y);
-      return { ...p, x, y, w: +p.w || 3, d: +p.d || 4, h: +p.h || 2.4, rot: (+p.rot || 0) * fy, kind: p.kind || 'eq' };
+      return { ...p, x, y, z: +p.z || 0, w: +p.w || 3, d: +p.d || 4,
+               h: +p.h || 2.4, rot: (+p.rot || 0) * fy, kind: p.kind || 'eq' };
     });
     const walls = (L.walls || []).map(w => { const [x0, y0] = P(w.x0, w.y0), [x1, y1] = P(w.x1, w.y1); return { x0, y0, x1, y1 }; });
     for (const w of walls) b = [Math.min(b[0], w.x0, w.x1), Math.min(b[1], w.y0, w.y1), Math.max(b[2], w.x0, w.x1), Math.max(b[3], w.y0, w.y1)];
@@ -738,7 +759,9 @@ class Viewer {
     for (const e of G.edges) for (let j = 1; j < e.pts.length; j++) {
       const [x0, y0] = e.pts[j - 1], [x1, y1] = e.pts[j];
       const len = Math.hypot(x1 - x0, y1 - y0);
-      if (len > 0.01) segs.push([e.i, (x0 + x1) / 2, (y0 + y1) / 2, len, Math.atan2(y1 - y0, x1 - x0)]);
+      const mz = e.zs ? (e.zs[j - 1] + e.zs[j]) / 2 : 0;      // ★그 토막의 높이
+      if (len > 0.01) segs.push([e.i, (x0 + x1) / 2, (y0 + y1) / 2, len,
+                                 Math.atan2(y1 - y0, x1 - x0), mz]);
     }
     this.segs = segs;
     this.railGroup = new T.Group();
@@ -761,7 +784,7 @@ class Viewer {
       const e = G.edges[nd.out[0] ?? nd.in[0]];
       if (!e) continue;
       const a = Math.atan2(e.pts[1][1] - e.pts[0][1], e.pts[1][0] - e.pts[0][0]);
-      this.base(X(nd.x), H, Z(nd.y), -a);
+      this.base(X(nd.x), H + (nd.z || 0), Z(nd.y), -a);
       this.local(0, 0.16, 0, 0.22, 0.07, 0.7); this.put(clampM);
       this.local(0, 0.36, 0, 0.3, 0.3, 0.42); this.put(blk);
       this.local(0, 1.4, 0, 0.07, 1.8, 0.07); this.put(rod);
@@ -791,7 +814,7 @@ class Viewer {
     const tones = [0xeceae5, 0xdcd9d2, 0xe5e3de], fronts = [0xf4f3f0, 0xcfccc6, 0xdedcd7], lampCol = [0x3ddc84, 0xffb020, 0xff4d4f];
     for (const p of ports) {
       const w = p.w * ps, d = p.d * ps, h = p.h * ps;
-      this.base(X(p.x), 0, Z(p.y), -(p.rot || 0));
+      this.base(X(p.x), p.z || 0, Z(p.y), -(p.rot || 0));   // ★그 층 높이
       if (p.kind === 'stk') {
         this.local(0, h / 2, 0, w, h, d); this.put(eqBody, 0x2a2d32);
         const k = clamp(Math.floor(d / 1.15), 2, 12);
@@ -832,12 +855,15 @@ class Viewer {
       const m = new T.Mesh(new T.PlaneGeometry(x1 - x0, y1 - y0),
         new T.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.06, depthWrite: false, toneMapped: false }));
       m.rotation.x = -Math.PI / 2;
-      m.position.set(X((x0 + x1) / 2), 0.02, Z((y0 + y1) / 2));
+      const zz = z.z || 0;                 // ★그 존(동)이 선 높이
+      m.position.set(X((x0 + x1) / 2), zz + 0.02, Z((y0 + y1) / 2));
       m.userData.zi = zi;
       m.renderOrder = 1;
       W0.add(m);
       const lg = new T.BufferGeometry();
-      lg.setAttribute('position', new T.Float32BufferAttribute([X(x0), 0.03, Z(y0), X(x1), 0.03, Z(y0), X(x1), 0.03, Z(y1), X(x0), 0.03, Z(y1)], 3));
+      lg.setAttribute('position', new T.Float32BufferAttribute(
+        [X(x0), zz + 0.03, Z(y0), X(x1), zz + 0.03, Z(y0),
+         X(x1), zz + 0.03, Z(y1), X(x0), zz + 0.03, Z(y1)], 3));
       const line = new T.LineLoop(lg, new T.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.5 }));
       W0.add(line);
       m.userData.line = line;
@@ -867,8 +893,8 @@ class Viewer {
     const pg = { parent: g };
     const bars = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xc7ccd2, { r: 0.35, m: 0.6 }), segs.length * 2, pg);
     this.plate = this.IM(new T.BoxGeometry(1, 1, 1), this.mat(0xffffff, { r: 0.5, m: 0.2 }), segs.length, pg);
-    for (const [, mx, my, len, a] of segs) {
-      this.base(X(mx), H, Z(my), -a);
+    for (const [, mx, my, len, a, mz] of segs) {
+      this.base(X(mx), H + (mz || 0), Z(my), -a);
       this.local(0, 0, 0.21 * rs, len + 0.04, 0.13 * rs, 0.1 * rs); this.put(bars);
       this.local(0, 0, -0.21 * rs, len + 0.04, 0.13 * rs, 0.1 * rs); this.put(bars);
       this.local(0, 0.1 * rs, 0, len + 0.04, 0.05 * rs, 0.56 * rs); this.put(this.plate, 0x9aa1a9);
@@ -983,7 +1009,10 @@ class Viewer {
   }
   posOn(e, s) {
     const ed = this.G.edges[e];
-    return pointOnPoly(ed.pts, ed.cum, ed.len > 0 ? s / ed.len * ed.glen : 0);
+    const t = ed.len > 0 ? s / ed.len * ed.glen : 0;
+    const q = pointOnPoly(ed.pts, ed.cum, t);
+    q[3] = zOnPoly(ed.zs, ed.cum, t);        // ★그 자리의 높이
+    return q;
   }
   slotPos(sl, now) {
     const E = this.G.edges;
@@ -995,11 +1024,12 @@ class Viewer {
         const x = f.x + (t.x - f.x) * a, y = f.y + (t.y - f.y) * a;
         const mv = Math.hypot(t.x - f.x, t.y - f.y);
         const ang = t.ang ?? (mv > 0.01 ? Math.atan2(t.y - f.y, t.x - f.x) : (f.ang ?? 0));
-        return { e: -1, x, y, ang, moving: a < 1 };
+        return { e: -1, x, y, z: 0, ang, moving: a < 1 };
       }
       const p = a < 0.5 ? f : t;
-      if (p.e >= 0) { const q = this.posOn(p.e, p.s); return { e: p.e, s: p.s, x: q[0], y: q[1], ang: q[2], moving: a < 1 }; }
-      return { e: -1, x: p.x, y: p.y, ang: p.ang ?? 0, moving: a < 1 };
+      if (p.e >= 0) { const q = this.posOn(p.e, p.s);
+        return { e: p.e, s: p.s, x: q[0], y: q[1], z: q[3], ang: q[2], moving: a < 1 }; }
+      return { e: -1, x: p.x, y: p.y, z: 0, ang: p.ang ?? 0, moving: a < 1 };
     }
     e = f.e; s = f.s;
     if (a > 0) {
@@ -1025,7 +1055,7 @@ class Viewer {
       }
     }
     const q = this.posOn(e, Math.max(0, s - 0.5));
-    return { e, s, x: q[0], y: q[1], ang: q[2], moving: a < 1 };
+    return { e, s, x: q[0], y: q[1], z: q[3], ang: q[2], moving: a < 1 };
   }
 
   /* ---------------- 차량 그리기 ---------------- */
@@ -1046,7 +1076,7 @@ class Viewer {
       this.disp[k] = p;
       if (p.moving) moving = true;
       const px = p.x - this.cx, pz = p.y - this.cy, st = sl.st;
-      this.base(px, H, pz, -p.ang, vs);
+      this.base(px, H + (p.z || 0), pz, -p.ang, vs);
       this.local(0.27, 0.13, 0, 0.24, 0.26, 0.38); this.put(this.vTrol);
       this.local(-0.27, 0.13, 0, 0.24, 0.26, 0.38); this.put(this.vTrol);
       this.local(0, -0.12, 0, 0.72, 0.07, 0.1); this.put(this.vNeck);
