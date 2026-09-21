@@ -23,6 +23,12 @@ P = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(P)
 
 
+UP26 = ("/root/.claude/uploads/d02bef53-654d-5efc-a5eb-2c6bb7b9e067/"
+        "e033ebbd-spspss.ipynb_26.txt")          # 2026-09-21 세 열짜리
+UP24 = ("/root/.claude/uploads/d02bef53-654d-5efc-a5eb-2c6bb7b9e067/"
+        "730996b1-spspss.ipynb_24.txt")          # 2026-09-18 두 열짜리
+
+
 def _csv(fab, label, rows):
     head = (f"datetime,{label}_변경전_{fab}_area_score,"
             f"datetime,{label}_변경후_{fab}_area_score")
@@ -159,21 +165,22 @@ class 문서(unittest.TestCase):
         """★고객: "이상한거 하지마라. 실제 데이터 기반으로 하고 있는데."
 
         문서를 만든 코드로 다시 재면 검증이 아니다. 여기서는 올려주신 원본을
-        **처음부터 따로 세어** 문서에 찍힌 숫자와 맞춰 본다. 하나라도 다르면
-        문서가 자료에 없는 말을 하고 있다는 뜻이다.
+        **처음부터 따로 세어**(제 CSV 파서 · 제 등급 함수) 문서에 찍힌 숫자와
+        맞춰 본다. 하나라도 다르면 문서가 자료에 없는 말을 하고 있다는 뜻이다.
+        ★2026-09-21 자료부터 다리가 셋이다 — 세 다리를 다 센다.
         """
         import csv as _csvmod
+        import json as _json
         import re as _re
-        up = ("/root/.claude/uploads/d02bef53-654d-5efc-a5eb-2c6bb7b9e067/"
-              "730996b1-spspss.ipynb_24.txt")
+        from datetime import datetime as _dt
+        up = UP26
         if not os.path.isfile(up):
             self.skipTest("받은 자료가 이 환경에 없다")
-        import json as _json
-        from datetime import datetime as _dt
         nb = _json.load(io.open(up, encoding="utf-8"))
         cuts = {"M14": (36, 52, 72), "M16HUBROOM": (40, 55, 75)}
         docs = {"M14": "M14_20260913_장애분석.html",
                 "M16HUBROOM": "M16HUB_데드락_분석.html"}
+        seen = set()
         for cell in nb["cells"]:
             src = cell.get("source")
             if isinstance(src, list):
@@ -183,43 +190,99 @@ class 문서(unittest.TestCase):
             rows = list(_csvmod.reader(io.StringIO(src)))
             fab = _re.search(r"변경전_(.+?)_area_score", rows[0][1]).group(1).upper()
             c = cuts[fab]
+            seen.add(fab)
             d = []
             for r in rows[1:]:
                 if len(r) < 4 or not r[0].strip():
                     continue
-                t1 = _dt.strptime(r[0].strip(), "%Y-%m-%d %H:%M")
-                t2 = _dt.strptime(r[2].strip(), "%Y-%m-%d %H:%M")
-                if t1 == t2:
-                    d.append((t1, float(r[1]), float(r[3])))
+                d.append((_dt.strptime(r[0].strip(), "%Y-%m-%d %H:%M"),
+                          float(r[1]), float(r[2]), float(r[3])))
             self.assertEqual(len(d), 2880, f"{fab} 원본 행 수")
 
             def lv(v):
                 return 3 if v >= c[2] else 2 if v >= c[1] else 1 if v >= c[0] else 0
 
             h = io.open(os.path.join(_BASE, "docs", docs[fab]), encoding="utf-8").read()
-            sec = h[h.index("PIO_ERROR 룰 추가"):]
+            self.assertIn(P.MARK0, h, f"{fab} 문서에 절이 안 붙어 있다")
+            sec = h[h.index(P.MARK0):h.index(P.MARK1)]
             txt = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ", sec))
-            for tag, i in (("변경 전", 1), ("변경 후", 2)):
+
+            # 등급 분포 — 다리마다 한 줄 (정상 경계 위험 초위험 위험이상 쏠림% 최고 0점)
+            for tag, k in (("변경 전", 1), ("변경 후", 2), (r"\+1분 cnt", 3)):
                 cnt = [0, 0, 0, 0]
                 for r in d:
-                    cnt[lv(r[i])] += 1
-                m = _re.search(tag + r" (\d+) (\d+) (\d+) (\d+) (\d+) (\d+)%", txt)
-                self.assertIsNotNone(m, f"{fab} {tag} 표를 못 찾았다")
-                self.assertEqual([int(m.group(k)) for k in (1, 2, 3, 4)], cnt,
+                    cnt[lv(r[k])] += 1
+                m = _re.search(tag + r" (\d+) (\d+) (\d+) (\d+) (\d+) (\d+)% (\d+) ([\d,]+) ",
+                               txt)
+                self.assertIsNotNone(m, f"{fab} {tag} 줄을 못 찾았다")
+                self.assertEqual([int(m.group(x)) for x in (1, 2, 3, 4)], cnt,
                                  f"{fab} {tag} 등급 분포가 원본과 다르다")
                 self.assertEqual(int(m.group(5)), cnt[2] + cnt[3], f"{fab} {tag} 위험 이상")
-            up_n = sum(1 for _, b, a in d if c[0] <= b < c[1] <= a)
-            m = _re.search(r"경계 → 위험으로 올라간 분 (\d+)", txt)
-            if m:
-                self.assertEqual(int(m.group(1)), up_n, f"{fab} 경계→위험")
-            ch = sum(1 for _, b, a in d if b != a)
-            m = _re.search(r"([\d,]+)분 / ([\d,]+)분 \(", txt)
-            self.assertEqual(int(m.group(1).replace(",", "")), ch, f"{fab} 오른 분")
+                self.assertEqual(int(m.group(7)), int(max(r[k] for r in d)),
+                                 f"{fab} {tag} 최고점")
+                self.assertEqual(int(m.group(8).replace(",", "")),
+                                 sum(1 for r in d if r[k] == 0), f"{fab} {tag} 0점")
+
+            # 걸음마다 — 변경 후 → +1분 cnt
+            ch = sum(1 for r in d if r[2] != r[3])
+            upn = sum(1 for r in d if r[3] > r[2])
+            dn = sum(1 for r in d if r[3] < r[2])
+            mv = sum(1 for r in d if lv(r[2]) != lv(r[3]))
+            db = sum(1 for r in d if r[2] >= c[1])
+            da = sum(1 for r in d if r[3] >= c[1])
+            pu = sum(1 for r in d if c[0] <= r[2] < c[1] <= r[3])
+            pl = sum(1 for r in d if r[3] < c[1] <= r[2])
+            m = _re.search(r"변경 후 → \+1분 cnt ([\d,]+) ([\d,]+) ([\d,]+) ([\d,]+) "
+                           r"(\d+) → (\d+) (\d+) (\d+) ", txt)
+            self.assertIsNotNone(m, f"{fab} 걸음 표를 못 찾았다")
+            got = [int(m.group(x).replace(",", "")) for x in range(1, 9)]
+            self.assertEqual(got, [ch, upn, dn, mv, db, da, pu, pl],
+                             f"{fab} 걸음 숫자가 원본과 다르다")
+
+            # 0점이 된 분 중 앞 다리에서 경계 이상이던 분 — 이 숫자가 이 절의 핵심
+            zhot = sum(1 for r in d if r[3] == 0 and r[2] >= c[0])
+            m = _re.search(r"0점이 된 분 ([\d,]+) 그중 변경 후에 경계 이상이던 분 (\d+)", txt)
+            self.assertIsNotNone(m, f"{fab} 헛울림 표를 못 찾았다")
+            self.assertEqual(int(m.group(1).replace(",", "")),
+                             sum(1 for r in d if r[3] == 0), f"{fab} 0점 분")
+            self.assertEqual(int(m.group(2)), zhot, f"{fab} 0점인데 경계 이상이던 분")
+        self.assertEqual(seen, {"M14", "M16HUBROOM"}, "두 FAB 을 다 못 읽었다")
+
+    def test_사건_구간_숫자도_원본에서_다시_센다(self):
+        """★M14 무언정지 구간이 이 문서의 결론이다 — 따로 한 번 더 센다."""
+        import csv as _csvmod
+        import json as _json
+        import re as _re
+        from datetime import datetime as _dt
+        if not os.path.isfile(UP26):
+            self.skipTest("받은 자료가 이 환경에 없다")
+        nb = _json.load(io.open(UP26, encoding="utf-8"))
+        src = next("".join(c["source"]) if isinstance(c.get("source"), list)
+                   else c.get("source") for c in nb["cells"]
+                   if "변경전_m14" in "".join(c.get("source") or ""))
+        c = (36, 52, 72)
+        d = []
+        for r in list(_csvmod.reader(io.StringIO(src)))[1:]:
+            if len(r) < 4 or not r[0].strip():
+                continue
+            d.append((_dt.strptime(r[0].strip(), "%Y-%m-%d %H:%M"),
+                      float(r[1]), float(r[2]), float(r[3])))
+        w = [r for r in d if r[0].strftime("%Y-%m-%d") == "2026-09-13"
+             and "11:38" <= r[0].strftime("%H:%M") <= "14:30"]
+        self.assertEqual(len(w), 173, "무언정지 구간 길이")
+        cn = [sum(1 for r in w if r[k] >= c[1]) for k in (1, 2, 3)]
+        self.assertEqual(cn, [0, 0, 6],
+                         "무언정지 구간의 위험 분이 달라졌다 — 결론이 바뀐다")
+        h = io.open(os.path.join(_BASE, "docs", "M14_20260913_장애분석.html"),
+                    encoding="utf-8").read()
+        txt = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", " ",
+                                           h[h.index(P.MARK0):h.index(P.MARK1)]))
+        self.assertIn("11:38~14:30 173 46 → 46 → 57 0 → 0 → 6", txt,
+                      "문서에 찍힌 무언정지 줄이 원본과 다르다")
 
     def test_실제_받은_자료로도_돈다(self):
         """받은 노트북이 아직 있으면 그것으로도 한 번 돌려 본다."""
-        up = ("/root/.claude/uploads/d02bef53-654d-5efc-a5eb-2c6bb7b9e067/"
-              "730996b1-spspss.ipynb_24.txt")
+        up = UP24
         if not os.path.isfile(up):
             self.skipTest("받은 자료가 이 환경에 없다")
         sets = [p for p in (P.parse(c) for c in P.read_cells(up)) if p]
@@ -227,6 +290,214 @@ class 문서(unittest.TestCase):
         got = {s["fab"]: sum(P.stats(s["rows"])["moved"].values()) for s in sets}
         self.assertEqual(got, {"M16HUBROOM": 0, "M14": 1},
                          "등급이 바뀐 분 수가 달라졌다 — 결론이 바뀐다")
+
+
+class 세_번째_다리(unittest.TestCase):
+    """2026-09-21 — PIO 점수에 **그 분(1분) 값**을 같이 보게 하고 다시 받았다.
+
+    고객: "cnt 1분 추가했어. pio_error 1분 스코어값 변경하고 임계값 변경했어.
+           …M14, M16HUB 완전 잘 나왔는데, 헛울림도 많이 줄고."
+
+    ★다리가 둘에서 셋이 되면서 **무엇을 견주는지**가 바뀐다. (1,2) 로 계속
+      세면 '지난번에 뭐가 달라졌나' 를 적게 된다 — 숫자는 멀쩡해 보이는데
+      문서가 딴소리를 하게 된다. 그래서 여기서 pair_of 를 못박는다.
+    ★그리고 이번 다리는 **점수가 내려간 분이 더 많다**. 내려간 것을 안 세면
+      '좋아졌다' 만 남는다. 깎인 것이 잡음인지 신호인지를 같이 적게 한다.
+    """
+
+    def _s3(self, rows, fab="m14", label="t"):
+        head = (f"datetime,{label}_변경전_{fab}_area_score,"
+                f"{label}_변경후_{fab}_area_score,"
+                f"{label}_추가(1분cnt추가)_{fab}_area_score")
+        body = "\n".join(f"{t},{a},{b},{c}" for t, a, b, c in rows)
+        return P.parse(head + "\n" + body)
+
+    def _rows(self, day="2026-09-13"):
+        return [(f"{day} {h:02d}:{m:02d}", 30 + (h % 5) * 6, 30 + (h % 5) * 6,
+                 30 + (h % 5) * 6 + (14 if m % 7 == 0 else -6))
+                for h in range(24) for m in range(60)]
+
+    # ── 읽기 ────────────────────────────────────────────────────
+    def test_세_열짜리를_읽는다(self):
+        d = self._s3([("2026-09-13 11:38", 21, 29, 35),
+                      ("2026-09-13 11:39", 30, 30, 12)])
+        self.assertEqual(d["legs"], ["변경 전", "변경 후", "+1분 cnt"])
+        self.assertEqual(len(d["rows"]), 2)
+        self.assertEqual(d["rows"][0][1:], (21.0, 29.0, 35.0))
+        self.assertEqual(d["skew"], 0, "시각 열이 하나면 어긋날 수가 없다")
+
+    def test_두_열짜리는_예전대로_읽는다(self):
+        d = P.parse(_csv("m14", "9월", [("2026-09-13 11:38", 21, 29)]))
+        self.assertEqual(d["legs"], ["변경 전", "변경 후"])
+        self.assertEqual(len(d["rows"][0]), 3)
+
+    def test_마지막_두_다리를_견준다(self):
+        """★이걸 놓치면 문서가 조용히 지난번 얘기를 한다."""
+        self.assertEqual(P.pair_of({"legs": ["a", "b"]}), (1, 2))
+        self.assertEqual(P.pair_of({"legs": ["a", "b", "c"]}), (2, 3))
+        self.assertEqual(P.pair_of({}), (1, 2), "다리 정보가 없으면 예전대로")
+
+    def test_견주는_다리가_바뀌면_숫자도_바뀐다(self):
+        from datetime import datetime as dt
+        rows = [(dt(2026, 9, 13, 11, m), 40.0, 40.0, 55.0) for m in range(10)]
+        self.assertEqual(P.promote(rows, (36, 52, 72), (1, 2))["after"]["danger"], 0)
+        self.assertEqual(P.promote(rows, (36, 52, 72), (2, 3))["after"]["danger"], 10)
+
+    # ── 내려간 것도 센다 ────────────────────────────────────────
+    def test_위험에서_내려온_분을_센다(self):
+        from datetime import datetime as dt
+        rows = [(dt(2026, 9, 13, 11, m), 40.0, 55.0, 40.0) for m in range(4)]
+        pr = P.promote(rows, (36, 52, 72), (2, 3))
+        self.assertEqual(len(pr["lost"]), 4)
+        self.assertEqual(len(pr["up"]), 0)
+
+    def test_올린_폭_평균이라고_안_쓴다(self):
+        """★이번 다리는 평균이 음수다. 칸 이름이 '올린 폭' 이면 거짓말이 된다."""
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertNotIn("올린 폭 평균", sec)
+        for w in ("바뀐 폭 평균", "제일 많이 내린 폭", "내린 분"):
+            self.assertIn(w, sec, w)
+
+    def test_0점이_된_분이_무엇이었는지_적는다(self):
+        """★깎인 것이 잡음인지 신호인지 — 이걸 안 적으면 '좋아졌다' 만 남는다."""
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertIn("⑤ 내려간 분은 어디였나", sec)
+        self.assertIn("그중 변경 후에 경계 이상이던 분", sec)
+
+    def test_경계_이상이던_분이_0점이_되면_붉게_쓴다(self):
+        from datetime import datetime as dt
+        rows = [(f"2026-09-13 11:{m:02d}", 40, 40, 0) for m in range(30)]
+        sec = P.fab_section(self._s3(rows))
+        i = sec.index("0점이 된 분")
+        self.assertIn('class="bad"', sec[i:i + 400],
+                      "경계 이상이던 분이 0점이 됐는데 조용히 넘어갔다")
+
+    # ── 그림 ────────────────────────────────────────────────────
+    def test_칸이_다리마다_하나씩(self):
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertEqual(sec.count("<polyline"), 3, "다리마다 곡선 하나씩")
+        for t in ("① 변경 전", "② 변경 후", "③ +1분 cnt", "④ 차이(+1분 cnt − 변경 후)"):
+            self.assertIn(t, sec, t)
+
+    def test_세_칸이_같은_자를_쓴다(self):
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertEqual(sec.count(">100<"), 3, "칸마다 100 눈금")
+
+    def test_내려간_자리도_그린다(self):
+        """★내려간 것을 안 그리면 '헛울림이 줄었다' 를 눈으로 못 본다."""
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertIn("#0ea5e9", sec, "내려간 막대 색이 없다")
+        self.assertIn("내려간 자리", sec)
+
+    def test_세_칸_모두_같은_빨강으로_칠한다(self):
+        """★칸끼리 '빨간 면이 얼마나 늘었나' 를 견주는 그림이다 —
+        칸마다 색이 다르면 넓이를 견줄 수 없다."""
+        rows = [(f"2026-09-13 11:{m:02d}", 55, 60, 65) for m in range(30)]
+        sec = P.fab_section(self._s3(rows))
+        i = sec.index("<svg")
+        j = sec.index("</svg>")
+        self.assertEqual(sec[i:j].count('fill="#b91c1c" opacity=".9"'), 3)
+
+    # ── 덩어리 ──────────────────────────────────────────────────
+    def test_덩어리는_가장_가까운_것끼리_짝짓는다(self):
+        """★앞에서부터 집어가면 2분짜리가 먼 덩어리를 채가고, 정작 그 자리에
+        있던 덩어리가 '사라짐' 으로 찍힌다 (M14 9/12 17:59 ↔ 18:22)."""
+        from datetime import datetime as dt
+        from datetime import timedelta as td
+        def mk(h, m, n):
+            b = dt(2026, 9, 12, h, m)
+            return {"beg": b, "end": b + td(minutes=n - 1), "n": n, "hi": 60}
+        bb = [mk(17, 59, 2), mk(18, 22, 15)]
+        aa = [mk(18, 22, 14)]
+        pr = P.match_blocks(bb, aa)
+        d = {(p[0] or {}).get("beg"): p[1] for p in pr}
+        self.assertIsNone(d[dt(2026, 9, 12, 17, 59)], "2분짜리가 먼 덩어리를 채갔다")
+        self.assertIsNotNone(d[dt(2026, 9, 12, 18, 22)])
+
+    def test_뭉친_것을_사라졌다고_안_쓴다(self):
+        """★둘이 하나로 뭉치면 1:1 짝짓기에서 한쪽이 '사라짐' 으로 찍힌다.
+        시간이 겹치면 없어진 게 아니라 뭉친 것이다."""
+        rows = ([(f"2026-09-12 21:{m:02d}", 40, 40, 60) for m in range(32, 59)]
+                + [(f"2026-09-12 22:{m:02d}", 40, 60, 40) for m in range(0, 6)]
+                + [(f"2026-09-12 23:{m:02d}", 10, 10, 10) for m in range(0, 30)])
+        rows = [(t, a, b, c) for t, a, b, c in rows]
+        sec = P.fab_section(self._s3(rows))
+        i = sec.index("④ 언제부터 울렸나")
+        self.assertIn("합쳐짐", sec[i:], "뭉친 것을 사라졌다고 썼다")
+
+    def test_덩어리_표에_첫_경보가_있다(self):
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertIn("④ 언제부터 울렸나", sec)
+        self.assertIn("첫 경보", sec)
+
+    # ── 변경내역서 옮겨적기 ─────────────────────────────────────
+    def test_변경내역서_값을_그대로_옮겼다(self):
+        """★구간표를 잘못 옮기면 문서가 남의 숫자를 말하게 된다.
+        고객이 준 변경내역서에서 다시 읽어 대조한다."""
+        import re as _re
+        doc = ("/root/.claude/uploads/d02bef53-654d-5efc-a5eb-2c6bb7b9e067/"
+               "e15ecd0c-_____20260921.html")
+        if not os.path.isfile(doc):
+            self.skipTest("변경내역서가 이 환경에 없다")
+        h = io.open(doc, encoding="utf-8").read()
+        i = h.index("FAB별 구간표")
+        tbl = h[i:h.index("</table>", i)]
+        got = {}
+        for fab, b10, b1, cap in _re.findall(
+                r"<tr><td>(\w+)</td><td>([\d·]+)</td><td>([^<]+)</td>"
+                r"<td[^>]*>(\d+)</td></tr>", tbl):
+            nums = lambda t: tuple(int(x) for x in _re.findall(r"\d+", t.split("(")[0]))
+            got[fab] = {"b10": nums(b10), "b1": nums(b1), "cap": int(cap)}
+        self.assertTrue(got, "변경내역서에서 구간표를 못 읽었다")
+        for fab, v in got.items():
+            self.assertIn(fab, P.PIO_1MIN, f"{fab} 구간표가 빠졌다")
+            self.assertEqual(P.PIO_1MIN[fab], v, f"{fab} 구간표가 변경내역서와 다르다")
+        self.assertEqual(set(got), set(P.PIO_1MIN), "FAB 수가 다르다")
+        self.assertEqual(P.PIO_1MIN["M16B"]["cap"], 5, "M16B 만 상한 5 다")
+
+    def test_임계를_안_바꾼_FAB_을_문서에_적는다(self):
+        """★이 두 FAB 은 임계를 하나도 안 바꿨다. 그걸 안 적으면 읽는 사람이
+        숫자가 움직인 몫을 임계 탓으로 읽는다."""
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertIn("임계는 이번에 하나도 안 바꿨습니다", sec)
+        self.assertIn("M14", P.PIO_TH_UNTOUCHED)
+        self.assertIn("M16HUB", P.PIO_TH_UNTOUCHED)
+
+    def test_지난_걸음도_문서에_남긴다(self):
+        """★①② 칸이 마지막 걸음만 재게 됐다 — 지난 걸음(전 → 후)을 잃으면
+        문서 한 장으로 다 못 읽는다."""
+        sec = P.fab_section(self._s3(self._rows()))
+        self.assertIn("걸음마다 무엇이 달라졌나", sec)
+        self.assertIn("변경 전 → 변경 후", sec)
+        self.assertIn("변경 후 → +1분 cnt", sec)
+
+    # ── 실제 자료 ───────────────────────────────────────────────
+    def test_실제_받은_새_자료로_돈다(self):
+        if not os.path.isfile(UP26):
+            self.skipTest("받은 자료가 이 환경에 없다")
+        sets = [p for p in (P.parse(c) for c in P.read_cells(UP26)) if p]
+        self.assertEqual({s["fab"] for s in sets}, {"M14", "M16HUBROOM"})
+        got = {}
+        for s in sets:
+            c = P.cuts_of(s["fab"])
+            pr = P.promote(s["rows"], c, P.pair_of(s))
+            got[s["fab"]] = (pr["before"]["danger"], pr["after"]["danger"],
+                             len(pr["up"]), len(pr["lost"]))
+            self.assertEqual(len(s["rows"]), 2880, s["fab"])
+            self.assertEqual(s["legs"], ["변경 전", "변경 후", "+1분 cnt"])
+        self.assertEqual(got, {"M14": (82, 120, 41, 3),
+                               "M16HUBROOM": (22, 58, 49, 13)},
+                         "위험 분 수가 달라졌다 — 결론이 바뀐다")
+
+    def test_좋아졌다고_부를_만한_자료다(self):
+        """★'좋아졌다' 는 위험이 늘고 경계에서 올라온 것이 5분 이상일 때만
+        쓴다. 이번 자료가 그 기준을 넘는지 못박아 둔다."""
+        if not os.path.isfile(UP26):
+            self.skipTest("받은 자료가 이 환경에 없다")
+        for s in [p for p in (P.parse(c) for c in P.read_cells(UP26)) if p]:
+            sec = P.fab_section(s)
+            self.assertIn("좋아졌습니다", sec, s["fab"])
+            self.assertIn("note good", sec, s["fab"])
 
 
 if __name__ == "__main__":
