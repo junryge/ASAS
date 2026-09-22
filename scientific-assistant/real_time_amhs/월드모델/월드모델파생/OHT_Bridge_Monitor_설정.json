@@ -165930,6 +165930,9 @@
   },
   "kpi": {
    "hide": true
+  },
+  "header": {
+   "hide": true
   }
  },
  "texts": {
@@ -165937,7 +165940,7 @@
   "hint": "DRAG TO ORBIT · CTRL+DRAG TO MOVE · SCROLL TO ZOOM"
  },
  "builtAt": "2026-09-21T13:22:29.000Z",
- "savedAt": "2026-09-21T22:56:29.000Z",
+ "savedAt": "2026-09-22T01:00:18.000Z",
  "view": {
   "pan": [
    -123,

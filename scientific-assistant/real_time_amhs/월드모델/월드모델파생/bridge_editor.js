@@ -656,7 +656,8 @@
   }
 
   function drawView() {
-    var areas = [['aside', '오른쪽 열 (BRIDGE STATUS · ACTIVE ALARM · HUB THROUGHPUT)'], ['kpi', '위 KPI (IN TRANSIT · CAPACITY · ALARM · LOCAL)'],
+    var areas = [['header', '맨 위 제목 줄 (AMHS · INTER-BUILDING BRIDGE / 제목) — ★KPI 도 이 안에 있다'],
+                 ['aside', '오른쪽 열 (BRIDGE STATUS · ACTIVE ALARM · HUB THROUGHPUT)'], ['kpi', '위 KPI (IN TRANSIT · CAPACITY · ALARM · LOCAL)'],
                  ['legend', '범례 (ISOMETRIC VIEW · UP · DOWN · ALARM)'], ['hint', '안내 (DRAG TO ORBIT …)']];
     var h = '<div class="bm-item"><div class="bm-row"><label style="flex:1">제목 <input type="text" style="flex:1" data-path="text.title" value="' +
       esc(CFG.texts.title || '') + '" placeholder="' + esc(origText('title')) + '"></label></div>' +

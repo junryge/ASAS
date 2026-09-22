@@ -19,7 +19,9 @@
   "현재 마우스로 움직이는 왼쪽으로 하는 부분은 ctrl 누르면 변경되게 해주라" ·
   "패널 M16HUBOHT 라고 있는데 M16HUBROOM 이라고 표기 변경해주라" ·
   "배경색상이 어두워서 기존에 다크,화이트,네이비,고대비 적용 가능하게 해주라" ·
-  "패널 제목이 안보이네 이거는 무조건 흰색으로 해주지".
+  "패널 제목이 안보이네 이거는 무조건 흰색으로 해주지" ·
+  "맨위에 AMHS · INTER-BUILDING BRIDGE / FAB별 실시간 상황표 이거 삭제해라
+   아예 글자, 그러면 조금 더 넣어지겠지".
 
 어떻게 되어 있나
 ────────────────────────────────────────────────────────────────────
@@ -90,7 +92,8 @@ CARDS = {
     "M16HUBOHT": dict(name="M16HUBROOM"),         # "M16HUBOHT → M16HUBROOM 으로 표기 변경"
     "M14B":     dict(dx=-320, dy=420, dz=-150),   # "M14B 패널 아래로 그리고 앞으로" — 보는 쪽(판 왼쪽 앞) 밖으로 빼서 레일과 안 겹친다
 }
-AREAS = {"aside": dict(hide=True),                # "오른쪽 열 — 방해된다"
+AREAS = {"header": dict(hide=True),               # "맨위에 … 이거 삭제해라 아예 글자" — 무대가 그만큼 넓어진다
+         "aside": dict(hide=True),                # "오른쪽 열 — 방해된다"
          "legend": dict(hide=True),               # "ISOMETRIC VIEW 범례 삭제"
          "kpi": dict(hide=True)}                  # "IN TRANSIT · CAPACITY · ALARM · LOCAL 삭제 — 필요없어"
 TEXTS = {"title": "FAB별 실시간 상황표",           # "동간 브릿지 통합 반송 현황 말고"
@@ -98,6 +101,9 @@ TEXTS = {"title": "FAB별 실시간 상황표",           # "동간 브릿지 �
 
 # ── 틀에서 이름표 달 자리 (고객 마크업 그대로의 앞머리) ──────────────────
 AREA_FIND = {
+    # ★머리 줄 — 제목(AMHS · INTER-BUILDING BRIDGE / 동간 브릿지 통합 반송 현황) 과
+    #   KPI 가 **같은 <header> 안**에 있다. 머리를 끄면 KPI 도 같이 꺼진다 (화면 설명에 밝혀 뒀다).
+    "header":  '<header style="display:flex;align-items:flex-end',
     "aside":   '<aside style="flex:1 1 240px',
     "kpi":     '<div style="display:flex;gap:9px;flex-wrap:wrap">',
     "legend":  '<div style="position:absolute;left:18px;bottom:34px;',
