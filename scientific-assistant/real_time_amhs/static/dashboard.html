@@ -1142,6 +1142,7 @@
     <button data-tab="analysis">LLM 모델 분석</button>
     <button data-tab="policy">정책</button>
     <button data-tab="report">리포트·피드백</button>
+    <button data-tab="ui">UI대쉬보드</button>
   </div>
   <div class="chan">
     <span><i id="ch-lp"></i><span id="ch-lp-tx">로그프레소</span></span>
@@ -1476,6 +1477,30 @@
 </div>
 
 <!-- ── 정책 ── -->
+<!-- ── UI대쉬보드 — FAB별 실시간 상황표 (월드모델파생에서 만든 그 화면) ──
+     ★7MB 짜리 한 장이라 **탭을 처음 열 때** 비로소 싣는다 (initUi).
+       관제는 며칠씩 띄워 두는 화면이라, 안 보는 탭을 미리 싣지 않는다. -->
+<div class="page hidden" id="tab-ui">
+  <div class="tabhead">
+    <div class="eyebrow">UI대쉬보드</div>
+    <p>동간 브릿지 <b>FAB별 실시간 상황표</b>입니다 — 판마다 그 FAB 의 실제 아이소메트리가 깔려 있고,
+       화면 안 <b>✎ 수정</b> 에서 바탕색·패널·맵을 고칠 수 있습니다.</p>
+  </div>
+  <div class="card">
+    <h2>FAB별 실시간 상황표
+      <span class="note">— 왼쪽 끌기 돌리기 · Ctrl + 끌기 이동 · 휠 줌</span>
+      <button class="act" id="btnuiopen" style="margin-left:auto"
+              title="이 화면만 따로 큰 창으로 엽니다">새 창으로 열기</button>
+      <button class="act" id="btnuireload" title="상황표를 다시 싣습니다">다시 싣기</button>
+    </h2>
+    <div class="bd" style="padding:0">
+      <iframe id="uiframe" title="FAB별 실시간 상황표"
+              style="width:100%;height:calc(100vh - 300px);min-height:620px;border:0;
+                     border-radius:0 0 20px 20px;background:#06080c;display:block"></iframe>
+    </div>
+  </div>
+</div>
+
 <div class="page hidden" id="tab-policy">
   <div class="tabhead">
     <div class="eyebrow">정책</div>
@@ -2501,7 +2526,7 @@ function goPolicyTab(){
 /* 탭 */
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
-  ['live','past','ml','analysis','report','policy'].forEach(t =>
+  ['live','past','ml','analysis','report','ui','policy'].forEach(t =>
     $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
   // ★ML 탭을 떠나면 자동 갱신을 멈춘다. 하루 종일 켜 두는 화면이라,
   //   안 보는 탭이 계속 요청을 던지면 그만큼 쓸데없는 부하다.
@@ -2513,6 +2538,8 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     initAnalysis();
   }else if(b.dataset.tab==='ml'){
     initMl();
+  }else if(b.dataset.tab==='ui'){
+    initUi();
   }else if(b.dataset.tab==='policy'){
     initScorePolicy();
     initScoreTune();
@@ -2523,6 +2550,26 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     renderLlmNow(ACC);                   // 그 외 탭 = 오늘 최근 판단
   }
 });
+
+/* ══════════ UI대쉬보드 — FAB별 실시간 상황표 ══════════
+   월드모델파생에서 만든 그 화면(OHT_Bridge_Monitor.html)을 관제가 그대로 내준다.
+   ★한 장이 7MB 다 — **탭을 처음 열 때** 비로소 싣는다. 관제는 며칠씩 띄워 두는
+     화면이라, 안 보는 탭을 미리 실으면 여는 값만 그만큼 는다.
+   ★iframe 으로 둔다 — 그 화면은 제 틀(React 번들)과 제 CSS 를 통째로 들고 있어서
+     관제 안에 풀어 넣으면 서로 스타일이 섞인다. */
+const UI_SRC = '/static/OHT_Bridge_Monitor.html';
+let UI_LOADED = false;
+function initUi(){
+  const f = $('#uiframe');
+  if(f && !UI_LOADED){ f.src = UI_SRC; UI_LOADED = true; }
+}
+if($('#btnuiopen')) $('#btnuiopen').onclick = () => window.open(UI_SRC, '_blank');
+if($('#btnuireload')) $('#btnuireload').onclick = () => {
+  const f = $('#uiframe');
+  if(!f) return;
+  f.src = 'about:blank';
+  setTimeout(() => { f.src = UI_SRC; }, 60);   // about:blank 를 거쳐야 정말 다시 싣는다
+};
 
 /* ══════════ 🧪 분석 탭 — 4-LLM 병렬 분석 ══════════
    ①위험도 종합 ②구역 진단 ③전파 경로 ④조치 요약 이 병렬로 돌고
