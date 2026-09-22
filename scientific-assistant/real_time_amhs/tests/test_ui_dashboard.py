@@ -360,5 +360,68 @@ class 바탕색은_관제_것을_쓴다(unittest.TestCase):
         self.assertIn("grid: { col: '%s'" % self._token("contrast", "cy"), self.h)
 
     def test_다크는_아무것도_안_덮는다(self):
-        """틀이 원래 쓰던 색 그대로 — 규칙을 아예 안 만든다."""
-        self.assertIn("{ name: '다크', bg: {} }", self.h)
+        """틀이 원래 쓰던 색 그대로 — 색 규칙을 아예 안 만든다.
+        (그래프 테마 이름만 들고 있다. bgCss 는 page/stage/grid/glow/light 만 보므로
+         theme 이 있어도 규칙은 한 줄도 안 나온다.)"""
+        m = re.search(r"\{ name: '다크', bg: (\{[^}]*\}) \}", self.h)
+        self.assertTrue(m, "다크 칸을 못 찾았다")
+        for k in ("page", "stage", "grid", "glow", "light"):
+            self.assertNotIn(k, m.group(1), "다크가 " + k + " 를 덮는다")
+        self.assertIn("theme: 'dark'", m.group(1))
+
+
+class FAB_더블클릭하면_그래프(unittest.TestCase):
+    """고객: "fab을 더블 클릭하면 오른쪽에 fab 관련 그래프가 나오도록 해주라".
+
+    관제의 /api/graph 가 SVG 를 통째로 내준다 — 관제 목록에서 행을 더블클릭할 때
+    뜨는 그 구간 그래프와 **같은 그림**이다. 여기서 다시 그리지 않는다.
+    graphs.render 가 fabs 를 받으면 "그 FAB 의 영역점수를 스코어 패널에 겹쳐" 그린다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("static", MON)
+
+    def test_판도_패널도_더블클릭을_받는다(self):
+        self.assertIn("document.addEventListener('dblclick'", self.h)
+        self.assertIn("e.target.closest('[data-bm-card]')", self.h)
+        self.assertIn("e.target.closest('[data-bm-plate]')", self.h)
+
+    def test_판과_관제_FAB_이_짝이다(self):
+        want = "{ m14b: 'M14B', m14a: 'M14', m16hub: 'M16HUB', m16a: 'M16A', m16b: 'M16B' }"
+        self.assertIn("var PLATE_FAB = " + want, self.h)
+
+    def test_관제_그래프를_그대로_쓴다(self):
+        """★여기서 다시 그리면 관제 그래프와 다른 그림이 두 벌 생긴다."""
+        self.assertIn("location.origin + '/api/graph' + q", self.h)
+        self.assertNotIn("function graphRender", self.h)
+
+    def test_그_FAB_만_그린다(self):
+        self.assertIn("'&fabs=' + encodeURIComponent(GRAPH_FAB)", self.h)
+
+    def test_등급_밴드를_그_FAB_컷으로(self):
+        """★sys 를 안 넘기면 ALL 컷으로 칠해져, 패널에 적힌 경계값과 그래프가
+           서로 다른 말을 한다."""
+        self.assertIn("'?sys=' + encodeURIComponent(GRAPH_FAB)", self.h)
+
+    def test_자료_시각_기준이다(self):
+        """★지금 시각이 아니라 관제가 준 at 을 기준으로 본다."""
+        self.assertIn("LIVE_AT = (data && data.at) || LIVE_AT;", self.h)
+        self.assertIn("'&at=' + encodeURIComponent(LIVE_AT.replace(' ', 'T'))", self.h)
+
+    def test_화면_색을_그래프에도_넘긴다(self):
+        """★안 넘기면 남색 화면 한가운데 검은 상자가 박힌다 (관제도 같은 이유로 넘긴다)."""
+        self.assertIn("var theme = (CFG.bg && CFG.bg.theme) || 'dark';", self.h)
+        self.assertIn("'&theme=' + encodeURIComponent(theme)", self.h)
+        for nm, th in (("다크", "dark"), ("네이비", "navy"), ("고대비", "contrast"), ("화이트", "light")):
+            self.assertIn("{ name: '%s', bg: { theme: '%s'" % (nm, th), self.h, nm)
+
+    def test_구간을_바꿀_수_있다(self):
+        self.assertIn("[[60, '1시간'], [180, '3시간'], [720, '12시간']]", self.h)
+
+    def test_점수를_다시_읽을_때_그래프도_새로(self):
+        self.assertIn("if (GRAPH_FAB) graphDraw();", self.h)
+
+    def test_화면_돌리기에_안_뺏긴다(self):
+        """★무대 위에 얹는 상자다 — 여기서 누른 것을 틀에 넘기면 화면이 돌아간다."""
+        self.assertIn("['mousedown', 'wheel', 'pointerdown', 'dblclick'].forEach", self.h)

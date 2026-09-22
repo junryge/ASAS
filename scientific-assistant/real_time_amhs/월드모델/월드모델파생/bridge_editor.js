@@ -72,14 +72,14 @@
        네이비 = :root[data-theme="navy"] · 고대비 = [data-theme="contrast"] 의
        --bg / --panel / --cy. 관제와 같은 화면으로 보이게 하는 것이 목적이다. */
   var BG_PRESETS = [
-    { name: '다크', bg: {} },                       // 틀이 원래 쓰던 색 그대로 (아무것도 안 덮는다)
-    { name: '네이비', bg: { page: { col: '#08131F' }, stage: { col: '#0E1E30' },
+    { name: '다크', bg: { theme: 'dark' } },         // 틀이 원래 쓰던 색 그대로 (아무것도 안 덮는다)
+    { name: '네이비', bg: { theme: 'navy', page: { col: '#08131F' }, stage: { col: '#0E1E30' },
                           grid: { col: '#54D2E0' }, glow: { col: '#54D2E0' } } },
-    { name: '고대비', bg: { page: { col: '#000000', flat: true, fg: '#FFFFFF' },
+    { name: '고대비', bg: { theme: 'contrast', page: { col: '#000000', flat: true, fg: '#FFFFFF' },
                           stage: { col: '#0A0A0A', flat: true },
                           grid: { col: '#5BE9F5', a: .16 }, glow: { hide: true } } },
     // 관제 [data-theme="light"] 의 --bg / --panel2 · light:true 가 위 LIGHT_CSS 를 건다
-    { name: '화이트', bg: { light: true, page: { col: '#D8DEE8', fg: '#0F1720' },
+    { name: '화이트', bg: { theme: 'light', light: true, page: { col: '#D8DEE8', fg: '#0F1720' },
                           stage: { col: '#C4CDDB' },
                           grid: { col: '#42526A', a: .13 }, glow: { col: '#42526A', a: .07 } } }
   ];
@@ -159,7 +159,8 @@
     });
     liveStart();                                    // 관제 점수 받아 오기
     window.__bm = { cfg: function () { return CFG; }, apply: applyAll, open: openUI,
-                    geoFromCache: geoFromCache, live: livePoll, liveApply: liveApply };
+                    geoFromCache: geoFromCache, live: livePoll, liveApply: liveApply,
+                    graph: graphOpen, graphClose: graphClose };
   }
 
   // 틀이 그린 모습을 떠 둔다 — 되돌릴 때 이것으로
@@ -274,6 +275,10 @@
     '.bm-clock b{color:#0d1620 !important}',
     '.bm-clock i{color:#5a6b7d !important}',
     '[data-bm-text="hint"]{color:#42546A !important}',
+    '.bm-graph{background:rgba(255,255,255,.96) !important;border-color:#B3BECD !important;color:#22303f !important}',
+    '.bm-ghead{border-bottom-color:#CBD4E0 !important}',
+    '.bm-ghead b{color:#0d1620 !important}',
+    '.bm-ghead button{background:#EDF1F7 !important;border-color:#B3BECD !important;color:#22303f !important}',
     // 도구줄은 **어둡게 둔다** — 단추마다 제 어두운 배경이 있어서, 밝게 뒤집으면
     //   어두운 단추 위에 어두운 글자가 된다 (한 번 그렇게 했다가 1.21 로 떨어졌다).
     //   판과 같은 수를 쓴다 — 뒤에 불투명한 어두운 바닥을 깔아 무대 빛만 막는다.
@@ -296,6 +301,8 @@
      ★관제가 안 내주면(더블클릭·관제 꺼짐) 아무것도 안 건드린다 — 틀의 숫자가 남는다.
        거짓 숫자를 만들어 내느니 원래 것을 두는 편이 낫다. */
   var CARD_FAB = { M14B: 'M14B', M14A: 'M14', M16HUBOHT: 'M16HUB', M166F: 'M16B', M16EUV: 'M16A' };
+  var PLATE_FAB = { m14b: 'M14B', m14a: 'M14', m16hub: 'M16HUB', m16a: 'M16A', m16b: 'M16B' };
+  var LIVE_AT = '';                                 // 관제가 준 마지막 자료 시각
   var LIVE_MS = 30000;
   var LIVE_COL = { '정상': '', '경계': '#ffce7a', '위험': '#ff6b6b', '초위험': '#ff3b3b' };
   var liveTimer = null, LIVE_BASE = null;
@@ -331,7 +338,9 @@
 
   function liveApply(data) {
     var rows = (data && data.rows) || [];
+    LIVE_AT = (data && data.at) || LIVE_AT;
     liveClock(data && data.at, data && data.day);
+    if (GRAPH_FAB) graphDraw();                     // 열려 있으면 그래프도 새 시각으로
     var by = {};
     (rows || []).forEach(function (r) { if (r && r.fab) by[String(r.fab).toUpperCase()] = r; });
     $$('[data-bm-card]').forEach(function (card) {
@@ -368,6 +377,88 @@
       .then(function (d) { if (d && d.ok && d.rows) liveApply(d); })
       .catch(function () {});                                // 안 되면 틀의 숫자 그대로
   }
+
+  /* ═══════ 판·패널 더블클릭 → 오른쪽에 그 FAB 그래프 ═══════
+     고객: "fab을 더블 클릭하면 오른쪽에 fab 관련 그래프가 나오도록 해주라".
+
+     관제의 /api/graph 가 **SVG 를 통째로** 내준다 — 관제 목록에서 행을
+     더블클릭할 때 뜨는 그 구간 그래프와 같은 그림이다. 여기서 다시 그리지 않는다.
+       ?at=      그 점수를 잰 시각 (관제가 준 것 — 지금 시각이 아니다)
+       ?minutes= 얼마나 거슬러 볼지
+       ?fabs=    그 FAB 만 (모르는 코드는 관제가 알아서 버린다)
+       ?theme=   화면과 같은 색 (dark·navy·contrast·light — graphs.THEMES 와 같은 말)
+     ★30초마다 점수를 다시 읽을 때 그래프도 같이 새로 그린다. */
+  var GRAPH_FAB = null, GRAPH_MIN = 60;
+  var GRAPH_SPANS = [[60, '1시간'], [180, '3시간'], [720, '12시간']];
+
+  function graphOpen(fab) {
+    if (!fab || !liveUrl()) return;
+    GRAPH_FAB = fab;
+    graphDraw();
+  }
+  function graphClose() {
+    GRAPH_FAB = null;
+    var e = $('.bm-graph');
+    if (e) e.remove();
+  }
+  function graphDraw() {
+    var stage = $('[data-bm-bg="stage"]') || sceneRoot();
+    if (!stage || !GRAPH_FAB) return;
+    var box = $('.bm-graph', stage);
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'bm-graph';
+      ['mousedown', 'wheel', 'pointerdown', 'dblclick'].forEach(function (ev) {
+        box.addEventListener(ev, function (e) { e.stopPropagation(); });   // 화면 돌리기·줌에 안 뺏긴다
+      });
+      box.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-g]');
+        if (!t) return;
+        e.stopPropagation();
+        var v = t.getAttribute('data-g');
+        if (v === 'x') { graphClose(); return; }
+        GRAPH_MIN = +v || 60;
+        graphDraw();
+      });
+      stage.appendChild(box);
+    }
+    var theme = (CFG.bg && CFG.bg.theme) || 'dark';
+    // ★sys 도 같이 넘긴다 — 관제는 ?sys= 로 그 시스템의 설정을 고르고, 등급 밴드를
+    //   그 FAB 의 컷으로 그린다. 안 넘기면 ALL 컷(48/60/80)으로 칠해져서 패널에
+    //   적힌 경계값(M14B 36)과 그래프 밴드가 서로 다른 말을 한다.
+    var q = '?sys=' + encodeURIComponent(GRAPH_FAB) +
+            '&fabs=' + encodeURIComponent(GRAPH_FAB) + '&minutes=' + GRAPH_MIN +
+            '&theme=' + encodeURIComponent(theme) +
+            (LIVE_AT ? '&at=' + encodeURIComponent(LIVE_AT.replace(' ', 'T')) : '');
+    box.innerHTML =
+      '<div class="bm-ghead"><b>' + esc(GRAPH_FAB) + '</b>' +
+      '<span class="bm-gsub">' + esc(LIVE_AT || '') + ' 기준</span>' +
+      '<span style="flex:1"></span>' +
+      GRAPH_SPANS.map(function (p) {
+        return '<button data-g="' + p[0] + '"' + (GRAPH_MIN === p[0] ? ' class="on"' : '') + '>' + p[1] + '</button>';
+      }).join('') +
+      '<button data-g="x" title="닫기">✕</button></div>' +
+      '<div class="bm-gbody"><img alt="' + esc(GRAPH_FAB) + ' 구간 그래프" src="' +
+        esc(location.origin + '/api/graph' + q) + '"></div>';
+  }
+
+  /* 더블클릭 — 판 위든 패널 위든 그 FAB 으로 연다.
+     ★판은 [data-bm-plate], 패널은 [data-bm-card] 다. 패널이 판 밖으로 나가 있어도
+       (M14B 처럼) 둘 다 같은 FAB 으로 열려야 한다. */
+  document.addEventListener('dblclick', function (e) {
+    if (!e.target.closest) return;
+    if (e.target.closest('.bm-ui') || e.target.closest('.bm-graph')) return;
+    var fab = null;
+    var card = e.target.closest('[data-bm-card]');
+    if (card) fab = CARD_FAB[card.getAttribute('data-bm-card')];
+    if (!fab) {
+      var pl = e.target.closest('[data-bm-plate]');
+      if (pl) fab = PLATE_FAB[pl.getAttribute('data-bm-plate')];
+    }
+    if (!fab) return;
+    e.preventDefault(); e.stopPropagation();
+    graphOpen(fab);
+  }, true);
 
   function liveStart() {
     if (liveTimer || !liveUrl()) return;
@@ -1130,6 +1221,21 @@
         + 'color:#cfe0ec;background:rgba(8,13,19,.62);border:1px solid rgba(90,120,146,.45);'
         + 'border-radius:7px;padding:5px 11px;backdrop-filter:blur(6px);white-space:nowrap}',
       '.bm-clock b{color:#fff;font-weight:700}',
+      // 오른쪽 그래프 서랍 — 고객: "fab을 더블 클릭하면 오른쪽에 fab 관련 그래프가"
+      '.bm-graph{position:absolute;right:12px;top:12px;bottom:12px;width:min(46%,560px);z-index:12;'
+        + 'display:flex;flex-direction:column;background:rgba(9,14,20,.94);border:1px solid #27374a;'
+        + 'border-radius:11px;box-shadow:-14px 0 40px rgba(0,0,0,.5);overflow:hidden;'
+        + 'font:12px/1.45 "IBM Plex Sans KR","Malgun Gothic",sans-serif;color:#cfe0ec}',
+      '.bm-ghead{display:flex;align-items:center;gap:7px;padding:9px 11px;border-bottom:1px solid #1c2a37}',
+      '.bm-ghead b{font-family:"IBM Plex Mono",monospace;font-size:14px;color:#fff;letter-spacing:.04em}',
+      '.bm-gsub{font-size:11px;color:#7d93a6}',
+      '.bm-ghead button{background:#121c26;border:1px solid #27374a;color:#cfe0ec;border-radius:6px;'
+        + 'padding:3px 9px;cursor:pointer;font:inherit;font-size:11.5px}',
+      '.bm-ghead button:hover{border-color:#3ad6c8;color:#fff}',
+      '.bm-ghead button.on{background:rgba(58,214,200,.16);border-color:rgba(58,214,200,.55);color:#bff6f0}',
+      '.bm-gbody{flex:1;overflow:auto;padding:8px}',
+      '.bm-gbody img{width:100%;display:block}',
+      '.bm-editing [data-bm-plate]{cursor:default}',
       '.bm-clock i{font-style:normal;color:#7d93a6;margin-left:8px}',
       '.bm-hl{outline:2px dashed #fff !important;outline-offset:3px;animation:bmblink .8s ease-in-out infinite}',
       '.bm-editing [data-bm-card]{cursor:move !important}',
