@@ -77,7 +77,11 @@
                           grid: { col: '#54D2E0' }, glow: { col: '#54D2E0' } } },
     { name: '고대비', bg: { page: { col: '#000000', flat: true, fg: '#FFFFFF' },
                           stage: { col: '#0A0A0A', flat: true },
-                          grid: { col: '#5BE9F5', a: .16 }, glow: { hide: true } } }
+                          grid: { col: '#5BE9F5', a: .16 }, glow: { hide: true } } },
+    // 관제 [data-theme="light"] 의 --bg / --panel2 · light:true 가 위 LIGHT_CSS 를 건다
+    { name: '화이트', bg: { light: true, page: { col: '#D8DEE8', fg: '#0F1720' },
+                          stage: { col: '#C4CDDB' },
+                          grid: { col: '#42526A', a: .13 }, glow: { col: '#42526A', a: .07 } } }
   ];
 
   function $(s, r) { return (r || document).querySelector(s); }
@@ -247,8 +251,34 @@
     if (w && w.hide) rule('glow', 'display:none');
     else if (w && (w.col || w.a != null))
       rule('glow', 'background:radial-gradient(60% 50% at 50% 45%,' + hexA(w.col || BG_DEF.glow, alpha(w, 'glow')) + ',transparent 70%)');
+    if (b.light) out.push(LIGHT_CSS);
     return out.join('\n');
   }
+
+  /* 밝은 바탕일 때 같이 뒤집어야 하는 것들 — 고객: "화이트 글자가 안보이네",
+     "화이트같은 거 색 잘어울리는걸로 해주면좋은데".
+
+     ★왜 바탕 한 칸으로 안 되나 — 판(plate)이 **반투명**이다
+       (linear-gradient(…, rgba(20,36,46,.72))). 무대를 밝히면 그 빛이 판을 뚫고
+       올라와, 판 위 글자(7F · 3F · M16 HUB ROOM)의 대비가 1.1 까지 떨어진다.
+       실제로 재 봤다 — 다크에서 3.2~4.3 이던 것이 흰 무대에선 1.1~1.5 였다.
+       무대를 어둡게 해 봐도 소용없다. 판이 비치는 것이 문제라서다.
+     ★그래서 **판 뒤에 불투명한 어두운 바닥**을 깐다. 판 자신의 색(FAB 별 청록·
+       앰버·빨강 틴트)은 그대로 위에 남고, 무대 빛만 막힌다. 판 위에 그린 것
+       (레일·설비·글자)은 어두운 판을 그대로 쓰니 다크와 똑같이 읽힌다.
+       → 방은 밝게, 판은 어둡게. */
+  var LIGHT_CSS = [
+    '[data-bm-plate]{background-color:#0E1821 !important}',
+    // 무대 위에 바로 놓인 글자들 — 이건 밝은 쪽으로 뒤집는다
+    '.bm-clock{background:rgba(255,255,255,.86) !important;border-color:rgba(70,92,116,.45) !important;color:#22303f !important}',
+    '.bm-clock b{color:#0d1620 !important}',
+    '.bm-clock i{color:#5a6b7d !important}',
+    '[data-bm-text="hint"]{color:#42546A !important}',
+    // 도구줄은 **어둡게 둔다** — 단추마다 제 어두운 배경이 있어서, 밝게 뒤집으면
+    //   어두운 단추 위에 어두운 글자가 된다 (한 번 그렇게 했다가 1.21 로 떨어졌다).
+    //   판과 같은 수를 쓴다 — 뒤에 불투명한 어두운 바닥을 깔아 무대 빛만 막는다.
+    '[data-bm-area="toolbar"]{background-color:#111A24 !important}'
+  ].join('\n');
 
   function applyBg() {
     var s = $('#bm-bg-style');

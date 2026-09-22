@@ -315,13 +315,38 @@ class 바탕색은_관제_것을_쓴다(unittest.TestCase):
         blk = re.search(r':root\[data-theme="%s"\]\{(.*?)\n  \}' % theme, self.d, re.S).group(1)
         return re.search(r'--%s:(#[0-9A-Fa-f]{6})' % name, blk).group(1)
 
-    def test_화이트를_뺐다(self):
-        self.assertNotIn("{ name: '화이트'", self.h)
-        self.assertNotIn("#eef2f7", self.h, "옛 화이트 색이 남아 있다")
-
-    def test_셋만_남았다(self):
+    def test_넷이다(self):
         names = re.findall(r"\{ name: '([^']+)', bg:", self.h)
-        self.assertEqual(names, ["다크", "네이비", "고대비"], names)
+        self.assertEqual(names, ["다크", "네이비", "고대비", "화이트"], names)
+
+    def test_옛_화이트는_버렸다(self):
+        """★바탕만 희게 하던 그 값이다. 판이 반투명이라 판 위 글자가 1.1 까지 떨어졌다."""
+        self.assertNotIn("#eef2f7", self.h)
+        self.assertNotIn("#fbfcfe", self.h)
+
+    def test_화이트도_관제_것을_쓴다(self):
+        self.assertIn("page: { col: '%s'" % self._token("light", "bg"), self.h)
+        self.assertIn("stage: { col: '%s' }" % self._token("light", "line"), self.h)
+        self.assertIn("fg: '%s' }" % self._token("light", "tx"), self.h)
+
+    def test_화이트는_판을_어둡게_둔다(self):
+        """★핵심. 판(plate)이 반투명이라 무대를 밝히면 그 빛이 판을 뚫고 올라와
+           판 위 글자(7F · 3F · M16 HUB ROOM)가 안 읽힌다. 판 뒤에 불투명한
+           어두운 바닥을 깔아 무대 빛만 막는다 — 방은 밝게, 판은 어둡게."""
+        self.assertIn("light: true", self.h)
+        self.assertIn("'[data-bm-plate]{background-color:#0E1821 !important}'", self.h)
+        self.assertIn("if (b.light) out.push(LIGHT_CSS);", self.h)
+
+    def test_화이트에서_무대_위_글자는_뒤집는다(self):
+        """무대 위에 바로 놓인 것(시각 배지·안내)은 밝은 쪽으로."""
+        self.assertIn(".bm-clock{background:rgba(255,255,255,.86)", self.h)
+        self.assertIn('[data-bm-text="hint"]{color:#42546A !important}', self.h)
+
+    def test_도구줄은_어둡게_둔다(self):
+        """★단추마다 제 어두운 배경이 있다 — 밝게 뒤집으면 어두운 단추에 어두운 글자가
+           된다 (한 번 그렇게 했다가 대비 1.21 로 떨어뜨렸다)."""
+        self.assertIn("'[data-bm-area=\"toolbar\"]{background-color:#111A24 !important}'", self.h)
+        self.assertNotIn('[data-bm-area="toolbar"] *{color:', self.h)
 
     def test_네이비는_관제_네이비_그대로(self):
         """★관제와 같은 화면으로 보이는 것이 목적이다 — 값을 지어내지 않는다."""
