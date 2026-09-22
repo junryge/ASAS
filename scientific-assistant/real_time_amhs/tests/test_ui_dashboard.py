@@ -295,3 +295,45 @@ class 패널_글자와_시각(unittest.TestCase):
         self.assertIn("var LIVE_MS = 30000;", self.h)
         self.assertIn("liveTimer = setInterval(livePoll, LIVE_MS);", self.h)
         self.assertIn("fetch(u, { cache: 'no-store' })", self.h)
+
+
+class 바탕색은_관제_것을_쓴다(unittest.TestCase):
+    """고객: "화이트 글자가 안보이네, 우리 화이트 빼자. 기존에 실시간 관제에서
+    사용하는 색상이 좋을것 같은데".
+
+    ★이 화면은 판(맵)·레일·패널이 **어두운 바탕에 밝은 선**이다. 바탕만 희게
+      하면 레일이 날아가고 판 글자도 안 읽힌다 — 바탕 한 칸으로 될 일이 아니었다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("static", MON)
+        cls.d = _read("static", "dashboard.html")
+
+    def _token(self, theme, name):
+        """관제 dashboard.html 의 :root[data-theme=…] 에서 토큰 하나를 읽는다."""
+        blk = re.search(r':root\[data-theme="%s"\]\{(.*?)\n  \}' % theme, self.d, re.S).group(1)
+        return re.search(r'--%s:(#[0-9A-Fa-f]{6})' % name, blk).group(1)
+
+    def test_화이트를_뺐다(self):
+        self.assertNotIn("{ name: '화이트'", self.h)
+        self.assertNotIn("#eef2f7", self.h, "옛 화이트 색이 남아 있다")
+
+    def test_셋만_남았다(self):
+        names = re.findall(r"\{ name: '([^']+)', bg:", self.h)
+        self.assertEqual(names, ["다크", "네이비", "고대비"], names)
+
+    def test_네이비는_관제_네이비_그대로(self):
+        """★관제와 같은 화면으로 보이는 것이 목적이다 — 값을 지어내지 않는다."""
+        self.assertIn("page: { col: '%s' }" % self._token("navy", "bg"), self.h)
+        self.assertIn("stage: { col: '%s' }" % self._token("navy", "panel"), self.h)
+        self.assertIn("grid: { col: '%s' }" % self._token("navy", "cy"), self.h)
+
+    def test_고대비는_관제_고대비_그대로(self):
+        self.assertIn("page: { col: '%s'" % self._token("contrast", "bg"), self.h)
+        self.assertIn("stage: { col: '%s'" % self._token("contrast", "panel"), self.h)
+        self.assertIn("grid: { col: '%s'" % self._token("contrast", "cy"), self.h)
+
+    def test_다크는_아무것도_안_덮는다(self):
+        """틀이 원래 쓰던 색 그대로 — 규칙을 아예 안 만든다."""
+        self.assertIn("{ name: '다크', bg: {} }", self.h)

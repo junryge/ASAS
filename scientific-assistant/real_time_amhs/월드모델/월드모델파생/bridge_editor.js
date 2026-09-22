@@ -61,15 +61,23 @@
   var BG_DEF = { page: '#121c28', stage: '#0c131b', grid: '#3ad6c8', glow: '#3ad6c8' };
   var BG_NAMES = { page: '바탕 (화면 전체)', stage: '무대 (판이 놓인 칸)', grid: '격자', glow: '은은한 빛' };
   var BG_FG = '#e8eff6';                       // 틀의 글자색
-  /* 고객: "배경색상이 어두워서 기존에 다크,화이트,네이비,고대비 적용 가능하게 해주라" */
+  /* 고객: "배경색상이 어두워서 기존에 다크,화이트,네이비,고대비 적용 가능하게 해주라"
+       → 뒤에 "화이트 글자가 안보이네, 우리 화이트 빼자. 기존에 실시간 관제에서
+         사용하는 색상이 좋을것 같은데".
+
+     ★화이트를 뺐다. 이 화면은 판(맵)도 레일도 패널도 **어두운 바탕에 밝은 선**으로
+       그려져 있다. 바탕만 희게 하면 레일이 흰 종이 위 연필 자국처럼 날아가고
+       판 글자(7F·3F…)도 안 읽힌다 — 바탕 한 칸으로 될 일이 아니었다.
+     ★남은 둘은 관제(static/dashboard.html)의 색 토큰을 **그대로** 가져왔다.
+       네이비 = :root[data-theme="navy"] · 고대비 = [data-theme="contrast"] 의
+       --bg / --panel / --cy. 관제와 같은 화면으로 보이게 하는 것이 목적이다. */
   var BG_PRESETS = [
     { name: '다크', bg: {} },                       // 틀이 원래 쓰던 색 그대로 (아무것도 안 덮는다)
-    { name: '화이트', bg: { page: { col: '#eef2f7', fg: '#16212e' }, stage: { col: '#fbfcfe' },
-                          grid: { col: '#54677c', a: .10 }, glow: { col: '#54677c', a: .06 } } },
-    { name: '네이비', bg: { page: { col: '#15294a' }, stage: { col: '#0f1e39' },
-                          grid: { col: '#7aa6ff' }, glow: { col: '#7aa6ff' } } },
-    { name: '고대비', bg: { page: { col: '#000000', flat: true, fg: '#ffffff' }, stage: { col: '#000000', flat: true },
-                          grid: { col: '#ffffff', a: .16 }, glow: { hide: true } } }
+    { name: '네이비', bg: { page: { col: '#08131F' }, stage: { col: '#0E1E30' },
+                          grid: { col: '#54D2E0' }, glow: { col: '#54D2E0' } } },
+    { name: '고대비', bg: { page: { col: '#000000', flat: true, fg: '#FFFFFF' },
+                          stage: { col: '#0A0A0A', flat: true },
+                          grid: { col: '#5BE9F5', a: .16 }, glow: { hide: true } } }
   ];
 
   function $(s, r) { return (r || document).querySelector(s); }
