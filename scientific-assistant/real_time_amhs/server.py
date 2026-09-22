@@ -1012,12 +1012,16 @@ def _persist_score_policy() -> str:
 #   하는지도, 어디를 고쳐야 하는지도 알 수 없었다(config.json 을 직접 고치고
 #   서버를 재시작해야 했다). 게이트웨이가 /v1/models 로 알려 주므로 그대로
 #   보여 주고 고르게 한다. 고른 값은 config.json 에 적어 재시작해도 남는다.
-def _persist_llm_model(model: str | None = None, roles: dict | None = None) -> str:
+def _persist_llm_model(model: str | None = None, roles: dict | None = None,
+                       enabled: bool | None = None,
+                       roles_on: dict | None = None) -> str:
     """고른 모델을 config.json 에 적는다 → 오류 글.
 
-    · model  — llm.model (판단·리포트에 쓰는 한 개)
-    · roles  — llm.analysis.roles.{p1,p2,p3,final}.model (4-LLM 파이프라인)
-    둘 다 같은 파일이라 **한 번에 읽고 한 번에 쓴다**. 따로 쓰면 뒤에 쓴 쪽이
+    · model    — llm.model (판단·리포트에 쓰는 한 개)
+    · roles    — llm.analysis.roles.{p1,p2,p3,final}.model (4-LLM 파이프라인)
+    · enabled  — llm.enabled (판단 모델 자체를 안 씀)
+    · roles_on — llm.analysis.roles.{id}.enabled (그 단계만 안 씀)
+    전부 같은 파일이라 **한 번에 읽고 한 번에 쓴다**. 따로 쓰면 뒤에 쓴 쪽이
     앞의 것을 덮는다 (실제로 그런 사고가 흔하다).
     """
     from lp_client import CONFIG_PATH
@@ -1027,11 +1031,17 @@ def _persist_llm_model(model: str | None = None, roles: dict | None = None) -> s
         lc = disk.setdefault("llm", {})
         if model:
             lc["model"] = model
+        if enabled is not None:
+            lc["enabled"] = bool(enabled)
         if roles:
             rr = lc.setdefault("analysis", {}).setdefault("roles", {})
             for sid, m in roles.items():
                 # ★통째로 갈아끼우지 않는다 — 각 단계의 _doc 설명이 날아간다
                 rr.setdefault(sid, {})["model"] = m
+        if roles_on:
+            rr = lc.setdefault("analysis", {}).setdefault("roles", {})
+            for sid, on in roles_on.items():
+                rr.setdefault(sid, {})["enabled"] = bool(on)
         tmp = CONFIG_PATH + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(disk, f, ensure_ascii=False, indent=2)
@@ -1040,6 +1050,21 @@ def _persist_llm_model(model: str | None = None, roles: dict | None = None) -> s
         return ""
     except Exception as e:                              # noqa: BLE001
         return f"{type(e).__name__}: {e}"
+
+
+def analysis_OFF() -> str:
+    import analysis
+    return analysis.OFF
+
+
+def _apply_roles_on(roles_on: dict) -> None:
+    """단계별 '사용 안 함' 을 메모리에 바로 적용 — 다음 분석부터 그대로 돈다."""
+    if not roles_on:
+        return
+    rr = (CFG.setdefault("llm", {}).setdefault("analysis", {})
+          .setdefault("roles", {}))
+    for sid, on in roles_on.items():
+        rr.setdefault(sid, {})["enabled"] = bool(on)
 
 
 def _apply_roles(roles: dict) -> None:
@@ -1073,14 +1098,20 @@ def api_llm_model():
         roles = []
         for sid, st in analysis.STAGES.items():
             m = analysis._stage_model(CFG, sid)
+            on = analysis._stage_on({**CFG, "llm": {**lc, "enabled": True}}, sid)
             roles.append({"id": sid, "name": st["name"], "icon": st["icon"],
                           "model": m,
+                          # 이 단계에 LLM 을 쓰나 (고객: "1차,2차,3차,최종도 마찬가지")
+                          "enabled": on,
                           # 그 모델이 지금 게이트웨이에 있나 — 없으면 화면이 빨갛게
-                          "ok": (m in names) if names else None})
+                          # ★안 쓰는 단계는 따지지 않는다 — 없는 이름이어도 상관없다
+                          "ok": None if not on else ((m in names) if names else None)})
         return jsonify({
             "model": cur, "url": lc.get("url") or "",
             "models_url": llm_client.models_url(CFG),
             "items": items, "error": err,
+            # 화면 select 가 이 값을 '사용 안 함' 칸으로 쓴다 (서버·화면이 같은 말)
+            "off_value": analysis.OFF,
             # 지금 값이 목록에 있나 — 없으면 화면이 빨갛게 알려 준다
             "ok_now": (cur in names) if names else None,
             "enabled": bool(lc.get("enabled", True)),
@@ -1095,23 +1126,32 @@ def api_llm_model():
         raw = b.get("roles") or {}
         if not isinstance(raw, dict):
             return jsonify({"error": "roles 는 {단계: 모델이름} 이어야 합니다"}), 400
-        roles = {}
+        roles, roles_on = {}, {}
         for sid, m in raw.items():
             if sid not in analysis.STAGES:
                 return jsonify({"error": f"모르는 단계: {sid}"}), 400
             m = str(m or "").strip()
+            # ★'(사용안함)' 은 그 단계를 끄라는 뜻이다 (고객: "1차,2차,3차,최종도
+            #   마찬가지야"). 모델 이름은 건드리지 않는다 — 다시 켤 때 쓰던 것이
+            #   그대로 돌아온다.
+            if m == analysis.OFF:
+                roles_on[sid] = False
+                continue
             if not m:
                 return jsonify({"error": f"{sid} 모델이 비었습니다"}), 400
             if len(m) > 200:
                 return jsonify({"error": f"{sid} 모델 이름이 너무 깁니다"}), 400
             roles[sid] = m
-        if not roles:
+            roles_on[sid] = True
+        if not roles and not roles_on:
             return jsonify({"error": "바꿀 단계가 없습니다"}), 400
         prev = {sid: analysis._stage_model(CFG, sid) for sid in roles}
         _apply_roles(roles)
+        _apply_roles_on(roles_on)
         if b.get("test"):
             # ★서로 다른 모델을 **각각** 불러 본다. 하나만 확인하면 나머지가
             #   없어진 이름이어도 그대로 저장돼 그 단계만 매번 실패한다.
+            #   ★끈 단계는 부르지 않는다 — 안 쓸 모델을 시험할 까닭이 없다.
             for sid, m in roles.items():
                 _, err = llm_client.chat([{"role": "user", "content": "핑"}],
                                          {**CFG, "llm": {**lc, "model": m}}, max_tokens=8)
@@ -1122,24 +1162,44 @@ def api_llm_model():
                                     "stage": sid, "applied": False}), 400
         saved, serr = False, ""
         if b.get("save", True):
-            serr = _persist_llm_model(roles=roles)
+            serr = _persist_llm_model(roles=roles, roles_on=roles_on)
             saved = not serr
         print("[LLM] 파이프라인 모델 → "
-              + " · ".join(f"{k}={v}" for k, v in roles.items())
+              + " · ".join([f"{k}={v}" for k, v in roles.items()]
+                           + [f"{k}=사용안함" for k, on in roles_on.items() if not on])
               + (" · 저장됨" if saved else "")
               + (f" · 저장 실패: {serr}" if serr else ""))
-        out = {"roles": roles, "applied": True, "saved": saved}
+        out = {"roles": roles, "roles_on": roles_on, "applied": True, "saved": saved}
         if serr:
             out["error"] = f"config.json 저장 실패 — {serr} (메모리에는 적용됨)"
             return jsonify(out), 500
         return jsonify(out)
 
     model = str(b.get("model") or "").strip()
+    # ★'(사용안함)' 은 LLM 판단을 안 쓴다는 뜻이다 (고객: "정책에서 llm판단 모델
+    #   사용안함 이라고 선택할수 있게해줘"). llm.enabled=false 는 llm_client.chat
+    #   이 이미 보고 있던 스위치라, 분당 판단·리포트·4단계가 한꺼번에 멎는다.
+    #   모델 이름은 그대로 둔다 — 다시 켤 때 쓰던 것이 돌아온다.
+    if model == __import__("analysis").OFF:
+        lc["enabled"] = False
+        saved, serr = False, ""
+        if b.get("save", True):
+            serr = _persist_llm_model(enabled=False)
+            saved = not serr
+        print("[LLM] 판단 모델 → 사용안함" + (" · 저장됨" if saved else "")
+              + (f" · 저장 실패: {serr}" if serr else ""))
+        out = {"model": analysis_OFF(), "enabled": False, "applied": True, "saved": saved}
+        if serr:
+            out["error"] = f"config.json 저장 실패 — {serr} (메모리에는 적용됨)"
+            return jsonify(out), 500
+        return jsonify(out)
     if not model:
         return jsonify({"error": "model 이 비었습니다"}), 400
     if len(model) > 200:
         return jsonify({"error": "model 이름이 너무 깁니다"}), 400
 
+    # 이름을 골랐다 = 다시 켠다
+    lc["enabled"] = True
     prev = lc.get("model")
     lc["model"] = model                     # 먼저 메모리에 (시험도 이 값으로)
     if b.get("test"):
@@ -1152,11 +1212,11 @@ def api_llm_model():
 
     saved, serr = False, ""
     if b.get("save", True):
-        serr = _persist_llm_model(model=model)
+        serr = _persist_llm_model(model=model, enabled=True)
         saved = not serr
     print(f"[LLM] 모델 → {model}" + (" · 저장됨" if saved else "")
           + (f" · 저장 실패: {serr}" if serr else ""))
-    out = {"model": model, "applied": True, "saved": saved}
+    out = {"model": model, "enabled": True, "applied": True, "saved": saved}
     if serr:
         out["error"] = f"config.json 저장 실패 — {serr} (메모리에는 적용됨)"
         return jsonify(out), 500

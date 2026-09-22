@@ -89,6 +89,28 @@ def _stage_model(cfg: dict, sid: str) -> str:
     return r.get("model") or STAGES[sid]["model"]
 
 
+# 사용 안 하는 단계에 적어 두는 이름 — 화면 select 의 값이자 config 에 남는 표시다.
+OFF = "(사용안함)"
+
+
+def _stage_on(cfg: dict, sid: str) -> bool:
+    """이 단계에 LLM 을 쓰나 — config.llm.analysis.roles.{id}.enabled (기본 켜짐).
+
+    ★고객: "정책에서 llm판단 모델 사용안함 이라고 선택할수 있게해줘.
+      1차,2차,3차,최종도 마찬가지야".
+    ★끈 단계는 **건너뛰고 그 단계의 대체 경로**(_fill_p1·_fill_p2·_fill_p3·
+      _fallback_final)를 그대로 쓴다. 원래 그 단계가 실패했을 때 쓰라고 만들어
+      둔 길이고, 통계로만 채우니 LLM 없이도 결과가 나온다. 새 길을 만들지 않는다.
+    ★llm.enabled 가 false 면 어느 단계든 꺼진 것으로 본다 — 전체를 끄는 스위치다
+      (llm_client.chat 도 같은 값을 본다).
+    """
+    lc = cfg.get("llm", {}) or {}
+    if not lc.get("enabled", True):
+        return False
+    r = ((lc.get("analysis") or {}).get("roles") or {}).get(sid) or {}
+    return bool(r.get("enabled", True))
+
+
 def _stage_cfg(cfg: dict, sid: str) -> dict:
     c = dict(cfg)
     lc = dict(cfg.get("llm", {}))
@@ -1158,60 +1180,82 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
     # ── 1차 (병렬) ──
     prog["roles"]["p1"]["status"] = f"분석중 0/{len(chunks)}"
     t1 = time.time()
-    obs, errs1, m1 = _stage1(chunks, cfg, prog, cancel)
+    # ★끈 단계는 모델을 아예 안 부르고 대체 경로로 간다 (_stage_on 주석 참고)
+    p1_on = _stage_on(cfg, "p1")
+    if p1_on:
+        obs, errs1, m1 = _stage1(chunks, cfg, prog, cancel)
+    else:
+        obs, errs1, m1 = [], [], []
     p1_filled = False
-    if not obs:                          # 전부 실패 → 통계로 채워 다음 단계를 살린다
+    if not obs:                          # 전부 실패(또는 끔) → 통계로 채워 다음 단계를 살린다
         obs = _fill_p1(chunks, seq, cfg)
         p1_filled = bool(obs)
     stages_out["p1"] = {"log": _LAST_LOG.get("p1") or [],
         "ok": bool(obs) and not p1_filled,
         "name": STAGES["p1"]["name"], "icon": STAGES["p1"]["icon"],
-        "model": ", ".join(m1) or _stage_model(cfg, "p1"),
+        "model": (OFF if not p1_on else (", ".join(m1) or _stage_model(cfg, "p1"))),
         "took_s": round(time.time() - t1, 1),
         "result": {"조각수": len(chunks), "성공": 0 if p1_filled else len(obs),
                    "관찰": obs, "채움": p1_filled},
         "error": "; ".join(errs1) if errs1 else None,
         "fail_kind": _fail_kind(errs1) if p1_filled else None,
     }
-    prog["roles"]["p1"].update(status=(_fill_status(errs1) if p1_filled else
-                                       ("완료" if obs else "실패")),
+    prog["roles"]["p1"].update(status=("사용안함" if not p1_on else
+                                       (_fill_status(errs1) if p1_filled else
+                                        ("완료" if obs else "실패"))),
                                took_s=stages_out["p1"]["took_s"],
                                error=stages_out["p1"]["error"])
 
     # ── 2차 ──
-    prog["roles"]["p2"]["status"] = "분석중"
-    p2, e2, tk2, m2 = _stage2(overview, obs, cfg, cancel)
+    p2_on = _stage_on(cfg, "p2")
+    prog["roles"]["p2"]["status"] = "분석중" if p2_on else "사용안함"
+    if p2_on:
+        p2, e2, tk2, m2 = _stage2(overview, obs, cfg, cancel)
+    else:
+        p2, e2, tk2, m2 = None, None, 0.0, OFF
     p2_filled = p2 is None
     if p2_filled:
         p2 = _fill_p2(meta, obs, cfg)
     stages_out["p2"] = {"log": _LAST_LOG.get("p2") or [],"ok": not p2_filled, "name": STAGES["p2"]["name"],
-                        "icon": STAGES["p2"]["icon"], "model": m2 or _stage_model(cfg, "p2"),
+                        "icon": STAGES["p2"]["icon"],
+                        "model": (OFF if not p2_on else (m2 or _stage_model(cfg, "p2"))),
                         "took_s": tk2, "result": p2,
                         "error": e2 if p2_filled else None,
                         "fail_kind": _fail_kind(e2) if p2_filled else None,
                         "note": e2 if (not p2_filled and e2) else None}
-    prog["roles"]["p2"].update(status=_fill_status(e2) if p2_filled else "완료",
+    prog["roles"]["p2"].update(status=("사용안함" if not p2_on else
+                                       (_fill_status(e2) if p2_filled else "완료")),
                                took_s=tk2, error=e2 if p2_filled else None)
 
     # ── 3차 ──
-    prog["roles"]["p3"]["status"] = "분석중"
-    p3, e3, tk3, m3 = _stage3(overview, obs, p2, chunks, cfg, cancel)
+    p3_on = _stage_on(cfg, "p3")
+    prog["roles"]["p3"]["status"] = "분석중" if p3_on else "사용안함"
+    if p3_on:
+        p3, e3, tk3, m3 = _stage3(overview, obs, p2, chunks, cfg, cancel)
+    else:
+        p3, e3, tk3, m3 = None, None, 0.0, OFF
     p3_filled = p3 is None
     if p3_filled:
         p3 = _fill_p3(meta, cfg)
     stages_out["p3"] = {"log": _LAST_LOG.get("p3") or [],"ok": not p3_filled, "name": STAGES["p3"]["name"],
-                        "icon": STAGES["p3"]["icon"], "model": m3 or _stage_model(cfg, "p3"),
+                        "icon": STAGES["p3"]["icon"],
+                        "model": (OFF if not p3_on else (m3 or _stage_model(cfg, "p3"))),
                         "took_s": tk3, "result": p3,
                         "error": e3 if p3_filled else None,
                         "fail_kind": _fail_kind(e3) if p3_filled else None,
                         "note": e3 if (not p3_filled and e3) else None}
-    prog["roles"]["p3"].update(status=_fill_status(e3) if p3_filled else "완료",
+    prog["roles"]["p3"].update(status=("사용안함" if not p3_on else
+                                       (_fill_status(e3) if p3_filled else "완료")),
                                took_s=tk3, error=e3 if p3_filled else None)
 
     # ── 최종 ──
-    prog["roles"]["final"]["status"] = "작성중"
+    fin_on = _stage_on(cfg, "final")
+    prog["roles"]["final"]["status"] = "작성중" if fin_on else "사용안함"
     prog["stage"] = "final"
-    body, ef, tkf, mf = _stage_final(overview, obs, p2, p3, cfg, cancel)
+    if fin_on:
+        body, ef, tkf, mf = _stage_final(overview, obs, p2, p3, cfg, cancel)
+    else:
+        body, ef, tkf, mf = "", None, 0.0, OFF
     # 최종은 마크다운 4섹션이어야 한다. 프리필('## 종합 판정')이 항상 붙으므로
     # '##' 유무만 보면 산문도 통과한다 → 헤딩이 2개 이상인지로 판정한다.
     if body and body.count("## ") < 2:
@@ -1219,16 +1263,17 @@ def run_analysis(day: str, cfg: dict | None = None, start: str = "",
         body = ""
     if not body:
         body = _fallback_final(meta, obs, p2, p3)
-    prog["roles"]["final"].update(status="완료" if body and "실패" not in str(ef or "")
-                                  else "실패", took_s=tkf,
+    prog["roles"]["final"].update(status=("사용안함" if not fin_on else
+                                          ("완료" if body and "실패" not in str(ef or "")
+                                           else "실패")), took_s=tkf,
                                   error=ef if "실패" in str(ef or "") else None)
     # 최종도 단계 기록에 남긴다 — UI 가 pipeline 순서대로 카드를 그리므로
     # 여기 없으면 빈 카드가 뜬다. 본문은 rec["final"] 에 따로 있다.
-    _fin_ok = bool(body) and "실패" not in str(ef or "")
+    _fin_ok = bool(body) and (not fin_on or "실패" not in str(ef or ""))
     stages_out["final"] = {
         "log": _LAST_LOG.get("final") or [],
         "ok": _fin_ok, "name": STAGES["final"]["name"], "icon": STAGES["final"]["icon"],
-        "model": mf or _stage_model(cfg, "final"), "took_s": tkf,
+        "model": (OFF if not fin_on else (mf or _stage_model(cfg, "final"))), "took_s": tkf,
         "result": {"통합리포트": "아래 본문 참조", "글자수": len(body)},
         "error": None if _fin_ok else (ef or None),
         "note": ef if (_fin_ok and ef) else None,

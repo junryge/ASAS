@@ -96,7 +96,7 @@ class API(unittest.TestCase):
 
     def test_빈_이름은_막는다(self):
         i = self.s.index("    model = str(b.get(\"model\") or \"\").strip()")
-        body = self.s[i:i + 900]
+        body = self.s[i:i + 2200]          # '(사용안함)' 갈래가 앞에 붙어 자리가 밀렸다
         self.assertIn('if not model:', body)
         self.assertIn("len(model) > 200", body)
 
@@ -177,8 +177,10 @@ class 파이프라인_네_단계(unittest.TestCase):
         body = self.s[i:i + 3000]
         self.assertIn("for sid, st in analysis.STAGES.items():", body)
         self.assertIn('"model": m,', body)
-        self.assertIn('"ok": (m in names) if names else None', body,
+        # ★안 쓰는 단계(enabled=false)는 따지지 않는다 — 없는 이름이어도 상관없다
+        self.assertIn('"ok": None if not on else ((m in names) if names else None)', body,
                       "그 모델이 지금 있는지도 알려야 한다")
+        self.assertIn('"enabled": on,', body, "그 단계를 쓰는지도 알려야 한다")
         self.assertIn('"roles": roles,', body)
 
     def test_POST_이_단계별로_저장한다(self):
@@ -186,7 +188,8 @@ class 파이프라인_네_단계(unittest.TestCase):
         body = self.s[i:i + 5000]
         self.assertIn('if b.get("roles") is not None:', body)
         self.assertIn("if sid not in analysis.STAGES:", body, "모르는 단계는 막는다")
-        self.assertIn("_persist_llm_model(roles=roles)", body)
+        # 모델과 '사용 안 함' 을 **한 번에** 적는다 (따로 쓰면 뒤엣것이 앞엣것을 덮는다)
+        self.assertIn("_persist_llm_model(roles=roles, roles_on=roles_on)", body)
 
     def test_네_단계를_각각_불러_본다(self):
         """★하나만 확인하면 나머지가 없어진 이름이어도 저장된다."""
@@ -221,7 +224,8 @@ class 파이프라인_네_단계(unittest.TestCase):
         self.assertIn("lmFill(d);", self.h[i:i + 400])
 
     def test_없어진_모델을_빨갛게_알린다(self):
-        self.assertIn("const bad = r.ok === false;", self.h)
+        # ★꺼 둔 단계는 빼고 본다 — 안 쓰는데 빨갛게 띄우면 사람이 원인을 찾으러 간다
+        self.assertIn("const bad = !off && r.ok === false;", self.h)
         self.assertIn("목록에 없음 — 이 단계는 실패합니다", self.h)
         self.assertIn("개 단계가 목록에 없습니다", self.h)
 

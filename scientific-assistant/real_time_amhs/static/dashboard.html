@@ -3549,6 +3549,9 @@ function policyFail(rowsId, noteId, retryFn){
    ★'시험 후 저장' 이다 — 한 번 불러 보고 되는 것만 저장한다. 틀린 이름을
      저장하면 또 하루를 날린다. */
 const LM_CUSTOM = '__직접__';
+/* '사용 안 함' 값 — 서버(analysis.OFF)가 /api/llm/model 응답의 off_value 로
+   내려 준다. 한쪽에만 적어 두면 언젠가 어긋나므로 받아서 쓴다. */
+let LM_OFF = '(사용안함)';
 let LM_CUR = '';
 
 function lmMsg(t, bad){
@@ -3567,17 +3570,25 @@ function lmFill(d){
   // 지금 값이 목록에 없으면 그것도 골라 둔다 — 안 그러면 화면이 남의 값을 가리킨다
   const opts = names.slice();
   if(LM_CUR && !opts.includes(LM_CUR)) opts.unshift(LM_CUR);
-  sel.innerHTML = opts.map(n =>
-      `<option value="${esc(n)}"${n === LM_CUR ? ' selected' : ''}>${esc(n)}</option>`).join('')
+  /* ★'사용 안 함' — 고객: "정책에서 llm판단 모델 사용안함 이라고 선택할수 있게해줘".
+     고르면 llm.enabled=false 가 되어 분당 판단·리포트·4단계가 한꺼번에 멎는다.
+     모델 이름은 지우지 않는다 — 다시 켤 때 쓰던 것이 그대로 돌아온다. */
+  LM_OFF = d.off_value || '(사용안함)';
+  const off = d.enabled === false;
+  sel.innerHTML = `<option value="${esc(LM_OFF)}"${off ? ' selected' : ''}>⛔ 사용 안 함 (LLM 판단 끔)</option>`
+    + opts.map(n =>
+      `<option value="${esc(n)}"${!off && n === LM_CUR ? ' selected' : ''}>${esc(n)}</option>`).join('')
     + `<option value="${LM_CUSTOM}">직접 입력…</option>`;
-  $('#lm-cur').textContent = LM_CUR || '(없음)';
+  $('#lm-cur').textContent = off ? '사용 안 함' : (LM_CUR || '(없음)');
   $('#lm-url').textContent = d.models_url || '—';
   $('#lmnote').textContent = names.length ? `— ${names.length}개` : '';
   let w = '';
-  if(d.error) w = `목록을 못 받았습니다 — ${d.error}. 이름을 아신다면 '직접 입력…' 으로 넣으세요.`;
+  if(d.enabled === false)
+    // ★꺼 둔 것은 사고가 아니다 — 목록 경고를 덮어쓴다 (없는 이름이어도 상관없다)
+    w = 'LLM 판단을 쓰지 않습니다. 분당 판단·리포트·4단계 분석이 모두 멎고, 점수·알람은 규칙(스코어)으로만 돕니다. 다시 쓰려면 모델을 고르고 저장하세요.';
+  else if(d.error) w = `목록을 못 받았습니다 — ${d.error}. 이름을 아신다면 '직접 입력…' 으로 넣으세요.`;
   else if(d.ok_now === false)
     w = `지금 설정된 ${LM_CUR || '(없음)'} 은 게이트웨이 목록에 없습니다 — 이대로면 매분 HTTP 400 이 납니다. 아래에서 고르세요.`;
-  if(d.enabled === false) w = (w ? w + ' ' : '') + 'LLM 이 꺼져 있습니다 (config.llm.enabled=false).';
   warn.style.display = w ? '' : 'none';
   warn.textContent = w;
   lmToggleCustom();
@@ -3586,7 +3597,7 @@ function lmFill(d){
 function lmToggleCustom(){
   const sel = $('#lm-sel'), txt = $('#lm-txt');
   if(!sel || !txt) return;
-  const on = sel.value === LM_CUSTOM;
+  const on = sel.value === LM_CUSTOM;   // '사용 안 함' 은 직접 입력 칸이 필요 없다
   txt.style.display = on ? '' : 'none';
   if(on && !txt.value) txt.value = LM_CUR || '';
 }
@@ -3622,20 +3633,26 @@ function lrFill(d){
     const opts = names.slice();
     // 지금 값이 목록에 없어도 골라 둔다 — 안 그러면 화면이 남의 값을 가리킨다
     if(r.model && !opts.includes(r.model)) opts.unshift(r.model);
-    const bad = r.ok === false;
+    /* ★단계마다 '사용 안 함' — 고객: "1차,2차,3차,최종도 마찬가지야".
+       끈 단계는 모델을 아예 안 부르고, 그 단계가 실패했을 때 쓰라고 만들어 둔
+       대체 경로(통계로 채우기)로 바로 간다. 결과는 그대로 나온다. */
+    const off = r.enabled === false;
+    const bad = !off && r.ok === false;
     return `<tr>
       <td>${esc(r.icon || '')} ${esc(r.name || r.id)}</td>
       <td>
         <select data-lr="${esc(r.id)}" style="min-width:290px;background:var(--panel2);
                 border:1px solid ${bad ? 'var(--wn)' : 'var(--line2)'};color:var(--tx);
                 border-radius:7px;padding:5px 8px;font:inherit">
-          ${opts.map(n => `<option value="${esc(n)}"${n === r.model ? ' selected' : ''}>${esc(n)}</option>`).join('')}
+          <option value="${esc(LM_OFF)}"${off ? ' selected' : ''}>⛔ 사용 안 함 (이 단계만)</option>
+          ${opts.map(n => `<option value="${esc(n)}"${!off && n === r.model ? ' selected' : ''}>${esc(n)}</option>`).join('')}
           <option value="${LM_CUSTOM}">직접 입력…</option>
         </select>
         <input data-lrtxt="${esc(r.id)}" placeholder="모델 이름을 직접 입력"
                style="display:none;margin-left:6px;min-width:250px;background:var(--panel2);
                       border:1px solid var(--line2);color:var(--tx);border-radius:7px;
                       padding:5px 8px;font:inherit">
+        ${off ? '<span class="note" style="margin-left:8px">이 단계는 LLM 없이 통계로 채웁니다</span>' : ''}
         ${bad ? '<span class="note" style="color:var(--wn);margin-left:8px">목록에 없음 — 이 단계는 실패합니다</span>' : ''}
       </td></tr>`;
   }).join('');
@@ -3648,8 +3665,10 @@ function lrFill(d){
       if(on && !t.value) t.value = '';
     };
   });
-  const bad = LM_ROLES.filter(r => r.ok === false).length;
-  $('#lr-note').textContent = bad ? `— ${bad}개 단계가 목록에 없습니다` : '';
+  const bad = LM_ROLES.filter(r => r.enabled !== false && r.ok === false).length;
+  const noff = LM_ROLES.filter(r => r.enabled === false).length;
+  $('#lr-note').textContent = [bad ? `— ${bad}개 단계가 목록에 없습니다` : '',
+                               noff ? `— ${noff}개 단계는 사용 안 함` : ''].filter(Boolean).join(' ');
 }
 
 function lrPicked(){
@@ -3665,12 +3684,14 @@ function lrPicked(){
 
 async function saveLlmRoles(){
   const roles = lrPicked();
+  // ★'사용 안 함' 은 빈 값이 아니다 — 서버가 그 값을 보고 그 단계를 끈다
   const empty = Object.keys(roles).filter(k => !roles[k]);
   if(empty.length){ $('#lr-msg').textContent = '모델을 안 고른 단계가 있습니다'; $('#lr-msg').style.color='var(--wn)'; return; }
+  const onN = Object.keys(roles).filter(k => roles[k] !== LM_OFF).length;
   const b = $('#lr-save');
   b.disabled = true;
   $('#lr-msg').style.color = 'var(--tx3)';
-  $('#lr-msg').textContent = '네 단계를 각각 불러 보는 중…';
+  $('#lr-msg').textContent = onN ? `${onN}개 단계를 각각 불러 보는 중…` : '저장하는 중…';
   try{
     // test:true — 하나라도 안 되면 서버가 전부 되돌린다
     const r = await post('/api/llm/model', {roles, save: true, test: true});
