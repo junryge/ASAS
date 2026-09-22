@@ -527,3 +527,13 @@ class 그래프를_제대로_보여준다(unittest.TestCase):
 
     def test_누르면_남는다고_적어_둔다(self):
         self.assertIn("그래프를 누르면 그 분 값이 남습니다", self.h)
+
+
+class 제목에_준비중(unittest.TestCase):
+    """고객: "UI대쉬보드 FAB별 실시간상황별 ---> FAB별 실시간상황별(준비중) 이라고 해줄래".
+    ★제목 글자는 그대로 두고 뒤에 (준비중)만 붙였다."""
+
+    def test_탭_제목(self):
+        h = _read("static", "dashboard.html")
+        i = h.index('<div class="page hidden" id="tab-ui">')
+        self.assertIn("<h2>FAB별 실시간 상황표(준비중)", h[i:i + 1500])
