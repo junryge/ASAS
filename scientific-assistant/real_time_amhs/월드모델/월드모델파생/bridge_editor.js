@@ -78,18 +78,44 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
   // ─────────────────────────────────────────────────────────────── 시작
+  /* 옆에 놓인 설정 JSON — 고객: "OHT_Bridge_Monitor_설정.json 같이 있어 처음에
+     로드할때 이거 먼저 읽어들여야되, 자꾸 바꿀수는 없잖아" · "static 같은 폴더에
+     존재해 무조건 읽어들여야되".
+       이 파일이 **이긴다** — HTML 에 박힌 것도, 이 브라우저에 남긴 것도 누른다.
+       설정만 갈아 끼우면 화면이 바뀐다 (HTML 을 다시 만들 것 없다).
+     ★캐시를 끈다 — 안 그러면 새 JSON 을 놔도 브라우저가 옛 걸 계속 쓴다.
+     ★더블클릭(file://)은 fetch 가 막힌다 — 그때는 HTML 에 박힌 것으로 그냥 간다. */
+  var SIDE_NAME = 'OHT_Bridge_Monitor_설정.json';
+  var SIDE_OK = false;
+
+  function sideLoad() {
+    if (!window.fetch || location.protocol === 'file:') return Promise.resolve();
+    var url = location.href.split('#')[0].split('?')[0].replace(/[^/]*$/, '') +
+              encodeURIComponent(SIDE_NAME) + '?t=' + Date.now();
+    return fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (c) {
+        if (c && c.plates && c.cards) { norm(c); CFG = c; SIDE_OK = true; }
+      })
+      .catch(function () {});                           // 없으면 없는 대로
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     var el = document.getElementById('bm-config');
     try { CFG = JSON.parse(el ? el.textContent : '{}'); } catch (e) { CFG = {}; }
     norm(CFG);
     BUILT = clone(CFG);                                 // HTML 에 든 기본값
-    var ls = lsGet();                                   // 이 브라우저에 남긴 것 — 더 나중 것이면 그걸로
-    if (ls && stamp(ls) > stamp(CFG)) { norm(ls); CFG = ls; }
-    LOADED = clone(CFG);
-    var n = 0, t = setInterval(function () {
-      if (++n > 600) { clearInterval(t); return; }
-      if ($('[data-bm-plate]') && $('[data-bm-area="toolbar"]')) { clearInterval(t); setTimeout(boot, 50); }
-    }, 100);
+    sideLoad().then(function () {
+      if (!SIDE_OK) {                                   // 옆 파일이 없을 때만 브라우저 것을 본다
+        var ls = lsGet();                               // 더 나중 것이면 그걸로
+        if (ls && stamp(ls) > stamp(CFG)) { norm(ls); CFG = ls; }
+      }
+      LOADED = clone(CFG);
+      var n = 0, t = setInterval(function () {
+        if (++n > 600) { clearInterval(t); return; }
+        if ($('[data-bm-plate]') && $('[data-bm-area="toolbar"]')) { clearInterval(t); setTimeout(boot, 50); }
+      }, 100);
+    });
   });
 
   function norm(c) {
@@ -106,7 +132,7 @@
     initPan();
     // 전에 고른 설정 JSON 이 있고 읽기 허락이 살아 있으면 — 파일에서 새로 읽는다
     idbGet().then(function (h) {
-      if (!h) return;
+      if (!h || SIDE_OK) return;                    // ★옆 파일이 이미 이겼다
       fileHandle = h;
       return h.queryPermission({ mode: 'read' }).then(function (st) {
         if (st !== 'granted') return;
@@ -119,7 +145,9 @@
     window.addEventListener('beforeunload', function (e) {
       if (dirty) { e.preventDefault(); e.returnValue = ''; }
     });
-    window.__bm = { cfg: function () { return CFG; }, apply: applyAll, open: openUI, geoFromCache: geoFromCache };
+    liveStart();                                    // 관제 점수 받아 오기
+    window.__bm = { cfg: function () { return CFG; }, apply: applyAll, open: openUI,
+                    geoFromCache: geoFromCache, live: livePoll, liveApply: liveApply };
   }
 
   // 틀이 그린 모습을 떠 둔다 — 되돌릴 때 이것으로
@@ -220,8 +248,72 @@
     s.textContent = bgCss();
   }
 
+  /* ═══════ 관제 점수 — 패널에 그 FAB 의 AREA_SCORE 를 적는다 ═══════
+     고객: "패널 m14b>m14b LFT 이게아니라 M14B AREA_SCORE 야, 현재값을 기입해야되
+           55/67 이면 55는 현재 값/경계값 정책에 있어, 정책 연결해서 볼수 있도록".
+
+     관제의 /api/fab/compare 가 ALL+FAB 다섯을 **한 시각**으로 세워 준다. 줄마다
+     area_score 와 **그 FAB 의 컷**(cuts.warn/danger/critical)이 같이 온다 —
+     경계값은 관제 '정책' 탭에서 고친 바로 그 값이다. 여기서 다시 계산하지 않는다.
+     ★관제가 안 내주면(더블클릭·관제 꺼짐) 아무것도 안 건드린다 — 틀의 숫자가 남는다.
+       거짓 숫자를 만들어 내느니 원래 것을 두는 편이 낫다. */
+  var CARD_FAB = { M14B: 'M14B', M14A: 'M14', M16HUBOHT: 'M16HUB', M166F: 'M16B', M16EUV: 'M16A' };
+  var LIVE_MS = 30000;
+  var LIVE_COL = { '정상': '', '경계': '#ffce7a', '위험': '#ff6b6b', '초위험': '#ff3b3b' };
+  var liveTimer = null, LIVE_BASE = null;
+
+  function liveUrl() {
+    if (location.protocol === 'file:') return null;         // 더블클릭 — 관제가 없다
+    return location.origin + '/api/fab/compare';
+  }
+
+  function liveApply(rows) {
+    var by = {};
+    (rows || []).forEach(function (r) { if (r && r.fab) by[String(r.fab).toUpperCase()] = r; });
+    $$('[data-bm-card]').forEach(function (card) {
+      var fab = CARD_FAB[card.getAttribute('data-bm-card')];
+      var r = fab && by[fab];
+      if (!r) return;
+      var cuts = r.cuts || {}, warn = cuts.warn, lv = String(r.level || '').trim();
+      var sc = r.area_score != null ? r.area_score : r.score;
+      function slot(k) { return card.querySelector('[data-bm-slot="' + k + '"]'); }
+      var e;
+      if ((e = slot('sub'))) e.textContent = fab + ' AREA_SCORE';
+      if ((e = slot('val'))) {
+        e.textContent = sc == null ? '–' : sc;
+        if (LIVE_COL[lv]) e.style.setProperty('color', LIVE_COL[lv], 'important');
+        else e.style.removeProperty('color');
+      }
+      if ((e = slot('cap'))) e.textContent = warn == null ? '' : '/ ' + warn;
+      if ((e = slot('unit'))) e.textContent = '점';
+      if ((e = slot('bar'))) e.style.width = Math.max(0, Math.min(100, +sc || 0)) + '%';
+      // 정책을 눈으로 — 말풍선에 컷 셋을 그대로 (고객: "정책 연결해서 볼수 있도록")
+      card.title = fab + ' AREA_SCORE ' + (sc == null ? '–' : sc) + '점' +
+        (lv ? '  (' + lv + ')' : '') +
+        (warn == null ? '' : '\n정책 컷 — 경계 ' + warn +
+          ' · 위험 ' + cuts.danger + ' · 초위험 ' + cuts.critical) +
+        '\n관제 정책 탭에서 고치면 여기도 따라 바뀝니다.';
+    });
+  }
+
+  function livePoll() {
+    var u = liveUrl();
+    if (!u || !window.fetch) return;
+    fetch(u, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.ok && d.rows) liveApply(d.rows); })
+      .catch(function () {});                                // 안 되면 틀의 숫자 그대로
+  }
+
+  function liveStart() {
+    if (liveTimer || !liveUrl()) return;
+    livePoll();
+    liveTimer = setInterval(livePoll, LIVE_MS);
+  }
+
   function applyCards() {
     $$('[data-bm-card]').forEach(applyCard);
+    livePoll();            // 카드를 다시 칠하면 숫자도 다시 적는다
   }
 
   function applyCard(card) {

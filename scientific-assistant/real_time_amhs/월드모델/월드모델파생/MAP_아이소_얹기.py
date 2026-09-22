@@ -21,7 +21,9 @@
   "배경색상이 어두워서 기존에 다크,화이트,네이비,고대비 적용 가능하게 해주라" ·
   "패널 제목이 안보이네 이거는 무조건 흰색으로 해주지" ·
   "맨위에 AMHS · INTER-BUILDING BRIDGE / FAB별 실시간 상황표 이거 삭제해라
-   아예 글자, 그러면 조금 더 넣어지겠지".
+   아예 글자, 그러면 조금 더 넣어지겠지" ·
+  "패널 m14b>m14b LFT 이게아니라 M14B AREA_SCORE 야, 현재값을 기입해야되
+   55/67 이면 55는 현재 값/경계값 정책에 있어, 정책 연결해서 볼수 있도록".
 
 어떻게 되어 있나
 ────────────────────────────────────────────────────────────────────
@@ -303,6 +305,50 @@ def _attr(tpl, i, attr):
     return tpl[:j] + " " + attr + tpl[j:]
 
 
+# 점수를 보이는 패널 다섯 — 관제의 FAB 과 짝이다.
+#   ★숨긴 넷(M14LFT · M14CNV · M16LFT · M16LFT2F)은 마크업이 조금 달라
+#     자리를 다 못 찾는다. 안 보이는 것들이라 그냥 둔다.
+SCORE_CARDS = {"M14B": "M14B", "M14A": "M14", "M16HUBOHT": "M16HUB",
+               "M166F": "M16B", "M16EUV": "M16A"}
+
+# 패널 한 칸의 속 — 고객 마크업이 칸마다 조금씩 다르다(글자 크기·색·여백).
+#   앞머리를 통째로 박지 않고 결만 잡는다.
+SLOT_RE = [
+    ("sub",  r'<div style="font-size:11px;color:#[0-9a-fA-F]{6};margin-top:\d+px">'),  # M14B ▸ M14B LFT
+    ("val",  r'<span style="font-size:[\d.]+px;font-weight:700;color:#[0-9a-fA-F]{6}">'),  # 55
+    ("unit", r'<span style="font-size:10px;color:#[0-9a-fA-F]{6}">'),                   # JOB/H
+    ("bar",  r'<div style="width:\d+%;height:100%;'),                                   # 막대
+]
+
+
+# 꼭 있어야 할 자리 — 고객이 말한 그 셋 ("M14B AREA_SCORE" · "55/67")
+NEED = {"sub", "val", "cap"}
+
+
+def _tag_slots(block, name):
+    """패널 한 칸 안의 자리마다 data-bm-slot 을 단다 → (고친 글, 찾은 자리 집합).
+
+    cap(/ 57)은 val 바로 뒤 <span> 이다 — 글자 크기·색이 칸마다 달라 결로 잡으면
+    단위(JOB/H)와 헷갈린다. **차례**로 잡는 것이 확실하다.
+    ★단위(JOB/H)와 막대는 없는 칸도 있다 (M16EUV 는 "2 / 3" 뿐이다) — 있으면 단다.
+    """
+    got = set()
+    for slot, pat in SLOT_RE:
+        m = re.search(pat, block)
+        if not m:
+            continue
+        if slot == "val":                       # 먼저 바로 뒤 <span>(경계값)부터 — 자리가 안 밀리게
+            e = block.index("</span>", m.end()) + len("</span>")
+            n2 = block.find("<span", e)
+            if n2 >= 0:
+                block = _attr(block, n2, 'data-bm-slot="cap"')
+                got.add("cap")
+            m = re.search(pat, block)           # 끼워 넣었으니 다시 찾는다
+        block = _attr(block, m.start(), f'data-bm-slot="{slot}"')
+        got.add(slot)
+    return block, got
+
+
 def tag_template(tpl):
     """틀에 이름표를 단다. 한 자리라도 못 찾으면 멈춘다 (고객 원본이 바뀐 것이다)."""
     if "data-bm-" in tpl:
@@ -353,6 +399,12 @@ def tag_template(tpl):
         # 이름 div 에 표
         rel = nd - s
         block = block[:rel] + '<div data-bm-name="1"' + block[rel + 4:]
+        # 관제 점수를 적을 자리 — 부제 · 현재값 · 경계값 · 단위 · 막대
+        #   ★한 자리라도 못 찾으면 멈춘다. 조용히 넘어가면 그 패널만 옛 숫자가
+        #     박힌 채 남아, 화면이 거짓말을 한다.
+        block, got = _tag_slots(block, name)
+        if name in SCORE_CARDS and not NEED <= got:
+            raise SystemExit(f"패널 {name}: 점수 자리를 못 찾았다 — 빠진 것 {sorted(NEED - got)}")
         # 옮길 자리 — {{ billT }} 바로 앞 (판·벽 어디든 그 자리에서는 바닥과 나란하다)
         block = block.replace("{{ billT }}",
                               "translate3d(var(--bmx,0px),var(--bmy,0px),var(--bmz,0px)) {{ billT }}", 1)

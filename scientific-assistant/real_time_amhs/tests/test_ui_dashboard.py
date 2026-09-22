@@ -148,3 +148,105 @@ class 맨_위_제목_줄을_껐다(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class 패널에_관제_점수를_적는다(unittest.TestCase):
+    """고객: "패널 m14b>m14b LFT 이게아니라 M14B AREA_SCORE 야, 현재값을 기입해야되
+    55/67 이면 55는 현재 값/경계값 정책에 있어, 정책 연결해서 볼수 있도록"
+    · "다른것도 마찬가지겠지 그치".
+
+    관제의 /api/fab/compare 가 ALL+FAB 다섯을 한 시각으로 준다 — 줄마다
+    area_score 와 **그 FAB 의 컷**이 같이 온다. 경계값은 정책 탭의 그 값이다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        h = _read("static", MON)
+        cls.tpl = json.loads(
+            re.search(r'<script type="__bundler/template">(.*?)</script>', h, re.S).group(1))
+        cls.h = h
+
+    def _slots(self, card):
+        i = self.tpl.index('data-bm-card="%s"' % card)
+        j = self.tpl.find('data-bm-card="', i + 10)
+        blk = self.tpl[i:j if j > 0 else len(self.tpl)]
+        return set(re.findall(r'data-bm-slot="(\w+)"', blk))
+
+    def test_다섯_패널에_자리가_있다(self):
+        """★부제·현재값·경계값 셋은 반드시 있어야 한다 — 없으면 옛 숫자가 남아 거짓말을 한다."""
+        for c in ("M14B", "M14A", "M16HUBOHT", "M166F", "M16EUV"):
+            self.assertTrue({"sub", "val", "cap"} <= self._slots(c), c + " 에 자리가 빈다")
+
+    def test_M16EUV_는_단위_막대가_없다(self):
+        """★칸마다 마크업이 다르다. 없는 것을 있다고 치면 만들 때 멈춘다."""
+        self.assertNotIn("bar", self._slots("M16EUV"))
+        self.assertTrue({"bar", "unit"} <= self._slots("M14B"))
+
+    def test_카드와_관제_FAB_이_짝이다(self):
+        want = "{ M14B: 'M14B', M14A: 'M14', M16HUBOHT: 'M16HUB', M166F: 'M16B', M16EUV: 'M16A' }"
+        self.assertIn("var CARD_FAB = " + want, self.h)
+
+    def test_경계값은_서버가_준_컷을_그대로_쓴다(self):
+        """★여기서 다시 계산하면 정책 탭과 언젠가 어긋난다."""
+        self.assertIn("var cuts = r.cuts || {}", self.h)
+        self.assertIn("'/ ' + warn", self.h)
+        self.assertNotIn("warn = 60", self.h)
+
+    def test_부제는_FAB_AREA_SCORE(self):
+        self.assertIn("e.textContent = fab + ' AREA_SCORE';", self.h)
+
+    def test_정책_컷_셋을_말풍선에_보여준다(self):
+        self.assertIn("정책 컷 — 경계 ", self.h)
+        self.assertIn("관제 정책 탭에서 고치면 여기도 따라 바뀝니다.", self.h)
+
+    def test_관제가_없으면_안_건드린다(self):
+        """★더블클릭(file://)이나 관제가 꺼져 있을 때. 거짓 숫자를 만드느니 틀의 것을 둔다."""
+        self.assertIn("if (location.protocol === 'file:') return null;", self.h)
+        self.assertIn(".catch(function () {});                                // 안 되면 틀의 숫자 그대로", self.h)
+
+
+class 옆에_있는_설정을_먼저_읽는다(unittest.TestCase):
+    """고객: "OHT_Bridge_Monitor_설정.json 같이 있어 처음에 로드할때 이거 먼저
+    읽어들여야되, 자꾸 바꿀수는 없잖아" · "static 같은 폴더에 존재해 무조건 읽어들여야되"."""
+
+    def test_설정_JSON_이_static_에_있다(self):
+        p = os.path.join(APP, "static", "OHT_Bridge_Monitor_설정.json")
+        self.assertTrue(os.path.isfile(p), "static/ 에 설정 JSON 이 없다")
+        import json
+        with open(p, encoding="utf-8") as fh:
+            c = json.load(fh)
+        self.assertIn("plates", c)
+        self.assertIn("cards", c)
+
+    def test_열_때_옆_파일을_읽는다(self):
+        h = _read("static", MON)
+        self.assertIn("var SIDE_NAME = 'OHT_Bridge_Monitor_설정.json';", h)
+        self.assertIn("sideLoad().then(function () {", h)
+
+    def test_옆_파일이_이긴다(self):
+        """★HTML 에 박힌 것도, 이 브라우저에 남긴 것도 누른다 — 파일만 갈아 끼우면 된다."""
+        h = _read("static", MON)
+        self.assertIn("if (!SIDE_OK) {", h)
+        self.assertIn("if (!h || SIDE_OK) return;", h)
+
+    def test_캐시를_끈다(self):
+        """★안 끄면 새 JSON 을 놔도 브라우저가 옛 걸 계속 쓴다 — 바로 그 불평이었다."""
+        h = _read("static", MON)
+        self.assertIn("'?t=' + Date.now()", h)
+        self.assertIn("cache: 'no-store'", h)
+
+
+class 스크롤을_숨긴다(unittest.TestCase):
+    """고객: "ui대쉬보드 안에꺼 스크롤좀 숨겨라". 그 화면 뿌리가 min-height:100vh 라
+    틀 높이보다 padding 만큼 넘쳐 스크롤이 났다."""
+
+    def test_틀에_맞추는_style_을_넣는다(self):
+        h = _read("static", "dashboard.html")
+        self.assertIn("st.id = 'ui-host-fit';", h)
+        self.assertIn("html,body{height:100%!important;margin:0!important;overflow:hidden!important}", h)
+        self.assertIn("min-height:0!important;height:100%!important", h)
+
+    def test_관제_안에_넣었을_때만이다(self):
+        """★더블클릭으로 열면 예전 그대로여야 한다 — 그 화면 자체는 안 건드린다."""
+        self.assertNotIn("ui-host-fit", _read("static", MON))

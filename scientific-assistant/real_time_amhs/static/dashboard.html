@@ -2592,8 +2592,23 @@ function uiPutBtn(){
   };
   mk('다시 싣기', '상황표를 다시 싣습니다', uiReload);   // ★↻ 는 그 화면의 돌리기 단추라 글자로
   mk('⧉ 새 창', '이 화면만 따로 큰 창으로 엽니다', () => window.open(UI_SRC, '_blank'));
+  uiFit(d);
   UI_BTN = true;
   return true;
+}
+
+/* 스크롤 없애기 — 고객: "ui대쉬보드 안에꺼 스크롤좀 숨겨라".
+   그 화면의 뿌리가 min-height:100vh 라, 틀 높이보다 padding 만큼 넘쳐 스크롤이 났다.
+   틀에 꽉 맞춰 넘치지 않게 한다. ★관제 안에 넣었을 때만 — 더블클릭으로 열면 예전 그대로. */
+function uiFit(d){
+  if(d.getElementById('ui-host-fit')) return;
+  const st = d.createElement('style');
+  st.id = 'ui-host-fit';
+  st.textContent =
+    'html,body{height:100%!important;margin:0!important;overflow:hidden!important}' +
+    '[data-bm-bg="page"]{min-height:0!important;height:100%!important;' +
+      'box-sizing:border-box!important;overflow:hidden!important}';
+  d.head.appendChild(st);
 }
 function uiWaitBtn(){
   let n = 0;
