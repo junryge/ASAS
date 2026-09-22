@@ -210,14 +210,21 @@ class 옆에_있는_설정을_먼저_읽는다(unittest.TestCase):
     """고객: "OHT_Bridge_Monitor_설정.json 같이 있어 처음에 로드할때 이거 먼저
     읽어들여야되, 자꾸 바꿀수는 없잖아" · "static 같은 폴더에 존재해 무조건 읽어들여야되"."""
 
-    def test_설정_JSON_이_static_에_있다(self):
-        p = os.path.join(APP, "static", "OHT_Bridge_Monitor_설정.json")
-        self.assertTrue(os.path.isfile(p), "static/ 에 설정 JSON 이 없다")
-        import json
-        with open(p, encoding="utf-8") as fh:
-            c = json.load(fh)
-        self.assertIn("plates", c)
-        self.assertIn("cards", c)
+    def test_설정_JSON_은_저장소에_두지_않는다(self):
+        """고객: "이거 설정 지워라, 로컬에 나한데만 있어야되".
+           사람마다 고쳐 쓰는 것이라 저장소에 두지 않는다 — .gitignore 로 막는다.
+           ★있으면 그것이 이기고, 없으면 HTML 에 박힌 기본 설정으로 뜬다.
+             그래서 없어도 화면은 그대로 돈다 (아래 sideLoad 시험이 그 길을 본다)."""
+        gi = os.path.join(os.path.dirname(os.path.dirname(APP)), ".gitignore")   # ASAS/
+        self.assertTrue(os.path.isfile(gi), ".gitignore 를 못 찾았다: " + gi)
+        with open(gi, encoding="utf-8") as fh:
+            self.assertIn("**/OHT_Bridge_Monitor_설정.json", fh.read())
+
+    def test_없어도_화면은_돈다(self):
+        """★파일이 없으면 fetch 가 404 로 떨어지고, 그때는 HTML 에 박힌 것으로 간다."""
+        h = _read("static", MON)
+        self.assertIn("return r.ok ? r.json() : null;", h)
+        self.assertIn(".catch(function () {});                           // 없으면 없는 대로", h)
 
     def test_열_때_옆_파일을_읽는다(self):
         h = _read("static", MON)

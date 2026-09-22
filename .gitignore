@@ -23,3 +23,9 @@ scientific-assistant/demos_data/memory.db-*
 # ★token.txt 는 API 키다. README 도 "절대 배포물에 포함 금지" 라고 적어 뒀다.
 scientific-assistant/real_time_amhs/avatar_2d/token.txt
 scientific-assistant/real_time_amhs/avatar_2d/data/
+
+# 브릿지 모니터 화면 설정 — 사람마다 고쳐 쓰는 것이라 저장소에 두지 않는다
+#   (고객: "OHT_Bridge_Monitor_설정.json 이거 설정 지워라, 로컬에 나한데만 있어야되")
+#   ★없어도 돕니다 — 화면은 HTML 에 박힌 기본 설정으로 뜨고, 옆에 이 파일을 두면
+#     그것이 이깁니다 (bridge_editor.js 의 sideLoad).
+**/OHT_Bridge_Monitor_설정.json
