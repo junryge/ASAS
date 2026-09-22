@@ -425,3 +425,98 @@ class FAB_더블클릭하면_그래프(unittest.TestCase):
     def test_화면_돌리기에_안_뺏긴다(self):
         """★무대 위에 얹는 상자다 — 여기서 누른 것을 틀에 넘기면 화면이 돌아간다."""
         self.assertIn("['mousedown', 'wheel', 'pointerdown', 'dblclick'].forEach", self.h)
+
+
+class 판마다_무슨_FAB_인지(unittest.TestCase):
+    """고객: "저기 판.맵중간 이게 무슨 fab인지 기입 해주라" →
+    "아니 정면으로 봤을때 저기 빈공간 있잖아 앞으로 바라보면 거기에 이름을
+    기입해달라고" · "위쪽 아니야" · "회전 0도에서 봤을때".
+
+    ★판 **앞면**(앞으로 바라볼 때 보이는 30px 띠)에 적는다. 판 위에 얹어 봤더니
+      레일과 겹쳐 지저분했고, 바닥에 깔면 레일 밑으로 묻혔다. 앞면은 원래 비어
+      있던 자리라 가리는 것도 없고 정면에서 바로 읽힌다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("static", MON)
+
+    def test_앞면을_찾아_적는다(self):
+        self.assertIn("function fabMark(pe, key)", self.h)
+        self.assertIn("""pe.querySelector(':scope > div[style*="rotateX(-90deg)"]')""", self.h)
+        self.assertIn("face.appendChild(e);", self.h)
+        self.assertIn("e.textContent = fab;", self.h)
+
+    def test_직계_자식만_본다(self):
+        """★:scope > 로 **그 판의 직계 자식**만 본다. 그냥 찾으면 판 밖의
+           브릿지·컨베이어에도 rotateX(-90deg) 가 있어 엉뚱한 데를 집는다
+           (틀 전체에는 여러 개다 — 아래에서 센다)."""
+        self.assertIn("':scope > div[style*=", self.h)
+        import json
+        tpl = json.loads(re.search(r'<script type="__bundler/template">(.*?)</script>',
+                                   self.h, re.S).group(1))
+        n = len(re.findall(r'<div style="[^"]*rotateX\(-90deg\)', tpl))
+        self.assertGreaterEqual(n, 5, "판 다섯의 앞면이 있어야 한다 (%d개)" % n)
+
+    def test_앞면이_없으면_안_적는다(self):
+        """★틀이 바뀌어 앞면을 못 찾으면 엉뚱한 데 붙이지 않고 그냥 둔다."""
+        self.assertIn("if (!fab || !face) { if (e) e.remove(); return; }", self.h)
+
+    def test_맵을_다시_그릴_때마다_같이(self):
+        self.assertIn("renderMap(pe, k);\n      fabMark(pe, k);", self.h)
+        self.assertIn("{ renderMap(pe, key); fabMark(pe, key); }", self.h)
+
+    def test_띠에_꽉_차게_가운데(self):
+        self.assertIn(".bm-fab{position:absolute;inset:0;display:flex;"
+                      "align-items:center;justify-content:center;", self.h)
+
+    def test_마우스를_안_먹는다(self):
+        self.assertIn("pointer-events:none;white-space:nowrap;", self.h)
+
+
+class 그래프를_제대로_보여준다(unittest.TestCase):
+    """고객: "그래프 똑바로 안할래" · "저런게 작아서 우째보노 사이드를 크게" ·
+    "1개 스코어만 보이면 안되지, 다른것도 실제 지표 그래프도" ·
+    "그래프쪽 클릭하면 데이터가 뭐지 나와야지"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("static", MON)
+
+    def test_img_가_아니라_SVG_를_그대로_넣는다(self):
+        """★핵심. /api/graph 는 그 구간에 자료가 없으면 SVG 가 아니라
+           <div>이 구간에 자료가 없습니다</div> 를 돌려준다(graphs.py). <img> 로는
+           그걸 못 그려서 **빈 상자**만 남았다 — 화면으로 보내 주신 그것이다.
+           글로 받아 넣으면 안내도 보이고, SVG 안의 읽기값도 살아난다."""
+        self.assertNotIn("bm-gbody\"><img", self.h)
+        self.assertIn("body.innerHTML = t;", self.h)
+        self.assertIn("return r.ok ? r.text()", self.h)
+
+    def test_못_불러오면_그렇게_말한다(self):
+        self.assertIn("그래프를 못 불러왔습니다", self.h)
+
+    def test_서랍을_키웠다(self):
+        m = re.search(r"\.bm-graph\{position:absolute;right:12px;top:12px;bottom:12px;width:min\((\d+)%,(\d+)px\)", self.h)
+        self.assertTrue(m, "서랍 크기를 못 찾았다")
+        self.assertGreaterEqual(int(m.group(1)), 60, "너무 좁다")
+        self.assertGreaterEqual(int(m.group(2)), 900, "너무 좁다")
+
+    def test_더_넓게도_된다(self):
+        self.assertIn("'.bm-graph.wide{width:calc(100% - 24px)}'", self.h)
+        self.assertIn("if (v === 'w') { GRAPH_WIDE = !GRAPH_WIDE; graphDraw(); return; }", self.h)
+
+    def test_그림이_뭉개지지_않게_최소_너비(self):
+        """★viewBox 1000 짜리다. 좁은 칸에 욱여넣으면 글자가 뭉개진다."""
+        self.assertIn("'.bm-gbody svg{width:100%;min-width:880px;height:auto;display:block}'", self.h)
+
+    def test_눌러서_그_분_값을_붙박이로(self):
+        """★관제 SVG 가 이미 분마다 '시각 · 값' 을 그려 두고 .hv:hover 로 보여 준다
+           (graphs.py, JS 없이 CSS 로). 같은 규칙에 .bm-pin 짝을 달았을 뿐이다 —
+           값을 여기서 새로 읽지 않는다."""
+        self.assertIn("var hv = e.target.closest && e.target.closest('.hv');", self.h)
+        self.assertIn("hv.classList.add('bm-pin')", self.h)
+        self.assertIn("'.bm-gbody .hv.bm-pin .hvt{opacity:1}'", self.h)
+        self.assertIn("'.bm-gbody .hv.bm-pin .hvr{opacity:.97}'", self.h)
+
+    def test_누르면_남는다고_적어_둔다(self):
+        self.assertIn("그래프를 누르면 그 분 값이 남습니다", self.h)

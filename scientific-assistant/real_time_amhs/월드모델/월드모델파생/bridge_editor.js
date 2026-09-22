@@ -276,6 +276,7 @@
     '.bm-clock i{color:#5a6b7d !important}',
     '[data-bm-text="hint"]{color:#42546A !important}',
     '.bm-graph{background:rgba(255,255,255,.96) !important;border-color:#B3BECD !important;color:#22303f !important}',
+    '.bm-gbody .hvr{stroke:#B3BECD !important}',
     '.bm-ghead{border-bottom-color:#CBD4E0 !important}',
     '.bm-ghead b{color:#0d1620 !important}',
     '.bm-ghead button{background:#EDF1F7 !important;border-color:#B3BECD !important;color:#22303f !important}',
@@ -388,7 +389,7 @@
        ?fabs=    그 FAB 만 (모르는 코드는 관제가 알아서 버린다)
        ?theme=   화면과 같은 색 (dark·navy·contrast·light — graphs.THEMES 와 같은 말)
      ★30초마다 점수를 다시 읽을 때 그래프도 같이 새로 그린다. */
-  var GRAPH_FAB = null, GRAPH_MIN = 60;
+  var GRAPH_FAB = null, GRAPH_MIN = 60, GRAPH_WIDE = false;
   var GRAPH_SPANS = [[60, '1시간'], [180, '3시간'], [720, '12시간']];
 
   function graphOpen(fab) {
@@ -412,11 +413,27 @@
         box.addEventListener(ev, function (e) { e.stopPropagation(); });   // 화면 돌리기·줌에 안 뺏긴다
       });
       box.addEventListener('click', function (e) {
+        /* 그래프 위를 누르면 그 분의 값을 **붙박이로** 띄운다 — 고객: "그래프쪽
+           클릭하면 데이터가 뭐지 나와야지".
+           ★관제 SVG 는 분마다 '시각 · 값' 을 미리 그려 두고 .hv:hover 로 그것만
+             보이게 한다 (graphs.py — JS 없이 CSS 한 줄). 그 규칙에 .bm-pin 을
+             한 짝 더 달아, 마우스를 떼도 남게만 했다. 값을 여기서 새로 읽지 않는다.
+           ★<img> 로 받던 동안에는 이것이 통째로 죽어 있었다 — 그림 파일 안의
+             CSS 는 바깥 마우스를 못 받는다. 인라인으로 바꾸면서 살아났다. */
+        var hv = e.target.closest && e.target.closest('.hv');
+        if (hv) {
+          var was = hv.classList.contains('bm-pin');
+          $$('.hv.bm-pin', box).forEach(function (x) { x.classList.remove('bm-pin'); });
+          if (!was) hv.classList.add('bm-pin');
+          e.stopPropagation();
+          return;
+        }
         var t = e.target.closest('[data-g]');
         if (!t) return;
         e.stopPropagation();
         var v = t.getAttribute('data-g');
         if (v === 'x') { graphClose(); return; }
+        if (v === 'w') { GRAPH_WIDE = !GRAPH_WIDE; graphDraw(); return; }
         GRAPH_MIN = +v || 60;
         graphDraw();
       });
@@ -430,16 +447,34 @@
             '&fabs=' + encodeURIComponent(GRAPH_FAB) + '&minutes=' + GRAPH_MIN +
             '&theme=' + encodeURIComponent(theme) +
             (LIVE_AT ? '&at=' + encodeURIComponent(LIVE_AT.replace(' ', 'T')) : '');
+    box.classList.toggle('wide', GRAPH_WIDE);
     box.innerHTML =
       '<div class="bm-ghead"><b>' + esc(GRAPH_FAB) + '</b>' +
-      '<span class="bm-gsub">' + esc(LIVE_AT || '') + ' 기준</span>' +
+      '<span class="bm-gsub">' + esc(LIVE_AT || '') + ' 기준 · 그래프를 누르면 그 분 값이 남습니다</span>' +
       '<span style="flex:1"></span>' +
       GRAPH_SPANS.map(function (p) {
         return '<button data-g="' + p[0] + '"' + (GRAPH_MIN === p[0] ? ' class="on"' : '') + '>' + p[1] + '</button>';
       }).join('') +
+      '<button data-g="w"' + (GRAPH_WIDE ? ' class="on"' : '') + ' title="넓게 / 좁게">⤢</button>' +
       '<button data-g="x" title="닫기">✕</button></div>' +
-      '<div class="bm-gbody"><img alt="' + esc(GRAPH_FAB) + ' 구간 그래프" src="' +
-        esc(location.origin + '/api/graph' + q) + '"></div>';
+      '<div class="bm-gbody">불러오는 중…</div>';
+
+    /* ★<img> 로 받지 않는다 — /api/graph 는 그 구간에 자료가 없으면 SVG 가 아니라
+         <div>이 구간에 자료가 없습니다</div> 를 돌려준다(graphs.py). <img> 는 그걸
+         못 그려서 **빈 상자**만 남았다. 글로 받아 그대로 넣으면 안내도 보이고,
+         SVG 안의 분마다 호버(<title>)도 살아난다. */
+    var body = $('.bm-gbody', box), url = location.origin + '/api/graph' + q;
+    var want = GRAPH_FAB + '|' + q;
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function (t) {
+        if (want !== GRAPH_FAB + '|' + q || !$('.bm-gbody', box)) return;   // 그새 다른 걸 골랐다
+        body.innerHTML = t;
+      })
+      .catch(function (e) {
+        if ($('.bm-gbody', box)) body.innerHTML = '<div class="bm-gerr">그래프를 못 불러왔습니다 — ' +
+          esc(e.message) + '<br><span>관제가 떠 있는지, 그 구간에 자료가 있는지 보세요.</span></div>';
+      });
   }
 
   /* 더블클릭 — 판 위든 패널 위든 그 FAB 으로 연다.
@@ -551,8 +586,36 @@
     return { key: key, tag: key, col: '#3ad6c8' };
   }
 
+  /* 판 한가운데에 그 판이 무슨 FAB 인지 — 고객: "저기 판.맵중간 이게 무슨 fab인지
+     기입 해주라, 저기 중간에 남아 있는 부분 m14a.m14b 이런게 기입해주라".
+     ★판 위에 **깔아** 둔다 (레일보다 아래, 카드보다 아래). 판이 기울어 있으니
+       글자도 같이 기울어 바닥에 칠한 것처럼 보인다 — 고객 틀의 7F·3F 와 같은 결이다.
+     ★맵이 없는 판(M16 HUB)에도 적는다. 오히려 그 판이 제일 허전했다. */
+  function fabMark(pe, key) {
+    var fab = PLATE_FAB[key];
+    // ★판 **앞면**(앞으로 바라볼 때 보이는 그 띠)에 적는다. 고객: "정면으로 봤을때
+    //   저기 빈공간 있잖아 앞으로 바라보면 거기에 이름을 기입해달라고, 위쪽 아니야".
+    //   틀의 앞면은 판 바로 밑 30px 짜리 div 하나다 — rotateX(-90deg) 로 세워 둔 것이
+    //   그것뿐이라 그걸로 찾는다. (판 위에 얹어 봤더니 레일과 겹쳐 지저분했다.)
+    var face = pe.querySelector(':scope > div[style*="rotateX(-90deg)"]');
+    var host = face || pe;
+    var e = $(':scope > .bm-fab', host);
+    if (!fab || !face) { if (e) e.remove(); return; }
+    if (!e) {
+      e = document.createElement('div');
+      e.className = 'bm-fab';
+      face.appendChild(e);
+    }
+    e.textContent = fab;
+    e.style.color = hexA(plateInfo(key).col || '#8fd3ff', .95);
+  }
+
   function applyMaps() {
-    $$('[data-bm-plate]').forEach(function (pe) { renderMap(pe, pe.getAttribute('data-bm-plate')); });
+    $$('[data-bm-plate]').forEach(function (pe) {
+      var k = pe.getAttribute('data-bm-plate');
+      renderMap(pe, k);
+      fabMark(pe, k);
+    });
   }
 
   // ─────────────────────────────────────────────────────────────── 맵 그리기
@@ -1012,7 +1075,7 @@
     changed();
   }
 
-  function renderOne(key) { var pe = $('[data-bm-plate="' + key + '"]'); if (pe) renderMap(pe, key); }
+  function renderOne(key) { var pe = $('[data-bm-plate="' + key + '"]'); if (pe) { renderMap(pe, key); fabMark(pe, key); } }
 
   function pickFile(accept, cb) {
     var inp = document.createElement('input');
@@ -1221,8 +1284,16 @@
         + 'color:#cfe0ec;background:rgba(8,13,19,.62);border:1px solid rgba(90,120,146,.45);'
         + 'border-radius:7px;padding:5px 11px;backdrop-filter:blur(6px);white-space:nowrap}',
       '.bm-clock b{color:#fff;font-weight:700}',
+      // 판 한가운데 FAB 이름 — 바닥에 칠한 것처럼 판과 같이 기운다
+      // 판 **앞면**의 FAB 이름 — 앞으로 바라볼 때 보이는 그 띠에 적는다.
+      //   판 위에 얹어 봤더니 레일과 겹쳐 지저분했다. 앞면은 원래 비어 있던 자리라
+      //   가리는 것도 없고, 정면에서 바로 읽힌다.
+      '.bm-fab{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;'
+        + 'pointer-events:none;white-space:nowrap;'
+        + 'font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:19px;letter-spacing:.20em;'
+        + 'text-shadow:0 1px 3px rgba(0,0,0,.9)}',
       // 오른쪽 그래프 서랍 — 고객: "fab을 더블 클릭하면 오른쪽에 fab 관련 그래프가"
-      '.bm-graph{position:absolute;right:12px;top:12px;bottom:12px;width:min(46%,560px);z-index:12;'
+      '.bm-graph{position:absolute;right:12px;top:12px;bottom:12px;width:min(62%,920px);z-index:12;'
         + 'display:flex;flex-direction:column;background:rgba(9,14,20,.94);border:1px solid #27374a;'
         + 'border-radius:11px;box-shadow:-14px 0 40px rgba(0,0,0,.5);overflow:hidden;'
         + 'font:12px/1.45 "IBM Plex Sans KR","Malgun Gothic",sans-serif;color:#cfe0ec}',
@@ -1233,8 +1304,17 @@
         + 'padding:3px 9px;cursor:pointer;font:inherit;font-size:11.5px}',
       '.bm-ghead button:hover{border-color:#3ad6c8;color:#fff}',
       '.bm-ghead button.on{background:rgba(58,214,200,.16);border-color:rgba(58,214,200,.55);color:#bff6f0}',
+      '.bm-graph.wide{width:calc(100% - 24px)}',
+      // ★그림은 viewBox 1000 짜리다. 좁은 칸에 욱여넣으면 글자가 뭉개진다 —
+      //   최소 너비를 주고 모자라면 옆으로 굴린다.
       '.bm-gbody{flex:1;overflow:auto;padding:8px}',
-      '.bm-gbody img{width:100%;display:block}',
+      '.bm-gbody svg{width:100%;min-width:880px;height:auto;display:block}',
+      // 관제 SVG 의 .hv:hover 규칙과 같은 짝 — 눌러 두면 마우스를 떼도 남는다
+      '.bm-gbody .hv.bm-pin .ghit{fill-opacity:.14}',
+      '.bm-gbody .hv.bm-pin .hvt{opacity:1}',
+      '.bm-gbody .hv.bm-pin .hvr{opacity:.97}',
+      '.bm-gerr{padding:22px 16px;color:#ffb0b0;font-size:12.5px;line-height:1.7}',
+      '.bm-gerr span{color:#7d93a6}',
       '.bm-editing [data-bm-plate]{cursor:default}',
       '.bm-clock i{font-style:normal;color:#7d93a6;margin-left:8px}',
       '.bm-hl{outline:2px dashed #fff !important;outline-offset:3px;animation:bmblink .8s ease-in-out infinite}',
