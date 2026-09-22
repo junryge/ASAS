@@ -250,3 +250,48 @@ class 스크롤을_숨긴다(unittest.TestCase):
     def test_관제_안에_넣었을_때만이다(self):
         """★더블클릭으로 열면 예전 그대로여야 한다 — 그 화면 자체는 안 건드린다."""
         self.assertNotIn("ui-host-fit", _read("static", MON))
+
+
+class 패널_글자와_시각(unittest.TestCase):
+    """고객: "패널 글자 값 크기좀 키워주라 그리고 너무 안보인다" ·
+    "시간을 기입해줘야지 fab실시간 상황표에 날짜-시간 기입해주고" ·
+    "내용은 실시간으로 변경되는거 맞이?? 데이터 고정되어 있스면 안되요"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("static", MON)
+
+    def _size(self, sel):
+        m = re.search(re.escape(sel) + r"\{font-size:([\d.]+)px", self.h)
+        return float(m.group(1)) if m else None
+
+    def test_글자를_키웠다(self):
+        """틀 값은 이름 13 · 부제 11 · 값 19 · 경계 12 · 단위 10 이었다."""
+        for sel, was in (('[data-bm-name]', 13), ('[data-bm-slot="sub"]', 11),
+                         ('[data-bm-slot="val"]', 19), ('[data-bm-slot="cap"]', 12),
+                         ('[data-bm-slot="unit"]', 10)):
+            got = self._size(sel)
+            self.assertIsNotNone(got, sel + " 크기를 안 정했다")
+            self.assertGreater(got, was, f"{sel} 가 {got} — 틀의 {was} 보다 커야 한다")
+
+    def test_흐린_글자를_밝혔다(self):
+        """"너무 안보인다" — 부제·경계·단위가 흐린 회색이었다."""
+        self.assertIn('[data-bm-slot="sub"]{font-size:12.5px !important;color:#b8c9d8', self.h)
+        self.assertIn('color:#8fa3b5 !important}', self.h)
+
+    def test_자료_시각을_적는다(self):
+        self.assertIn("function liveClock(at, day)", self.h)
+        self.assertIn("e.className = 'bm-clock';", self.h)
+        self.assertIn(".bm-clock{position:absolute;left:16px;top:12px", self.h)
+
+    def test_지금_시각이_아니라_자료_시각이다(self):
+        """★수집이 멎으면 시계만 돌고 숫자는 옛것인 화면이 제일 위험하다."""
+        self.assertIn("liveClock(data && data.at, data && data.day)", self.h)
+        self.assertIn("이 점수를 잰 시각입니다 (지금 시각이 아닙니다).", self.h)
+        self.assertIn("mins + '분 전'", self.h, "몇 분 전 자료인지도 보여야 한다")
+
+    def test_계속_다시_읽는다(self):
+        """고객: "값은 계속 변경되잖아" — 30초마다. 브라우저 캐시도 끈다."""
+        self.assertIn("var LIVE_MS = 30000;", self.h)
+        self.assertIn("liveTimer = setInterval(livePoll, LIVE_MS);", self.h)
+        self.assertIn("fetch(u, { cache: 'no-store' })", self.h)

@@ -267,7 +267,33 @@
     return location.origin + '/api/fab/compare';
   }
 
-  function liveApply(rows) {
+  /* 자료 시각 — 고객: "시간을 기입해줘야지 fab실시간 상황표에 날짜-시간 기입해주고".
+     관제가 준 at(그 점수를 잰 시각)을 적는다. **지금 시각이 아니다** — 수집이 멎으면
+     시계만 돌고 숫자는 옛것인 화면이 제일 위험하다. 몇 분 전 것인지도 같이 적는다. */
+  function liveClock(at, day) {
+    var stage = $('[data-bm-bg="stage"]') || sceneRoot();
+    if (!stage) return;
+    var e = $('.bm-clock', stage);
+    if (!e) {
+      e = document.createElement('div');
+      e.className = 'bm-clock';
+      stage.appendChild(e);
+    }
+    if (!at) { e.innerHTML = '<b>– –</b>'; return; }
+    var old = '';
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(at));
+    if (m) {
+      var t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+      var mins = Math.round((Date.now() - t.getTime()) / 60000);
+      if (mins >= 1 && mins < 60 * 48) old = mins + '분 전';
+    }
+    e.innerHTML = '<b>' + esc(String(at)) + '</b>' + (old ? '<i>' + esc(old) + '</i>' : '');
+    e.title = '이 점수를 잰 시각입니다 (지금 시각이 아닙니다).' + (day ? '\n자료 날짜 ' + day : '');
+  }
+
+  function liveApply(data) {
+    var rows = (data && data.rows) || [];
+    liveClock(data && data.at, data && data.day);
     var by = {};
     (rows || []).forEach(function (r) { if (r && r.fab) by[String(r.fab).toUpperCase()] = r; });
     $$('[data-bm-card]').forEach(function (card) {
@@ -301,7 +327,7 @@
     if (!u || !window.fetch) return;
     fetch(u, { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && d.ok && d.rows) liveApply(d.rows); })
+      .then(function (d) { if (d && d.ok && d.rows) liveApply(d); })
       .catch(function () {});                                // 안 되면 틀의 숫자 그대로
   }
 
@@ -1052,6 +1078,21 @@
       //   제목 셋(M14A·M16HUBOHT·M166F)은 틀이 색을 안 줘서 바탕 글자색을 물려받는다 —
       //   바탕을 화이트로 하면 어두운 색을 물려받아 어두운 패널 위에서 묻혔다.
       '[data-bm-name]{color:#fff !important}',
+      // 고객: "패널 글자 값 크기좀 키워주라 그리고 너무 안보인다"
+      //   틀 값은 이름 13 · 부제 11 · 값 19 · 경계 12 · 단위 10 이었다. 한 단계씩 올리고,
+      //   흐린 회색(부제·경계·단위)은 밝기도 올린다 — 멀리서 보는 관제 화면이다.
+      '[data-bm-name]{font-size:15px !important;letter-spacing:.03em !important}',
+      '[data-bm-slot="sub"]{font-size:12.5px !important;color:#b8c9d8 !important;margin-top:5px !important}',
+      '[data-bm-slot="val"]{font-size:25px !important;line-height:1.05 !important}',
+      '[data-bm-slot="cap"]{font-size:15px !important;color:#8fa3b5 !important}',
+      '[data-bm-slot="unit"]{font-size:12px !important;color:#8fa3b5 !important}',
+      // 자료 시각 — 무대 왼쪽 위
+      '.bm-clock{position:absolute;left:16px;top:12px;z-index:9;pointer-events:none;'
+        + 'font-family:"IBM Plex Mono",monospace;font-size:13px;letter-spacing:.06em;'
+        + 'color:#cfe0ec;background:rgba(8,13,19,.62);border:1px solid rgba(90,120,146,.45);'
+        + 'border-radius:7px;padding:5px 11px;backdrop-filter:blur(6px);white-space:nowrap}',
+      '.bm-clock b{color:#fff;font-weight:700}',
+      '.bm-clock i{font-style:normal;color:#7d93a6;margin-left:8px}',
       '.bm-hl{outline:2px dashed #fff !important;outline-offset:3px;animation:bmblink .8s ease-in-out infinite}',
       '.bm-editing [data-bm-card]{cursor:move !important}',
       '.bm-editing [data-bm-card]:hover{outline:1px dashed rgba(255,255,255,.55);outline-offset:3px}',
