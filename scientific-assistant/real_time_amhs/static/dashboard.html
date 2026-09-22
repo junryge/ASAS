@@ -198,7 +198,9 @@
        위(lead) : ALL(전체 통합 관제) + AVATAR_2D(따로 뜨는 앱)
        아래(rest): FAB · HUBROOM 5개
      ★위 줄의 둘은 눌렀을 때 하는 일이 다르다(화면 전환 vs 새 탭). 나란히
-       두는 대신 색을 갈라 놓았다 — 아래 .sys.app 참고. */
+       두는 대신 색을 갈라 놓았다 — 아래 .sys.app 참고.
+     ★2026-09 숨김 모드(기본 켜짐)면 ALL 을 가려서 lead 줄을 안 그린다 —
+       rest 한 줄만 나온다. 비밀번호로 숨김을 끄면 lead 가 다시 선다. */
   .sysgrid{display:grid;gap:clamp(10px,1.8vh,20px);padding-top:clamp(14px,3.4vh,48px)}
   .sysgrid .lead{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}
   /* ALL 은 이제 혼자 한 줄을 쓴다 (아바타 카드를 뺐다). 그대로 두면 236px 짜리
@@ -325,7 +327,7 @@
   .logo .mk i{display:none}
   .logo b{display:block;font-size:16px;letter-spacing:.14em;font-weight:700;line-height:1.1}
   .logo span span{display:block;font-size:10.5px;color:var(--tx3);letter-spacing:.02em}
-  /* 지금 어느 시스템을 보고 있는지 — 누르면 드롭다운(ALL + FAB 5)이 열린다.
+  /* 지금 어느 시스템을 보고 있는지 — 누르면 드롭다운(ALL + FAB 5 · 숨김 모드면 FAB 5)이 열린다.
      오프닝(전체 화면)은 드롭다운 맨 아래 항목으로. */
   .syswrap{position:relative;display:flex;align-items:center}
   .syschip{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;
@@ -1108,6 +1110,8 @@
       <button type="button" data-theme="light">화이트</button>
       <button type="button" data-theme="navy">네이비</button>
       <button type="button" data-theme="contrast">고대비</button>
+      <span class="cap">숨김</span>
+      <button type="button" data-hidebtn="1">숨김</button>
     </div>
     <div class="sysgrid" id="sysgrid"></div>
     <div class="note" id="opennote"></div>
@@ -1119,7 +1123,7 @@
     <span class="mk"><i></i></span>
     <span><b>AMHS SENTINEL</b><span>LLM 실시간 이상감지 · 관제</span></span>
   </div>
-  <!-- 지금 보는 시스템 — 누르면 드롭다운(ALL + FAB 5). 맨 아래 '전체 화면에서 고르기' 가 오프닝을 연다 -->
+  <!-- 지금 보는 시스템 — 누르면 드롭다운(ALL + FAB 5 · 숨김 모드면 FAB 5). 맨 아래 '전체 화면에서 고르기' 가 오프닝을 연다 -->
   <div class="syswrap">
     <button class="syschip" id="syschip" title="다른 시스템으로 바꾸기" aria-haspopup="menu" aria-expanded="false">
       <span id="syschip-cd">–</span><u>바꾸기</u>
@@ -1134,6 +1138,11 @@
     <button type="button" data-theme="light">화이트</button>
     <button type="button" data-theme="navy">네이비</button>
     <button type="button" data-theme="contrast">고대비</button>
+  </div>
+  <!-- 숨김 모드 단추 — 켜져 있으면 ALL · ML 조기예측 · LLM 모델 분석 · 리포트·피드백을 가린다.
+       끌 때만 비밀번호를 묻는다. 오프닝(.othm)에도 같은 단추가 있다 (data-hidebtn 한 길) -->
+  <div class="themeseg" id="hideseg" role="group">
+    <button type="button" data-hidebtn="1">숨김</button>
   </div>
   <div class="tabs">
     <button data-tab="live" class="on">실시간 관제</button>
@@ -1161,6 +1170,23 @@
   </div>
 
   <div id="warnbox"></div>
+</div>
+
+<!-- 숨김 해제 — 비밀번호 (스크립트의 '숨김 모드' 참고).
+     오프닝(z-index 100) 위에서도 눌러야 하므로 120 에 띄운다. -->
+<div id="pwmask" class="gmask hidden" style="z-index:120">
+  <div class="gbox" style="max-width:420px">
+    <div class="ghd"><b>숨김 해제</b></div>
+    <form id="pwform" style="display:flex;flex-direction:column;gap:12px;padding:18px 22px 20px">
+      <div class="note">ALL · ML 조기예측 · LLM 모델 분석 · 리포트·피드백을 보이려면 비밀번호를 넣으세요.</div>
+      <input type="password" id="pwin" autocomplete="off" aria-label="숨김 해제 비밀번호">
+      <div class="note hidden" id="pwerr" style="color:var(--crit)">비밀번호가 다릅니다.</div>
+      <div class="row" style="justify-content:flex-end">
+        <button type="button" class="act" id="pwcancel">취소</button>
+        <button type="submit" class="act pri">해제</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <!-- 더블클릭 그래프 -->
@@ -1804,6 +1830,139 @@ const SYSTEMS = [
 ];
 let SYS = null, LIVE_STARTED = false;
 
+/* ══════════ 숨김 모드 (2026-09 고객) ══════════
+   "실시간 관제, 과거 데이터 조회 ALL 숨기자 … 오프닝 화면에서도 ALL 화면 숨겨
+    각 FAB 만 보이면 돼" · "실시간 관제·과거 데이터 이력조회·정책·UI대쉬보드 외
+    나머지 숨김 — LLM 모델 분석, 리포트·피드백 숨김" · "숨김 활성화/비활성화 버튼,
+    비밀번호" · "ALL 쪽도 활성·비활성화 들어가겠지".
+   켜져 있으면(기본) 가리는 것:
+     · ALL — 오프닝 카드 · 시스템 칩 드롭다운 · ?sys=ALL (들어오면 오프닝이 뜬다)
+     · 탭 셋 — ML 조기예측 · LLM 모델 분석 · 리포트·피드백 (HIDE_TABS)
+   남는 탭: 실시간 관제 · 과거 데이터 조회 · 정책 · UI대쉬보드.
+   ★끌 때(=다 보이게)만 비밀번호를 묻는다. 다시 켜는(가리는) 쪽은 안 묻는다.
+   ★비밀번호는 파일에 글자로 두지 않는다 — SHA-256 값만 둔다(화면 소스를 열어도
+     바로 안 읽히게). 바꾸려면 아래 한 줄의 결과로 HIDE_PW_SHA 를 갈아 끼운다.
+       python -c "import hashlib;print(hashlib.sha256('새비번'.encode()).hexdigest())"
+     ★브라우저 내장 crypto.subtle 은 안 쓴다 — https·localhost 에서만 열려서,
+       공장 서버(http://…:8989)에서는 아예 없다. 그래서 sha256hex 를 직접 둔다.
+   ★이건 **화면 가림**이지 보안 장치가 아니다 — 서버 API 는 그대로 열려 있다.
+   ★풀린 상태는 이 창(sessionStorage)에만 남는다 — 시스템을 바꿔(?sys= 로 새로
+     열려도) 그대로고, 창을 닫으면 다시 가려진다. 관제실 PC 에 풀린 채로 남지 않게.
+   ★SYSTEMS 에서 ALL 을 지우지 않는다 — 서버 systems() 와 같은 목록이어야
+     test_fabs 가 통과하고, 서버의 ALL(통합 파일 수집·리포트)은 그대로 돈다. */
+const HIDE_TABS = ['ml', 'analysis', 'report'];
+const HIDE_PW_SHA = '2af6268c371a817aef7f2773f842a78626a735dd1cc7efea9af5e00f6e83546c';
+const HIDE_KEY = 'amhs.hide';
+let HIDE_ON = true;
+try{ HIDE_ON = sessionStorage.getItem(HIDE_KEY) !== 'off'; }catch(e){ HIDE_ON = true; }
+
+/* 지금 고를 수 있는 시스템 — 숨김이 켜져 있으면 ALL 을 뺀다 */
+function sysShown(){ return HIDE_ON ? SYSTEMS.filter(s => s.code !== 'ALL') : SYSTEMS; }
+
+/* SHA-256 (UTF-8) → 소문자 16진 64자. 표준 그대로 — tests/test_hide_lock.py 가
+   파이썬 hashlib 과 같은 값을 내는지 본다. */
+function sha256hex(str){
+  const K = [
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  const src = new TextEncoder().encode(String(str));
+  const len = src.length, total = ((len + 8) >> 6 << 6) + 64;
+  const buf = new Uint8Array(total);
+  buf.set(src); buf[len] = 0x80;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(total - 8, Math.floor(len / 0x20000000));   // 비트 길이 상위 32
+  dv.setUint32(total - 4, (len << 3) >>> 0);               // 비트 길이 하위 32
+  const H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const w = new Uint32Array(64);
+  const rot = (x, n) => (x >>> n) | (x << (32 - n));
+  for(let off = 0; off < total; off += 64){
+    for(let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4);
+    for(let i = 16; i < 64; i++){
+      const a = w[i - 15], b = w[i - 2];
+      w[i] = (w[i - 16] + (rot(a, 7) ^ rot(a, 18) ^ (a >>> 3))
+                        + w[i - 7] + (rot(b, 17) ^ rot(b, 19) ^ (b >>> 10))) | 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for(let i = 0; i < 64; i++){
+      const t1 = (h + (rot(e, 6) ^ rot(e, 11) ^ rot(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const t2 = ((rot(a, 2) ^ rot(a, 13) ^ rot(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) | 0; });
+  }
+  return H.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('');
+}
+
+/* 숨김 상태를 화면에 입힌다 — 탭 · 단추 글자. 오프닝·드롭다운은 그릴 때 sysShown() 을 본다.
+   ★탭은 .hidden(display:none!important) 으로 가린다. ML 탭은 syncMlTab 이
+     style.display 를 따로 만지므로, 인라인 값과 싸우지 않게 클래스로 덮는다. */
+function hideApply(){
+  HIDE_TABS.forEach(t => {
+    const b = document.querySelector(`.tabs button[data-tab="${t}"]`);
+    if(!b) return;
+    b.classList.toggle('hidden', HIDE_ON);
+    if(HIDE_ON && b.classList.contains('on')){     // 보던 탭을 가리면 실시간 관제로
+      const live = document.querySelector('.tabs button[data-tab="live"]');
+      if(live) live.click();
+    }
+  });
+  document.querySelectorAll('[data-hidebtn]').forEach(b => {
+    b.classList.toggle('on', HIDE_ON);
+    b.textContent = HIDE_ON ? '🔒 숨김 활성' : '🔓 숨김 비활성';
+    b.title = HIDE_ON
+      ? 'ALL · ML 조기예측 · LLM 모델 분석 · 리포트·피드백을 가리는 중 — 누르면 비밀번호를 묻고 다 보입니다'
+      : '다 보이는 중 — 누르면 다시 가립니다 (비밀번호 안 물음)';
+  });
+}
+
+function hideSet(on){
+  HIDE_ON = !!on;
+  try{ sessionStorage.setItem(HIDE_KEY, HIDE_ON ? 'on' : 'off'); }catch(e){}
+  if(HIDE_ON && SYS === 'ALL'){
+    /* 보던 ALL 을 가린다 — 시스템 전환은 새로 여는 길뿐이다(pickSystem 참고).
+       주소에서 ?sys= 를 떼고 열면 오프닝에서 FAB 을 고른다. */
+    location.href = location.pathname;
+    return;
+  }
+  hideApply();
+  sysDdRender();
+  if(!$('#open').classList.contains('hidden')) renderOpen();
+}
+
+function pwOpen(){
+  $('#pwerr').classList.add('hidden');
+  $('#pwin').value = '';
+  $('#pwmask').classList.remove('hidden');
+  $('#pwin').focus();
+}
+function pwClose(){ $('#pwmask').classList.add('hidden'); }
+
+function hideToggle(){
+  if(!HIDE_ON){ hideSet(true); return; }          // 가리는 쪽은 안 묻는다
+  pwOpen();
+}
+$('#pwform').onsubmit = e => {
+  e.preventDefault();
+  if(sha256hex($('#pwin').value) === HIDE_PW_SHA){ pwClose(); hideSet(false); return; }
+  $('#pwerr').classList.remove('hidden');
+  $('#pwin').select();
+};
+$('#pwcancel').onclick = pwClose;
+$('#pwmask').onclick = e => { if(e.target === e.currentTarget) pwClose(); };   // 바깥을 누르면 닫힌다
+/* Esc 는 이 창만 닫는다 — 문서 쪽 Esc(오프닝 닫기 등)까지 안 번지게 여기서 멈춘다 */
+$('#pwmask').addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  e.stopPropagation();
+  pwClose();
+});
+document.querySelectorAll('[data-hidebtn]').forEach(b => b.onclick = hideToggle);
+
 /* ── 2D 감정캐릭터 카드 ──
    ★관제 시스템이 아니다. 눌러도 관제 화면이 바뀌지 않고 새 탭이 열린다.
      그래서 pickSystem 을 타지 않는다(수집 대상이 아니므로 SYSTEMS 에도
@@ -1852,11 +2011,14 @@ async function wireAvatar(){
 
 function renderOpen(){
   /* 위 줄은 ALL(전체 통합 관제) 한 장, 아래 줄에 FAB · HUBROOM 5개.
+     ★숨김 모드가 켜져 있으면(기본) ALL 카드는 안 그린다 — FAB 줄만 (sysShown).
      ★2D 감정캐릭터(AVATAR_2D) 카드는 뺐다 (고객: "아바타 2D는 일단 빼둬라").
        관제 시스템이 아니라 새 탭으로 뜨는 다른 앱이라, 고르는 자리에 같이
        두면 무엇을 고르는 화면인지가 흐려진다. 서버 /api/avatar 는 그대로다. */
-  const [all, ...rest] = SYSTEMS;
-  $('#sysgrid').innerHTML = `
+  const shown = sysShown();
+  const all = shown.find(s => s.code === 'ALL');
+  const rest = shown.filter(s => s.code !== 'ALL');
+  const lead = all ? `
     <div class="lead solo">
       <button class="sys hero" data-sys="${all.code}" ${all.ready?'':'disabled'}>
         <span class="pill"><i></i>${all.ready?'운영 중':'준비 중'}</span>
@@ -1865,7 +2027,8 @@ function renderOpen(){
           <span class="nm">${esc(all.name)}</span>
         </span>
       </button>
-    </div>
+    </div>` : '';
+  $('#sysgrid').innerHTML = `${lead}
     <div class="rest">${rest.map(s => `
       <button class="sys fab ${s.ready?'':'wip'}" data-sys="${s.code}" ${s.ready?'':'disabled'}>
         <span class="tp">
@@ -1879,11 +2042,12 @@ function renderOpen(){
   syncOpenTheme();
   openStats();
 
-  const wip = SYSTEMS.filter(s => !s.ready).map(s => s.code).join(' · ');
+  const wip = shown.filter(s => !s.ready).map(s => s.code).join(' · ');
   $('#opennote').innerHTML =
-    `<div><b>ALL</b> 은 전체 통합, FAB 을 고르면 그 구역 점수(area_score)로만 봅니다.</div>`
+    (all ? `<div><b>ALL</b> 은 전체 통합, FAB 을 고르면 그 구역 점수(area_score)로만 봅니다.</div>`
+         : `<div>FAB 을 고르면 그 구역 점수(area_score)로만 봅니다.</div>`)
     + (wip ? `<div>${esc(wip)} 는 아직 수집이 붙지 않았습니다 — 자리만 잡아 뒀습니다.</div>`
-           : `<div>여섯 화면 모두 같은 주기로 실시간 수집됩니다.</div>`)
+           : `<div>${shown.length}개 화면 모두 같은 주기로 실시간 수집됩니다.</div>`)
     + (SYS ? `<div style="padding-top:6px"><kbd>Esc</kbd> 를 누르면 돌아갑니다.</div>` : '');
 }
 
@@ -1901,7 +2065,8 @@ function syncOpenTheme(){
      '이상 없음' 으로 읽힌다. */
 async function openStats(){
   const set = (id, v) => { const el = $('#' + id); if(el) el.textContent = v; };
-  set('opk-sys', `${SYSTEMS.filter(s => s.ready).length} / ${SYSTEMS.length}`);
+  const shown = sysShown();                       // 숨김 모드면 ALL 은 안 센다
+  set('opk-sys', `${shown.filter(s => s.ready).length} / ${shown.length}`);
   try{
     const t0 = performance.now();
     const st = await (await fetch('/api/status?sys=ALL')).json();
@@ -2037,8 +2202,8 @@ function startLive(){
 }
 
 function pickSystem(code){
-  const s = SYSTEMS.find(x => x.code === code);
-  if(!s || !s.ready) return;                 // 준비 중은 들어가지 않는다
+  const s = sysShown().find(x => x.code === code);
+  if(!s || !s.ready) return;                 // 준비 중·숨김 중인 ALL 은 들어가지 않는다
   if(LIVE_STARTED && SYS && SYS !== s.code){
     /* ★이미 다른 시스템을 보던 중의 전환은 **새로 연다**. 케이스 목록·
        LLM 판단·분석 기록·과거 탭이 전부 이전 시스템 데이터로 차 있어서,
@@ -2058,14 +2223,14 @@ function pickSystem(code){
   startLive();
 }
 
-/* 시스템 칩 드롭다운 — ALL + FAB 5 를 그 자리에서 고른다. 오프닝(전체 화면)은
-   맨 아래 '전체 화면에서 고르기' 로 연다.
-   ★항목은 SYSTEMS 로 만든다 — 준비 안 된 FAB 은 눌리지 않게(pickSystem 이
+/* 시스템 칩 드롭다운 — ALL + FAB 5 를 그 자리에서 고른다 (숨김 모드면 FAB 5 만 —
+   sysShown). 오프닝(전체 화면)은 맨 아래 '전체 화면에서 고르기' 로 연다.
+   ★항목은 sysShown() 으로 만든다 — 준비 안 된 FAB 은 눌리지 않게(pickSystem 이
      한 번 더 거른다). 다른 시스템으로 바꾸면 pickSystem 이 ?sys= 로 새로 연다. */
 function sysDdRender(){
   const dd = $('#sysdd');
   if(!dd) return;
-  dd.innerHTML = SYSTEMS.map(s => `
+  dd.innerHTML = sysShown().map(s => `
     <button type="button" role="menuitem" data-code="${esc(s.code)}" class="${s.code===SYS?'on':''}"
             ${s.ready?'':'disabled'} title="${esc(s.name)}">
       <span>${esc(s.code)}</span><small>${s.ready ? (s.code==='ALL' ? '전체 통합' : 'FAB 단독') : '준비 중'}</small>
@@ -5393,9 +5558,10 @@ $('#selPoll').onchange = async e => {
 })();
 (function boot(){
   const q = (new URLSearchParams(location.search).get('sys') || '').toUpperCase();
-  const hit = SYSTEMS.find(s => s.code === q && s.ready);
-  if(hit){ renderOpen(); pickSystem(hit.code); }   // ?sys=ALL → 새로고침해도 바로 관제
-  else openShow();
+  hideApply();                                     // 숨김 모드 먼저 — 탭·단추 글자
+  const hit = sysShown().find(s => s.code === q && s.ready);
+  if(hit){ renderOpen(); pickSystem(hit.code); }   // ?sys=M14 → 새로고침해도 바로 관제
+  else openShow();                                 // ?sys=ALL(숨김 중)·없음 → 오프닝에서 고르기
 })();
 </script>
 </body>

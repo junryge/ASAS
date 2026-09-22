@@ -77,21 +77,29 @@ class 임계값(unittest.TestCase):
             self.assertEqual(set(w), set(F.rule_order(f)), f)
             self.assertTrue(set(F.RULE_ORDER) <= set(w), f)
 
-    def test_RA_sus_는_RA_의_70퍼센트(self):
-        """문서가 '임계는 R-A 의 70%' 라고 적어 둔 관계. 어긋나면 둘 중
-        하나를 잘못 옮긴 것이다."""
+    def test_RA_sus_는_RA_에_FAB별_배율을_곱한_값(self):
+        """컬럼흐름 상세도(2026-09-21) 2-M-1 ⑤ — '지속 판정선 = TH_RA × 배율'.
+        예전 문서의 '70%' 는 FAB 마다 다른 배율로 바뀌었다
+        (M16HUB 0.736 · M14 0.896 · M14B 0.867 · M16A 0.883 · M16B 0.846).
+        어긋나면 둘 중 하나를 잘못 옮긴 것이다."""
+        mult = {"M16HUB": 0.736, "M14": 0.896, "M14B": 0.867,
+                "M16A": 0.883, "M16B": 0.846}
         for f in F.fabs():
             ra = F.watch(f)["RA"][0]["thr"]
             sus = F.watch(f)["RA_sus"][0]["thr"]
             self.assertIsNotNone(ra, f)
-            self.assertAlmostEqual(sus, round(ra * 0.7, 2), places=2, msg=f)
+            self.assertAlmostEqual(sus, round(ra * mult[f], 2), delta=0.011, msg=f)
 
-    def test_RB_fast_는_RB_의_30퍼센트(self):
+    def test_RB_fast_는_상세도_값(self):
+        """상세도 3절은 'TH_RB_10 = 30분 임계의 30% 로 자동 산출' 이라고 적었지만
+        M16A(84→38)·M16B(21→15)는 재산정된 값이다 — 5절 계산식(rb_diff10 ≥ …)
+        값을 따른다. 30% 관계는 나머지 셋에서만 성립한다(M14B 는 하한 10)."""
+        want = {"M16HUB": 30, "M14": 24, "M14B": 10, "M16A": 38, "M16B": 15}
         for f in F.fabs():
+            self.assertEqual(F.watch(f)["RB_fast"][0]["thr"], want[f], f)
+        for f in ("M16HUB", "M14"):
             rb = F.watch(f)["RB"][0]["thr"]
-            fast = F.watch(f)["RB_fast"][0]["thr"]
-            # 문서 값이 정수로 반올림돼 있다 (84×0.3=25.2 → 25)
-            self.assertLessEqual(abs(fast - rb * 0.3), 0.6, f)
+            self.assertLessEqual(abs(F.watch(f)["RB_fast"][0]["thr"] - rb * 0.3), 0.6, f)
 
     def test_문서에_없는_임계는_지어내지_않는다(self):
         """M14B 의 SLA 는 컬럼은 있는데 스코어 산출 문서에 임계가 없다.
@@ -625,7 +633,7 @@ class 컬럼_정의는_이미_있는_것을_쓴다(unittest.TestCase):
         j = F.join_columns("M14", cfg)
         by = {m["key"]: m for m in j["metrics"]}
         self.assertEqual(by["M14_ra"]["rules"], ["RA", "RA_sus"])
-        self.assertEqual(by["M14_ra"]["thr"], [3.3, 2.31])
+        self.assertEqual(by["M14_ra"]["thr"], [3.3, 2.96])     # 상세도 2026-09-21
         self.assertFalse(by["M14_ra_count"]["used"], "참고 표시용 지표다")
 
     def test_ALL_화면에_점수를_만드는_항이_빠져_있다(self):

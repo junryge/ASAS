@@ -419,6 +419,256 @@ def _pio_add_rowpaths(mets: list, row) -> list:
     return mets + sorted(add, key=lambda m: m["col"])
 
 
+# ═══════════ FAB 화면 전용 — 발동 룰 · 실제지표 · PIO_ERROR 개수 ═══════════
+# 고객(2026-09-22): "실시간 관제·과거 데이터 조회 ALL 숨기자, 각 FAB 만" ·
+#   "발동률도 각 FAB 에 해당하는 것만 보여줘야, 실제지표도 마찬가지" ·
+#   "PIO_ERROR 경우 [경로 컬럼] 이거 보여줘, 다른 PIO 보여주지 말고, 관련 FAB 만" ·
+#   "발동률은 PIO_ERROR 몇 개가 생겼는지 이야기 해주면 돼, 데이터에 나와 있어" ·
+#   "area_pio_wsum1 이거 보지 말고 [경로 컬럼] 이걸 봐야 돼" ·
+#   "잘 모르겠으면 이거 봐 — 컬럼흐름 상세도(FAB별 HTML)".
+#
+# ★기준은 **컬럼흐름 상세도(FAB별 HTML) 2절 표** — 룰마다 그 FAB 이 실제로 읽는
+#   원본 컬럼. 그 표는 fab_score.WATCH 와 같은 이름이라 거기서 읽는다(두 벌로
+#   적으면 갈라진다). 상세도에서 FAB 마다 다른 자리:
+#     R-D  M16HUB = 적재율·STB·MLUD·수동큐·CNV (괄호 안 글자로 어느 것인지 적혀 온다)
+#          나머지   = {FAB}.QUE.OHT.OHTUTIL — OHT 가동률 **하나뿐**
+#     R-C  M16HUB = 리프터 10대 TOTAL_CURRENTQCNT · M14 = CNV 북/남 편중 · 나머지 없음
+# ★summarize_reason · reason_metrics 는 **그대로 둔다**. 리포트·4단계 분석·아바타가
+#   ALL 기준으로 부르고, 배포가 파일 단위라 서명도 못 바꾼다. 관제 표가 FAB 화면일
+#   때만 아래 함수를 쓴다 (server.api_feed).
+# ★무엇이 틀렸었나 (FAB 분리 파일에도 reason 은 **전체 것**이 실려 온다 —
+#   'M16HUB[…]; M14[…]; M16A[…]; PIO(…)' 가 다 들어 있다)
+#     ① 발동 룰: 그 FAB 블록이 없으면 **첫 블록(남의 FAB)을 빌려 와 이름만 바꿔**
+#        붙였다 — M16B 화면에 'M16B 반송지연 지속 · Storage FULL' 이 떴는데 그건
+#        M16HUB 가 발동한 것이었다.
+#     ② 실제지표: 그 FAB 블록이 없으면 reason **전체**를 봤고, 있어도 R-D 를 FAB 과
+#        상관없이 M16HUB 적재율로 적었다(상세도: M14·M14B·M16A·M16B 의 R-D 는 OHT 가동률).
+#        PIO 는 남의 경로 + '10분 합 (전체 12경로)' 가 늘 붙었다.
+#     ③ PIO 문구: '22개/10분 · 주 M14A<-M14B 9개' 가 어느 FAB 화면이든 똑같았다.
+# ★점수를 계산하거나 바꾸지 않는다 — 이미 적힌 값을 골라서 보여 주기만 한다.
+
+
+def _fab_code(fab) -> str:
+    """관제 FAB 코드면 그대로(M16HUB·M16A·M16B·M14B·M14), 아니면 ""."""
+    f = str(fab or "").strip().upper()
+    try:
+        import fab_score as F
+        return f if f in F.PIO_FAB_PATHS else ""
+    except Exception:                                   # noqa: BLE001
+        return ""
+
+
+def fab_pio(row: dict | None, fab: str) -> dict:
+    """그 행(그 1분)의 PIO_ERROR 개수 — **그 FAB 경로 컬럼만** 읽는다.
+
+    반환 {"n": 합, "paths": [(경로, 개수)…]} — 많은 순(같으면 배정표 순).
+    ★읽는 곳은 {경로}_PIOERROR_DEPOSITED 뿐이다 (고객: "area_pio_wsum1 이거 보지
+      말고 … 이걸 봐야 돼"). 값은 그 분(1분)의 DEPOSIT 실패 건수다(상세도 4-P-1).
+    ★reason 의 PIO(…=N건/10분) 는 안 쓴다 — 10분 누적이고 상위 경로만 적혀 와서
+      그 FAB 경로가 빠져 있을 수 있다.
+    ★경로 배정은 fab_score.pio_paths_of (상세도 4-P-1 과 같다:
+      M16HUB 7 · M14 5 · M16A 4 · M14B 3 · M16B 2).
+    """
+    f = _fab_code(fab)
+    if not f or not row:
+        return {"n": 0, "paths": []}
+    import fab_score as F
+    order = [x["path"] for x in F.pio_paths_of(f)]
+    got = []
+    for p in order:
+        try:
+            v = float(str(row.get(p + _PIO_COL_SUF) or "").strip())
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            got.append((p, int(round(v))))
+    got.sort(key=lambda x: (-x[1], order.index(x[0])))
+    return {"n": sum(n for _p, n in got), "paths": got}
+
+
+def fab_pio_text(row: dict | None, fab: str) -> str:
+    """'PIO_ERROR 3개/1분 (M16A->M16B 2, M16B->M16A 1)' — 없으면 "".
+
+    ★괄호 안 경로는 쉼표로 잇는다. 관제 표(reasonCell)가 ' · ' 에서 줄을 끊어서,
+      가운뎃점으로 이으면 괄호가 두 줄로 쪼개지고 룰 개수(파랑 기준)도 부풀어 오른다.
+    """
+    d = fab_pio(row, fab)
+    if not d["n"]:
+        return ""
+    head = ", ".join(f"{p} {n}" for p, n in d["paths"][:3])
+    more = f" 외 {len(d['paths']) - 3}" if len(d["paths"]) > 3 else ""
+    return f"PIO_ERROR {d['n']}개/1분 ({head}{more})"
+
+
+def _fab_block(reason: str, fab: str) -> tuple[str, bool]:
+    """(그 FAB 블록, reason 이 영역 블록 형식인가).
+
+    ★블록 형식인데 그 FAB 것이 없으면 "" — **남의 블록을 빌려 오지 않는다**.
+    ★블록 형식이 아예 아니면(옛 모양) 누구 것인지 가릴 수 없어 '발동:' 뒤 전체.
+    """
+    txt = reason or ""
+    blocks = _reason_blocks(txt)
+    if blocks:
+        return next((b for a, b in blocks if a.upper() == fab), ""), True
+    return (txt.split("발동:", 1)[-1] if "발동:" in txt else ""), False
+
+
+# 블록 안 표기 → 상세도의 룰. 차례는 _RULE_KR 과 같다(표에 늘 같은 순서로 선다).
+# ★_rule_names 를 안 쓰는 이유 — FAB 블록에서 두 가지를 놓쳤다:
+#     'MAXCAPA1개변경' (뒤에 글자가 바로 붙어 \b 가 안 걸린다 — 실데이터 표기)
+#     'Sorter(…)'      (대소문자)
+#   _rule_names 는 ALL 요약이 같이 써서(리포트·아바타) 여기서 따로 둔다.
+_FAB_RULE_RE = [
+    ("RA_sus",  re.compile(r"(?<![A-Za-z0-9])R-?A_sus")),
+    ("RB_fast", re.compile(r"(?<![A-Za-z0-9])R-?B_fast")),
+    ("RA",      re.compile(r"(?<![A-Za-z0-9])R-?A(?![A-Za-z0-9_])")),
+    ("RB",      re.compile(r"(?<![A-Za-z0-9])R-?B(?![A-Za-z0-9_])")),
+    ("RC",      re.compile(r"(?<![A-Za-z0-9])R-?C(?![A-Za-z0-9_])")),
+    ("RD",      re.compile(r"(?<![A-Za-z0-9])R-?D(?![A-Za-z0-9_])")),
+    ("MAXCAPA", re.compile(r"MAXCAPA")),
+    ("SORT",    re.compile(r"(?i:sort)|소터|분류기")),
+    ("SLA",     re.compile(r"SLA|4분초과")),
+]
+_FAB_RULE_KR = {"RA_sus": "반송지연 지속", "RB_fast": "Queue 상승", "RA": "반송지연",
+                "RB": "Queue 누적", "MAXCAPA": "운영자 용량변경",
+                "SORT": "분류기 대기", "SLA": "4분초과"}
+
+
+def _fab_rules(block: str) -> list[tuple[str, str]]:
+    """블록 → [(룰 코드, 그 룰 토막)] — 토막은 괄호 안 근거(R-D(FAB저장=…))를 본다."""
+    parts = [t.strip() for t in re.split(r",(?![^()]*\))", block or "") if t.strip()]
+    out, seen = [], set()
+    for code, rx in _FAB_RULE_RE:
+        for t in parts:
+            if rx.search(t) and code not in seen:
+                # R-A_sus 는 R-A 로도 읽히면 안 된다 — 위 정규식이 막는다
+                seen.add(code)
+                out.append((code, t))
+                break
+    return out
+
+
+def _fab_rule_name(code: str, f: str) -> str:
+    """상세도의 룰 이름 — R-C · R-D 는 FAB 마다 보는 것이 달라 이름도 다르다."""
+    if code == "RD":
+        return "Storage FULL" if f == "M16HUB" else "OHT 가동률"
+    if code == "RC":
+        return "컨베이어 편중" if f == "M14" else "리프터 정체"
+    return _FAB_RULE_KR.get(code, code)
+
+
+# M16HUB R-D 괄호 안 글자 → 그 조건의 원본 컬럼 (상세도 M16HUB 2절 R-D 다섯 줄)
+_HUB_RD = [
+    (("FAB저장", "적재"), "M16HUB.STRATE.ALL.FABSTORAGERATIO", "FAB 적재율", "%"),
+    (("STB",), "M16HUB.STRATE.STB.3F_STORAGE_UTIL", "3F STB 점유율 (기록용)", "%"),
+    (("MLUD",), "M16HUB.QUE.ALL.3F_TO_3F_MLUD_JOB", "MLUD 잡 누적", "개"),
+    (("수동", "MANUAL"), "M16HUB.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT", "수동 이동 큐", "개"),
+    (("CNV",), "M16HUB.CNV.SENDFAB.TO_M14A_CURRENTQCNT", "CNV 현재량", "개"),
+]
+_HUB_LIFTERS = ("6ABL6011", "6ABL6012", "6ABL6021", "6ABL6022", "6ABL6031",
+                "6ABL6032", "6ABL0111", "6ABL0112", "6ABL0121", "6ABL0122")
+_M14_RC = (("M14.QUE.CNV.M14ATONORTHCURRENTQCNT", "M14A → 북측 CNV 물량"),
+           ("M14.QUE.CNV.M14ATOSOUTHCURRENTQCNT", "M14A → 남측 CNV 물량"))
+
+
+def _fab_rule_cols(code: str, tok: str, f: str, row: dict | None) -> list[dict]:
+    """그 룰이 그 FAB 에서 읽는 원본 컬럼 [{col, raw, label, unit}] — 상세도 2절."""
+    import fab_score as F
+    w = F.WATCH.get(f) or {}
+
+    def one(raw, label, unit, col=""):
+        return {"col": col or raw, "raw": raw, "label": f"{f} {label}", "unit": unit}
+
+    if code in ("RA", "RA_sus", "RB", "RB_fast"):
+        it = (w.get(code[:2]) or [None])[0]              # 지속·급증도 같은 컬럼
+        return [one(it["amos"], it["label"], it.get("unit") or "", it.get("csv"))] if it else []
+    if code == "RD":
+        if f != "M16HUB":
+            it = (w.get("RD") or [None])[0]              # OHT 가동률 하나
+            return [one(it["amos"], it["label"], it.get("unit") or "", it.get("csv"))] if it else []
+        got = [one(raw, lb, un) for keys, raw, lb, un in _HUB_RD
+               if any(k in tok for k in keys)]
+        return got or [one(*_HUB_RD[0][1:])]               # 근거가 안 적혀 오면 적재율
+    if code == "RC":
+        if f == "M14":
+            return [one(raw, lb, "개") for raw, lb in _M14_RC]
+        if f == "M16HUB":
+            ids = [x for x in _HUB_LIFTERS if x in tok]  # R-C'(역증가4개:6ABL6021,…)
+            if not ids:
+                return [one("M16HUB.LFT.{6ABL6011…6ABL0122}.TOTAL_CURRENTQCNT",
+                            "리프터 10대 대기량", "대")]
+            return [one(f"M16HUB.LFT.{x}.TOTAL_CURRENTQCNT", f"리프터 {x} 대기량", "대")
+                    for x in ids]
+        return []                                        # 상세도: M14B·M16A·M16B 는 R-C 없음
+    if code in ("SLA", "SORT"):
+        return [one(it["amos"], it["label"], it.get("unit") or "", it.get("csv"))
+                for it in (w.get(code) or []) if not it.get("record_only")]
+    if code == "MAXCAPA":
+        items = [it for it in (w.get("MAXCAPA") or [])]
+        try:
+            hit = [h.split("=", 1)[0].strip() for h in F._maxcapa_hits(row or {}, f)]
+        except Exception:                               # noqa: BLE001
+            hit = []
+        pick = [it for it in items if any(it["amos"].endswith("." + h) for h in hit)]
+        return [one(it["amos"], it["label"], it.get("unit") or "") for it in (pick or items)]
+    return []
+
+
+def fab_reason(reason: str, fab: str, row: dict | None = None) -> str:
+    """FAB 화면 '발동 룰' — 그 FAB 블록의 룰 + 그 분 그 FAB 경로의 PIO_ERROR 개수.
+
+    예) M16B 화면 · 'M16HUB[R-A_sus]; M16A[SLA(…)]; PIO(…)' · M16A->M16B 2개
+        → 'M16B PIO_ERROR 2개/1분 (M16A->M16B 2)'
+        (예전: 'M16B 반송지연 지속 · … · PIO 반송실패 22개/10분 · 주 M14A<-M14B 9개')
+    그 FAB 것이 하나도 없으면 "" — 표가 '정상 운영'/'–' 로 채운다.
+    """
+    f = _fab_code(fab)
+    if not f:
+        return summarize_reason(reason, fab)
+    block, _ = _fab_block(reason, f)
+    rules = _fab_rules(block)
+    names = []
+    for code, _t in rules:
+        nm = _fab_rule_name(code, f)
+        if nm not in names:
+            names.append(nm)
+    if block and not names:
+        names = ["이상 감지"]          # 못 알아본 룰 — 원문은 흘리지 않는다
+    pio = fab_pio_text(row, f)
+    if pio:
+        names.append(pio)
+    return (f"{f} " + " · ".join(names)) if names else ""
+
+
+def fab_metrics(reason: str, fab: str, row: dict | None = None) -> list[dict]:
+    """FAB 화면 '실제지표' — 그 FAB 블록 룰의 **원본 컬럼**(상세도 2절) + 그 FAB PIO 경로.
+
+    ★남의 FAB 컬럼 · 남의 PIO 경로 · 전체 12경로 합(pio_10min_cnt) · 가중합
+      (area_pio_wsum1/10) 은 올리지 않는다.
+    ★PIO 는 그 분에 실패가 난 경로의 **실제 컬럼 이름**({경로}_PIOERROR_DEPOSITED)
+      으로 적는다 — 고객이 준 목록이 그 이름이고, 현장은 그걸로 원 데이터를 찾아간다.
+    """
+    f = _fab_code(fab)
+    if not f:
+        return reason_metrics(reason, fab, row)
+    block, _ = _fab_block(reason, f)
+    mets: list[dict] = []
+    have: set = set()
+    for code, tok in _fab_rules(block):
+        for m in _fab_rule_cols(code, tok, f, row):
+            if m["raw"] in have:
+                continue
+            have.add(m["raw"])
+            mets.append(m)
+    for p, _n in fab_pio(row, f)["paths"]:
+        col = p + _PIO_COL_SUF
+        if col in have:
+            continue
+        have.add(col)
+        mets.append({"col": col, "raw": col, "label": f"PIO_ERROR {p}", "unit": "개"})
+    return mets
+
+
 def hid_zones(tokens: str) -> list[str]:
     """HID_32_FROM_SUM_A → HID32 (순서 보존·중복 제거)."""
     out, seen = [], set()

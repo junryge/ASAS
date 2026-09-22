@@ -1864,6 +1864,14 @@ def api_feed():
     C = rctx()
     from sentinel import (_row_dt, _score, grade, hid_zones, reason_metrics,
                           summarize_reason)
+    # 지금 보는 화면이 FAB 이면 그 코드 (ALL 이면 "") — 발동 룰·실제지표를 그 FAB 것만
+    # ★배포가 파일 단위다 — sentinel.py 가 아직 옛것이면 예전 함수로 그대로 간다.
+    try:
+        from sentinel import fab_metrics, fab_reason
+    except ImportError:
+        fab_reason = fab_metrics = None
+    _fab_sys = str(C.get("sys") or "").upper()
+    _fab_sys = "" if (_fab_sys in ("", "ALL") or fab_reason is None) else _fab_sys
 
     # 오늘 쌓인 전체 데이터. 오늘이 아직 비었으면 가장 최근 날짜를 대신 보여준다.
     from store_csv import list_days, read_day
@@ -1976,11 +1984,16 @@ def api_feed():
                 "score": sc, "level": g["level"], "emoji": g["emoji"], "severity": g["severity"],
                 # 원문 fallback 금지 — 요약이 비면 룰 코드·금지어가 그대로 새어
                 # 나갔다. summarize_reason 이 항상 한글 한 줄을 돌려준다.
-                "reason": summarize_reason(raw_reason, area),
+                # ★FAB 화면이면 **그 FAB 것만** (고객: "발동률도 각 FAB 에 해당하는
+                #   것만, 실제지표도 마찬가지 · PIO_ERROR 몇 개인지") — sentinel.fab_*.
+                #   ALL 은 예전 그대로다 (리포트·아바타가 같은 함수를 ALL 로 부른다).
+                "reason": (fab_reason(raw_reason, _fab_sys, r) if _fab_sys
+                           else summarize_reason(raw_reason, area)),
                 "reason_raw": raw_reason,
                 # 한글 요약 옆 '실제지표' 칸 — 그 룰이 실제로 보는 raw 컬럼명
                 "metrics": [{"raw": x["raw"], "label": x["label"]}
-                            for x in reason_metrics(raw_reason, area, r)],
+                            for x in (fab_metrics(raw_reason, _fab_sys, r) if _fab_sys
+                                      else reason_metrics(raw_reason, area, r))],
                 "zones": hid_zones(bott), "items": items,
                 # AMOS 4개 컬럼을 나눠서 그대로 (UI 표시용)
                 "bott_down": hid_zones(bd), "bott_up": hid_zones(bu),

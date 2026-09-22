@@ -174,23 +174,48 @@ def parse_reason_metrics(reason: str, fab: str = "") -> list[dict]:
             out.append({"col": col, "raw": raw, "label": label, "unit": unit,
                         "bar": bar})
 
+    # ★FAB 화면이면 **그 FAB 블록만** 본다 (고객: "스코어는 보이고 관련된 그래프만
+    #   보이게", "실제지표 각 FAB 에 연관관계가 있는걸"). reason 원문은 FAB 분리
+    #   파일에도 **전체 것**이 실려 와서 M16HUB[…]; M14[…] 가 같이 들어 있다. 예전엔
+    #   fab 을 받아 놓고 PIO 에만 썼기 때문에 M16B 그래프에 M14·M16HUB 반송시간이 떴다.
+    #   fab 을 안 주면(ALL) 지금까지와 똑같이 모든 블록을 본다.
+    only = _fab_ok(fab)
+    # ★M16HUB 전용 칸(FAB 저장율·STB·리프터 정체)은 ALL 이나 M16HUB 화면에서만 선다.
+    #   컬럼흐름 상세도(FAB별 HTML 2절): M14·M14B·M16A·M16B 의 R-D 는 **OHT 가동률
+    #   하나**, R-C 는 M14 만 있고 **CNV 편중**(M14_cnv_skew)이다. 예전엔 어느 블록이든
+    #   R-C 를 M16HUB 리프터로 그렸다.
+    hub_ok = (not only) or only == "M16HUB"
     for m in re.finditer(r"(M16HUB|M14B|M16A|M16B|M14)\s*\[(.*?)\]", body):
         area, inner = m.group(1), m.group(2)
+        if only and area.upper() != only:
+            continue
         if "AVGTOTALTIME1MIN" in inner or "AVGLOADTIME1MIN" in inner or "R-A" in inner:
             add(f"{area}_ra", _RA.get(area, f"{area}.QUE.TIME.AVGTOTALTIME1MIN"),
                 f"{area} 반송시간", "분")
-        if "FAB저장" in inner:
+        if only and re.search(r"(?<![A-Za-z0-9])R-?B", inner):
+            # FAB 화면만 — 상세도 2절: R-B 는 {FAB} 대기물량의 30분·10분 증가량
+            add(f"{area}_rb_diff30", f"{area}_rb_diff30", f"{area} Queue 증감(30분)", "건")
+            if "R-B_fast" in inner or "RB_fast" in inner:
+                add(f"{area}_rb_diff10", f"{area}_rb_diff10", f"{area} Queue 증감(10분)", "건")
+        if hub_ok and "FAB저장" in inner:
             add("M16HUB_rd_fab", _FAB, "M16HUB FAB저장율", "%")
-        if re.search(r"\bSTB", inner):
+        if hub_ok and re.search(r"\bSTB", inner):
             # R-D 판정에서 빠진 값이다 (2026-08) — 기록용임을 이름에 남긴다
             add("M16HUB_stb_util", _STB, "M16HUB STB저장율 (기록용)", "%")
-        if "OHT=" in inner or "OHT가동" in inner:
+        if "OHT=" in inner or "OHT가동" in inner or \
+                (only and area.upper() != "M16HUB"
+                 and re.search(r"(?<![A-Za-z0-9])R-?D(?![A-Za-z0-9_])", inner)):
             add(f"{area}_rd_oht", f"{area}.QUE.OHT.OHTUTIL", f"{area} OHT가동률", "%")
         if "R-C" in inner:
-            add("M16HUB_rev_count", _REV, "M16HUB 리프터 정체", "회")
+            if hub_ok and area.upper() == "M16HUB":
+                add("M16HUB_rev_count", _REV, "M16HUB 리프터 정체", "회")
+            elif area.upper() == "M14" and only:
+                add("M14_cnv_skew", "M14_cnv_skew", "M14 컨베이어 편중", "")
+            elif hub_ok:
+                add("M16HUB_rev_count", _REV, "M16HUB 리프터 정체", "회")
         if "SLA(" in inner or "4분초과" in inner:
             add(f"sla_{area}", f"{area}.QUE.ALL.TRANSPORT4MINOVERRATIO", f"{area} 4분초과율", "%")
-        if "SORT(" in inner or "소터" in inner:
+        if "SORT(" in inner or "소터" in inner or (only and re.search(r"(?i)sort", inner)):
             add(f"sorter_{area}", f"{area}.SORTER.ABN.SORTERWAITCOUNTOVER", f"{area} 분류기 대기", "건")
 
     # ── PIO 반송실패 ────────────────────────────────────────────────
@@ -565,7 +590,7 @@ def _fab_series(pts, fabs, cfg):
 def thresholds() -> dict:
     """{csv컬럼: (임계, 부등호, 이름, 단위)} — 룰 원본에서 읽는다.
 
-    ★한 컬럼에 임계가 둘인 경우가 있다 (반송시간 9.0 / 지속 6.3). 룰 정의
+    ★한 컬럼에 임계가 둘인 경우가 있다 (반송시간 9.0 / 지속 6.62). 룰 정의
       순서가 앞선 쪽(본 임계)을 쓴다 — 낮은 쪽을 쓰면 늘 '넘음' 으로 뜬다.
     """
     try:
