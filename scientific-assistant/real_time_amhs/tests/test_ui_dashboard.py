@@ -502,10 +502,16 @@ class 그래프를_제대로_보여준다(unittest.TestCase):
         self.assertIn("그래프를 못 불러왔습니다", self.h)
 
     def test_서랍을_키웠다(self):
-        m = re.search(r"\.bm-graph\{position:absolute;right:12px;top:12px;bottom:12px;width:min\((\d+)%,(\d+)px\)", self.h)
+        """고객: "더블클릭해서 그래프 보는 건 남는 공간이 너무 많아. 그래프도 작고".
+        폭은 넓게, 높이는 **그림만큼** — 아래로 늘 끝까지 뻗던 것을 뺐다."""
+        i = self.h.index("'.bm-graph{position:absolute;")
+        blk = self.h[i:self.h.index("'.bm-ghead{", i)]
+        m = re.search(r"width:min\((\d+)%,(\d+)px\)", blk)
         self.assertTrue(m, "서랍 크기를 못 찾았다")
-        self.assertGreaterEqual(int(m.group(1)), 60, "너무 좁다")
-        self.assertGreaterEqual(int(m.group(2)), 900, "너무 좁다")
+        self.assertGreaterEqual(int(m.group(1)), 70, "너무 좁다")
+        self.assertGreaterEqual(int(m.group(2)), 1200, "너무 좁다")
+        self.assertIn("max-height:calc(100% - 24px)", blk, "그림이 길면 서랍 안에서 굴린다")
+        self.assertNotIn("bottom:12px", blk, "아래로 늘 뻗으면 빈 자리가 남는다")
 
     def test_더_넓게도_된다(self):
         self.assertIn("'.bm-graph.wide{width:calc(100% - 24px)}'", self.h)

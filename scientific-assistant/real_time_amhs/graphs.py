@@ -485,6 +485,61 @@ def _pio_score_cell(metrics: list[dict], pts, fab: str) -> list[dict]:
     return metrics
 
 
+def _fab_real_cells(metrics: list[dict], pts, fab: str) -> list[dict]:
+    """FAB 화면 — 그 FAB 의 **실제지표 그래프를 늘** 세운다.
+
+    고객: "실제지표 나오는 그래프가 보여야 하는데. 실시간 관제도 더블클릭 그래프도
+    마찬가지 … 그래프 추가해서 보여야 돼" · "실제데이터 그래프를 보여줘야 하는데
+    그것도 없네" (UI대쉬보드 더블클릭).
+    ★예전엔 그 분 reason 에 그 FAB 블록이 있을 때만 칸이 섰다. 룰이 안 걸린 분엔
+      점수 그래프 하나만 떠서, 무엇이 얼마였는지 볼 길이 없었다.
+    ★칸은 **컬럼흐름 상세도 2절의 룰 컬럼** — fab_score.WATCH 의 csv 이름(그 FAB
+      분리 파일에 실제로 실려 오는 이름)이다. 걸린 룰은 앞에서 이미 들어왔고
+      (col 이 같으면 다시 안 넣는다), 여기서는 나머지를 채운다. 순서는 뒤에서
+      '임계 대비 배수' 로 다시 정렬되므로 넘은 것이 늘 먼저 보인다.
+    ★빼는 것 — 기록용(STB, 판정 미사용) · 누적 건수(op=diff10: 누적값을 임계로
+      나누면 배수가 거짓이 된다) · CSV 에 값이 없는 조건(MAXCAPA 등) · 창 안에
+      값이 하나도 없는 컬럼(빈 칸은 높이만 먹는다).
+    ★PIO 는 그 FAB 경로 컬럼({경로}_PIOERROR_DEPOSITED)에 실패가 왔으면 막대 칸을
+      세운다 — reason 에 PIO 가 안 적힌 분에도 (고객: "PIO_ERROR 경우 이거 보여줘").
+    ALL 화면(fab="")에는 아무것도 안 한다 — 지금까지와 똑같다.
+    """
+    f = _fab_ok(fab)
+    if not f:
+        return metrics
+    try:
+        import fab_score as F
+    except Exception:                                   # noqa: BLE001
+        return metrics
+    have = {m.get("col") for m in metrics}
+    derived = ("_rb_diff30", "_rb_diff10", "_cnv_skew", "_rev_count")
+    for code in ("RA", "RB", "RB_fast", "RC", "RD", "SLA", "SORT"):
+        for it in (F.WATCH.get(f) or {}).get(code) or []:
+            col = it.get("csv") or ""
+            if not col or col in have or it.get("record_only"):
+                continue
+            if (it.get("op") or "") == "diff10":
+                continue
+            if not any(_f((r or {}).get(col)) is not None for _t, r in pts):
+                continue
+            amos = str(it.get("amos") or "")
+            # 원본을 그대로 옮긴 컬럼은 AMOS 이름으로, 창에서 새로 계산한 컬럼은
+            # CSV 이름으로 적는다 — 현장이 그 이름으로 원 데이터를 찾아간다.
+            raw = col if (col.endswith(derived) or any(x in amos for x in "{…/÷ ")
+                          or not amos) else amos
+            metrics.append({"col": col, "raw": raw, "label": f"{f} {it.get('label') or col}",
+                            "unit": it.get("unit") or ""})
+            have.add(col)
+    if not any(m.get("pio_stack") for m in metrics):
+        found = _pio_paths_in(pts, f)[:_PIO_STACK_MAX]
+        cols = _pio_keep([{"col": p + _PIO_SUF, "name": p} for p in found], f) if found else []
+        if cols:
+            metrics.append({"col": cols[0]["col"], "raw": "PIO.DEPOSIT.{경로}",
+                            "label": _pio_label([x["name"] for x in cols], f), "unit": "개",
+                            "bar": True, "cols": cols, "pio_stack": True})
+    return metrics
+
+
 def _f(v):
     try:
         return float(str(v).strip())
@@ -939,6 +994,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
     mets = _pio_fill(parse_reason_metrics(sel[1].get("reason") or "", fabc),
                      pts, fabc)
     mets = _pio_score_cell(mets, pts, fabc)
+    mets = _fab_real_cells(mets, pts, fabc)     # FAB 화면 — 실제지표 칸을 늘 세운다
     for m in mets:
         c = m["col"]
         if c in seen:
@@ -1192,8 +1248,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
 
     # ── 지표 격자 ─────────────────────────────────────────────────────
     nover = sum(1 for m in metrics if (m["ratio"] or 0) >= 1)
+    # ★FAB 화면은 룰이 안 걸린 실제지표까지 늘 세운다(_fab_real_cells) — '발동 지표' 라
+    #   부르면 안 걸린 칸이 왜 있냐가 된다. 고객 말 그대로 '실제지표' 다.
     o.append(f'<text x="{PAD}" y="{y_mlbl:.1f}" font-size="10.5" font-weight="700" '
-             f'fill="{P["tx2"]}">발동 지표 '
+             f'fill="{P["tx2"]}">{"실제지표" if fabc else "발동 지표"} '
              f'<tspan fill="{P["tx3"]}" font-weight="400">— 임계 넘은 것부터 · '
              f'{nover}/{len(metrics)}개 넘음</tspan></text>')
     if not metrics:

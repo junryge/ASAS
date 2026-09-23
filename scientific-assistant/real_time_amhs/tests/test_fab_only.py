@@ -293,6 +293,73 @@ class 더블클릭_그래프는_그_FAB_것만(unittest.TestCase):
         self.assertIn("M16B OHT가동률", svg)
 
 
+class 실제지표_그래프는_늘_선다(unittest.TestCase):
+    """고객: "실제지표 나오는 그래프가 보여야 하는데. 실시간 관제도 더블클릭 그래프도
+    마찬가지 … 그래프 추가해서 보여야 돼" · "실제데이터 그래프를 보여줘야 하는데
+    그것도 없네" (UI대쉬보드 더블클릭 — 둘 다 /api/graph → graphs.render)."""
+
+    C = _dt.datetime(2026, 9, 23, 9, 45)
+
+    def _rows(self, fab, reason, fab_row=True):
+        base = _dt.datetime(2026, 9, 23, 9, 0)
+        out = []
+        for i in range(60):
+            r = {"datetime": (base + _dt.timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:%S"),
+                 "unified_risk_score": str(30 + i % 25), "hot_area": fab, "reason": reason,
+                 f"{fab}_ra": f"{2.2 + (i % 7) * 0.2:.2f}", f"{fab}_rb_diff30": str(i % 30 - 5),
+                 f"{fab}_rb_diff10": str(i % 12 - 3), f"{fab}_rd_oht": f"{78 + i % 9:.1f}",
+                 f"sla_{fab}": f"{8 + i % 8:.1f}", f"{fab}_sla_cnt": str(400 + i),
+                 f"sorter_{fab}": str(i % 40),
+                 "M16HUB_stb_util": "99.0",
+                 "M16A->M16B_PIOERROR_DEPOSITED": str(i % 3),
+                 "M14A<-M14B_PIOERROR_DEPOSITED": str(i % 4)}
+            if fab_row:
+                r.update({"all_score": "50", "area_score": r["unified_risk_score"]})
+            out.append(r)
+        return out
+
+    def _labels(self, svg):
+        return re.findall(r'font-size="11.5" font-weight="700"[^>]*>([^<]*)', svg)
+
+    def test_룰이_안_걸린_분에도_선다(self):
+        """그 분 reason 에 M16B 블록이 없어도 M16B 실제지표 칸이 선다."""
+        svg = G.render(self._rows("M16B", "발동: M16HUB[R-A_sus]; M14[R-A_sus]"), self.C, 60)
+        lb = self._labels(svg)
+        for want in ("M16B 적재시간", "M16B 10F→HUB 대기 30분 증가", "M16B OHT 가동률",
+                     "M16B 4분 초과율", "M16B 소터 대기"):
+            self.assertIn(want, lb)
+        self.assertTrue([x for x in lb if x.startswith("PIO M16B 주 경로")],
+                        "reason 에 PIO 가 없어도 경로 컬럼에 실패가 있으면 막대가 선다")
+
+    def test_남의_FAB_칸은_여전히_없다(self):
+        svg = G.render(self._rows("M16B", "발동: M16HUB[R-A_sus]; M14[R-A_sus]"), self.C, 60)
+        self.assertFalse([x for x in self._labels(svg)
+                          if x.startswith(("M16HUB ", "M14 ", "M16A ", "M14B "))])
+        self.assertNotIn("M14A&lt;-M14B", svg, "남의 경로가 막대에 섞였다")
+
+    def test_빼는_것(self):
+        """누적 건수(sla_cnt) — 누적값을 임계로 나누면 배수가 거짓. 기록용 STB 도 뺀다."""
+        svg = G.render(self._rows("M16HUB", "발동: M14[R-A_sus]"), self.C, 60)
+        self.assertNotIn("M16HUB_sla_cnt", svg)
+        self.assertNotIn("STB", " ".join(self._labels(svg)))
+
+    def test_칸_제목은_실제지표(self):
+        svg = G.render(self._rows("M16B", "발동: M16B[R-D]"), self.C, 60)
+        self.assertIn(">실제지표 <", svg)
+        allsvg = G.render(self._rows("M16B", "발동: M16B[R-D]", fab_row=False), self.C, 60)
+        self.assertIn(">발동 지표 <", allsvg, "ALL 은 예전 그대로")
+
+    def test_ALL_은_늘_세우지_않는다(self):
+        allsvg = G.render(self._rows("M16B", "발동: M16HUB[R-A_sus]", fab_row=False), self.C, 60)
+        lb = self._labels(allsvg)
+        self.assertFalse([x for x in lb if "OHT 가동률" in x or "소터 대기" in x], lb)
+
+    def test_임계는_상세도_값으로_적힌다(self):
+        svg = G.render(self._rows("M16B", "발동: M16B[R-D]"), self.C, 60)
+        self.assertIn("3.12", svg)      # M16B R-A
+        self.assertIn("82.19", svg)     # M16B R-D
+
+
 class 임계는_상세도_5절_계산식(unittest.TestCase):
     """컬럼흐름 상세도 2026-09-21 판 5절 계산식의 값. 화면의 '값/임계 · ▲배수'·
     '넘음' 표시가 이걸 쓴다 — 점수는 예측기가 CSV 에 적은 값이라 안 바뀐다."""
