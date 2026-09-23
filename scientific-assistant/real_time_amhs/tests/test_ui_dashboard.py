@@ -87,7 +87,6 @@ class 대쉬보드에_붙어_있다(unittest.TestCase):
         self.assertIn("""d.querySelector('[data-bm-area="toolbar"]')""", self.h)
         self.assertIn("b.className = 'bm-open ui-host';", self.h, "그 화면 모양새를 그대로 쓴다")
         self.assertIn("window.open(UI_SRC, '_blank')", self.h)
-        self.assertIn("mk('다시 싣기'", self.h)
         self.assertIn("mk('⧉ 새 창'", self.h)
 
     def test_그_화면이_다_뜬_뒤에_꽂는다(self):
@@ -527,6 +526,27 @@ class 그래프를_제대로_보여준다(unittest.TestCase):
 
     def test_누르면_남는다고_적어_둔다(self):
         self.assertIn("그래프를 누르면 그 분 값이 남습니다", self.h)
+
+
+class 다시_싣기를_뺐다(unittest.TestCase):
+    """고객: "ui대쉬보드 다시 싣기 삭제해라!".
+    화면 안 도구줄의 단추 · 제목 옆 안내 글 · 그 단추만 쓰던 uiReload 를 같이 뺐다."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("static", "dashboard.html")
+
+    def test_단추가_없다(self):
+        self.assertNotIn("mk('다시 싣기'", self.h)
+        self.assertNotIn("function uiReload(", self.h)
+        self.assertNotIn("uiReload", self.h.replace("function uiReload(", ""))
+
+    def test_안내_글에도_없다(self):
+        i = self.h.index('<div class="page hidden" id="tab-ui">')
+        self.assertNotIn("<b>다시 싣기</b>", self.h[i:i + 1500])
+
+    def test_새_창_단추는_그대로(self):
+        self.assertIn("mk('⧉ 새 창'", self.h)
 
 
 class 제목에_준비중(unittest.TestCase):

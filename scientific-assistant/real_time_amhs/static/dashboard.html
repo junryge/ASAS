@@ -1515,7 +1515,7 @@
   <div class="card">
     <h2>FAB별 실시간 상황표(준비중)
       <span class="note">— 왼쪽 끌기 돌리기 · Ctrl + 끌기 이동 · 휠 줌
-        · 화면 오른쪽 위 <b>⧉ 새 창</b> · <b>다시 싣기</b> · <b>✎ 수정</b></span>
+        · 화면 오른쪽 위 <b>⧉ 새 창</b> · <b>✎ 수정</b></span>
     </h2>
     <div class="bd" style="padding:0">
       <iframe id="uiframe" title="FAB별 실시간 상황표"
@@ -2727,17 +2727,11 @@ function initUi(){
   if(f && !UI_LOADED){ f.src = UI_SRC; UI_LOADED = true; uiWaitBtn(); }
 }
 
-/* 단추 둘은 **화면 안** 도구줄(✎ 수정 옆)에 꽂는다 — 고객: "새창열기,다시 싣기
+/* ⧉ 새 창 단추는 **화면 안** 도구줄(✎ 수정 옆)에 꽂는다 — 고객: "새창열기,다시 싣기
    프레임 안으로 집어 넣던지". 관제가 같은 자리에서 내주니 iframe 속을 만질 수 있다.
+   ★'다시 싣기' 단추는 뺐다 (고객: "ui대쉬보드 다시 싣기 삭제해라!").
    ★그 화면의 boot 가 끝난 뒤에 꽂는다(__bm). 그래야 도구줄도 있고, 그 화면이 넣는
      .bm-open 모양새도 이미 들어와 있어 제 단추처럼 보인다. */
-function uiReload(){
-  const f = $('#uiframe');
-  if(!f) return;
-  UI_BTN = false;
-  f.src = 'about:blank';
-  setTimeout(() => { f.src = UI_SRC; uiWaitBtn(); }, 60);  // about:blank 를 거쳐야 정말 다시 싣는다
-}
 let UI_BTN = false;
 function uiPutBtn(){
   const f = $('#uiframe');
@@ -2755,7 +2749,6 @@ function uiPutBtn(){
     bar.insertBefore(b, bar.firstChild);                          // ✎ 수정 왼쪽에
     return b;
   };
-  mk('다시 싣기', '상황표를 다시 싣습니다', uiReload);   // ★↻ 는 그 화면의 돌리기 단추라 글자로
   mk('⧉ 새 창', '이 화면만 따로 큰 창으로 엽니다', () => window.open(UI_SRC, '_blank'));
   uiFit(d);
   UI_BTN = true;
