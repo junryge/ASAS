@@ -36,6 +36,10 @@ class LLM_카드_위_한_줄(unittest.TestCase):
         self.assertIn(TEXT, self.h[i:i + 400])
         self.assertIn(".tabhead p{margin:0;", self.h)
 
+    def test_글자는_빨강(self):
+        """고객: "방금 만든 글자색 빨간색으로 눈에 잘 보이게" — 테마별 빨강(--crit)."""
+        self.assertIn("#livenote p{color:var(--crit)}", self.h)
+
 
 if __name__ == "__main__":
     unittest.main()

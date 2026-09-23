@@ -921,6 +921,9 @@
   .tabhead p{margin:0;max-width:1100px;font-size:15px;line-height:1.65;color:var(--tx2);
              text-wrap:pretty}
   .tabhead p b{color:var(--txb);font-weight:600}
+  /* LLM 최근 판단 위 한 줄 — 고객: "방금 만든 글자색 빨간색으로 눈에 잘 보이게".
+     ★색은 테마마다 정해 둔 빨강(--crit)을 쓴다 — 화이트에선 어두운 빨강이라 읽힌다. */
+  #livenote p{color:var(--crit)}
 
   /* 카드 안 소제목 — 시안 섹션 라벨(11px · .08em · 대문자 · --tx3).
      ★13px 굵은 글씨는 카드 제목(17px)과 구분이 안 돼 어디서 덩어리가 나뉘는지
