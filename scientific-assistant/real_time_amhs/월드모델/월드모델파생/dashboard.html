@@ -46,10 +46,18 @@ body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); 
   line-height:1.4;                    /* ★ 글자 위아래 짤림 방지 */
 }
 #topbar input[type=text] { cursor:text; font-family:Consolas,'D2Coding',monospace; font-size:13px; }
-/* 조회 칸 — 들어갈 글자만큼만. 시작/끝은 14자리(yyyyMMddHHmmss),
-   테이블은 oht_data_m16br 가 가장 긴 이름이다. 더 줄이면 글자가 잘린다. */
+/* 조회 칸 — 들어갈 글자만큼만.
+   ★2026-09 시작/끝은 14자리를 치는 칸이 아니라 **날짜·시각을 고르는 칸**이다
+     (고객: "시작~끝 시간이니까 날짜 시간을 선택하게 해 주면 좋지").
+     초까지 보이는 폭으로 두고, 어두운 바탕에서 달력 단추가 안 보이지 않게
+     color-scheme 을 테마에 맞춘다(hmi 는 밝은 바탕).
+   ★테이블도 치는 칸이 아니라 **고르는 칸**이다 (고객: "테이블 선택할 수 있도록"). */
 #topbar .tb-query input { width:126px; padding-left:7px; padding-right:7px; font-size:12px; }
-#topbar .tb-query #lp-table { width:140px; }
+#topbar .tb-query input[type=datetime-local] { width:auto; cursor:text; color-scheme:dark;
+  font-family:Consolas,'D2Coding',monospace; }
+body[data-theme="hmi"] #topbar .tb-query input[type=datetime-local] { color-scheme:light; }
+#topbar .tb-query #lp-table { width:auto; min-width:150px; font-size:12px;
+  font-family:Consolas,'D2Coding',monospace; }
 #topbar .tb-query label { margin-left:2px; }
 #topbar label { font-size:12px; font-weight:700; color:var(--fg2); }
 #topbar button:hover { background:var(--ctl-hover); }
@@ -290,18 +298,18 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
     </div>
     <div class="tb-group tb-query">
       <label>시작</label>
-      <input type="text" id="lp-from" placeholder="yyyyMMddHHmmss" title="시작 시각 (14자리, 예: 20260621000000)" maxlength="14">
+      <input type="datetime-local" step="1" id="lp-from" onchange="lpFromChanged()" title="시작 날짜·시각 — 눌러서 달력·시계로 고릅니다">
       <span class="tb-tilde">~</span>
       <label>끝</label>
-      <input type="text" id="lp-to" placeholder="yyyyMMddHHmmss" title="끝 시각 (14자리, 예: 20260621010000)" maxlength="14">
+      <input type="datetime-local" step="1" id="lp-to" title="끝 날짜·시각 — 눌러서 달력·시계로 고릅니다">
       <label>테이블</label>
-      <input type="text" id="lp-table" placeholder="(FAB 선택 시 자동)" title="로그프레소 테이블명 — FAB 변경 시 자동 갱신, 직접 수정 가능">
+      <select id="lp-table" onchange="onLpTableChange()" title="로그프레소 테이블 — 고르면 그 FAB·레이아웃 맵으로 바뀝니다 (이름 규칙: oht_data_m번호레이아웃, 예: oht_data_m16br)"></select>
       <div class="tb-seg" title="조회 형태 — 상세는 원본 그대로(컬럼 전부), 간소는 30초로 묶어 가볍게">
         <span class="tb-cap">조회</span>
         <button id="lp-raw"   class="toggle-btn on" onclick="setLpProfile('raw')"
-                title="상세 — 예전 그대로. 컬럼이 다 온다(적재·목적지 포함). 데이터가 많아 긴 구간은 느리다">상세</button>
+                title="상세 — 예전 그대로. 컬럼이 다 온다(적재·목적지 포함). 데이터가 많아 긴 구간은 느리다">상세 (데이터 로드 오래 걸림)</button>
         <button id="lp-agg30" class="toggle-btn"    onclick="setLpProfile('agg30')"
-                title="간소 — MSG_ID=2 만 30초로 묶는다. 10분 넘는 구간도 조회된다. 적재·목적지는 안 온다">간소</button>
+                title="간소 — MSG_ID=2 만 30초로 묶는다. 10분 넘는 구간도 조회된다. 적재·목적지는 안 온다">간소 (데이터 로드 짧음)</button>
       </div>
       <button onclick="logpressoLoad()" id="lp-btn" class="tb-primary" title="로그프레소 조회 후 리플레이 로드">📡 조회 로드</button>
       <button onclick="logpressoStop()" id="lp-stop" disabled
@@ -734,6 +742,46 @@ function _toLP(ts) {
   if (digits.length < 8) return '';     // 최소 yyyyMMdd 는 있어야
   return digits.padEnd(14, '0').slice(0, 14);
 }
+/* ── 시작·끝 날짜 칸 (datetime-local) ────────────────────────────────
+   ★고객: "시작~끝 시간이니까 날짜 시간을 선택하게 해 주면 좋지" — 14자리를 치던
+     칸을 달력·시계로 고르는 칸으로 바꿨다. 서버에는 여전히 14자리로 보낸다
+     (_toLP 가 'yyyy-MM-ddTHH:mm:ss' 에서 숫자만 뽑는다 — 서버·관제 연동은 그대로).
+   ★관제 그래프에서 넘어오는 ?from=14자리 는 _fromLP 로 칸 모양에 맞춰 넣는다. */
+function _fromLP(s14) {
+  const d = String(s14 || '').replace(/[^0-9]/g, '');
+  if (d.length < 12) return '';
+  const t = d.padEnd(14, '0');
+  return `${t.slice(0,4)}-${t.slice(4,6)}-${t.slice(6,8)}T${t.slice(8,10)}:${t.slice(10,12)}:${t.slice(12,14)}`;
+}
+function _dtLocal(dt) {        // Date → 'yyyy-MM-ddTHH:mm:ss' (이 PC 시각 그대로)
+  const p = n => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`
+       + `T${p(dt.getHours())}:${p(dt.getMinutes())}:${p(dt.getSeconds())}`;
+}
+function _parseLocal(v) {       // 'yyyy-MM-ddTHH:mm[:ss]' → Date (못 읽으면 null)
+  const t = _toLP(v);
+  if (!t) return null;
+  return new Date(+t.slice(0,4), +t.slice(4,6) - 1, +t.slice(6,8),
+                  +t.slice(8,10), +t.slice(10,12), +t.slice(12,14));
+}
+const LP_SPAN_MIN = 10;         // 처음 열 때 · 끝을 비워 둘 때 채우는 길이
+/* 처음 열 때 비어 있으면 '최근 10분' 으로 채운다 — 고를 때 날짜부터 다시 찾지 않게.
+   ★관제 연동(?auto=1)은 그 뒤에 자기 값으로 덮으니 상관없다. */
+function lpInitTimes() {
+  const f = document.getElementById('lp-from'), t = document.getElementById('lp-to');
+  if (!f || !t || f.value || t.value) return;
+  const end = new Date(); end.setSeconds(0, 0);
+  const start = new Date(end.getTime() - LP_SPAN_MIN * 60000);
+  f.value = _dtLocal(start); t.value = _dtLocal(end);
+}
+/* 시작을 고쳤는데 끝이 비었거나 시작보다 이르면, 끝 = 시작 + 10분 으로 맞춘다.
+   ★끝이 제대로 있으면 건드리지 않는다 — 사람이 고른 값을 몰래 바꾸지 않는다. */
+function lpFromChanged() {
+  const f = document.getElementById('lp-from'), t = document.getElementById('lp-to');
+  const a = _parseLocal(f && f.value), z = _parseLocal(t && t.value);
+  if (!a) return;
+  if (!z || z <= a) t.value = _dtLocal(new Date(a.getTime() + LP_SPAN_MIN * 60000));
+}
 /* ── 조회 형태 — 상세(raw, 처음 것) / 간소(agg30, 30초 묶음) ──────────
    ★기본은 **상세**다. 처음부터 쓰던 쿼리라, 아무것도 안 고르면 예전과 똑같이
      동작해야 한다. 간소는 "데이터가 너무 많아 10분 이상이 조회가 안 된다" 는
@@ -797,16 +845,72 @@ function _logpressoTableFor(fab, prefix) {
   const num = (String(fab).match(/\d+/) || [''])[0];
   return `oht_data_m${num}${(prefix || '').toLowerCase()}`;
 }
-// 현재 FAB/prefix 기준 테이블명을 input 에 주입. 사용자가 직접 수정했어도
-// FAB 자체가 바뀌면 그에 맞는 새 기본값으로 교체 (덮어쓰기).
-function syncLogpressoTable() {
-  const el = document.getElementById('lp-table');
-  if (!el) return;
-  const next = _logpressoTableFor(currentFab, currentPrefix);
-  if (next) {
-    el.value = next;
-    el.placeholder = next;
+/* ── 테이블 고르기 ──────────────────────────────────────────────────
+   ★고객: "네이밍룰은 동일한데 테이블 선택할 수 있도록 해 주라". 치는 칸을 고르는
+     칸으로 바꿨다. 목록은 FAB 카탈로그(/api/fabs)에 있는 FAB·레이아웃마다 위
+     규칙으로 만든 이름 — FAB 별로 묶어 보인다.
+   ★고르면 그 FAB·레이아웃 맵으로 바꾼다. 테이블과 맵이 다르면 다른 구역 맵 위에
+     OHT 를 그리게 된다 (관제 연동이 맵부터 맞추는 것과 같은 이유).
+   ★목록에 없는 이름(관제에서 ?table= 로 넘어온 것 등)은 그 자리에 하나 더 넣는다 —
+     관제 연동은 예전과 똑같이 돈다. */
+function _lpTableEntries() {
+  const out = [];
+  const seen = new Set();
+  for (const e of fabCatalog) {
+    const t = _logpressoTableFor(e.fab, e.prefix);
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push({ table: t, fab: e.fab, prefix: e.prefix, has_data: e.has_data });
   }
+  return out;
+}
+function rebuildLpTableSelect() {
+  const sel = document.getElementById('lp-table');
+  if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = '';
+  const groups = {};
+  for (const e of _lpTableEntries()) {
+    if (!groups[e.fab]) {
+      groups[e.fab] = document.createElement('optgroup');
+      groups[e.fab].label = e.fab;
+      sel.appendChild(groups[e.fab]);
+    }
+    const opt = document.createElement('option');
+    opt.value = e.table;
+    opt.textContent = e.table;
+    opt.title = `${e.fab} · ${e.prefix} 레이아웃`;
+    groups[e.fab].appendChild(opt);
+  }
+  if (keep) lpSetTable(keep);
+}
+/* 이름으로 고른다 — 목록에 없으면 넣고 고른다. ★소문자로 맞춘다: 대문자가 섞이면
+   없는 테이블을 쳐서 조회가 빈다 (실제로 oht_data_m16A 가 넘어와 그랬다). */
+function lpSetTable(name) {
+  const sel = document.getElementById('lp-table');
+  const t = String(name || '').trim().toLowerCase();
+  if (!sel || !t) return;
+  if (![...sel.options].some(o => o.value === t)) {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    opt.title = '목록 밖 테이블 (관제에서 넘어온 이름)';
+    sel.appendChild(opt);
+  }
+  sel.value = t;
+}
+async function onLpTableChange() {
+  const sel = document.getElementById('lp-table');
+  const e = _lpTableEntries().find(x => x.table === (sel && sel.value));
+  if (e && (e.fab !== currentFab || e.prefix !== currentPrefix)) {
+    await applyFab(e.fab, e.prefix);     // 끝나면 syncLogpressoTable 이 같은 이름을 다시 고른다
+    syncLogpressoTable();                // 전환이 실패했으면 목록을 지금 맵 것으로 되돌린다
+  }
+}
+// 현재 FAB/prefix 기준 테이블을 고른다. FAB 이나 레이아웃이 바뀌면 그에 맞는 이름으로.
+function syncLogpressoTable() {
+  const next = _logpressoTableFor(currentFab, currentPrefix);
+  if (next) lpSetTable(next);
 }
 async function logpressoLoad() {
   const fromEl = document.getElementById('lp-from');
@@ -821,9 +925,9 @@ async function logpressoLoad() {
   //   가 넘어와 그랬다). 화면에도 고쳐 넣어 무엇으로 쳤는지 보이게 한다.
   const table   = (tblEl.value || '').trim().toLowerCase();
   const profile = lpProfile;
-  if (table && tblEl.value !== table) tblEl.value = table;
+  if (table && tblEl.value !== table) lpSetTable(table);
   if (!from_dt || !to_dt || !table) {
-    alert('시작/끝 시각과 테이블명을 모두 입력하세요.\n예) oht_data_m16br');
+    alert('시작·끝 날짜/시각과 테이블을 모두 고르세요.\n예) 테이블 oht_data_m16br');
     return;
   }
   if (from_dt >= to_dt) {
@@ -3264,7 +3368,8 @@ async function autoFromQuery() {
   // ★applyFab 이 syncLogpressoTable() 로 테이블명을 덮어쓴다.
   //   그래서 입력칸은 **맵을 바꾼 뒤에** 채운다.
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  set('lp-from', from); set('lp-to', to); set('lp-table', tbl);
+  // ★칸이 날짜·시각 고르기라 14자리를 그 모양으로 바꿔 넣는다 (보내는 값은 같다)
+  set('lp-from', _fromLP(from)); set('lp-to', _fromLP(to)); lpSetTable(tbl);
 
   autoNote(`${hhmmss(from)} ~ ${hhmmss(to)} 조회 중…`);
   try {
@@ -3561,8 +3666,11 @@ async function applyFab(fab, prefix) {
     const data = await resp.json();
     currentFab = data.fab;
     currentPrefix = data.prefix;
+    // ★FAB 칸도 다시 맞춘다 — 테이블 고르기·관제 연동처럼 FAB 칸을 거치지 않고
+    //   맵을 바꾸면, 맵은 M14A 인데 FAB 칸은 M16A 로 남아 있었다.
+    rebuildFabSelect();
     rebuildLayoutSelect();
-    syncLogpressoTable();   // FAB/prefix 변경 시 테이블명 input 자동 갱신
+    syncLogpressoTable();   // FAB/prefix 변경 시 테이블 고르기 자동 갱신
 
     // 맵 재로드
     await loadRailGraph();
@@ -3587,8 +3695,10 @@ async function bootFabs() {
     currentPrefix = (data.current || {}).prefix || '';
     rebuildFabSelect();
     rebuildLayoutSelect();
-    syncLogpressoTable();   // 초기 FAB에 맞는 테이블명 주입
+    rebuildLpTableSelect(); // 테이블 목록 (FAB·레이아웃마다 규칙대로)
+    syncLogpressoTable();   // 초기 FAB에 맞는 테이블 고르기
     initLpProfile();        // 조회 형태 — 열 때마다 상세부터
+    lpInitTimes();          // 시작·끝이 비어 있으면 최근 10분
     // 페이지 첫 진입 시 맵(rail graph) 즉시 로드 — 데이터 조회 전에도 노드/엣지가 그려져야 함
     try { await loadRailGraph(); } catch(e) { console.error('rail graph 초기 로드 실패:', e); }
   } catch(e) { console.error('FAB 목록 로드 실패:', e); }

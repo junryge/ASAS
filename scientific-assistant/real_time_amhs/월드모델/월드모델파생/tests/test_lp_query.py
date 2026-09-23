@@ -249,8 +249,10 @@ class 화면의_상세_간소_단추(unittest.TestCase):
                       r'<button id="lp-raw"[\s\S]*?<button id="lp-agg30"[\s\S]*?</div>\s*'
                       r'<button onclick="logpressoLoad\(\)" id="lp-btn"', self.h)
         self.assertIsNotNone(m, "상세/간소 단추가 '조회 로드' 앞에 없다")
-        self.assertIn(">상세<", m.group(0))
-        self.assertIn(">간소<", m.group(0))
+        # ★뒤에 로드 시간을 적는다 (고객: "상세:데이터로드 오래걸림, 간소:데이터로드
+        #   짧은 이라고 뒤에 기입좀 해 주면 사용자들이 편하겠지")
+        self.assertIn(">상세 (데이터 로드 오래 걸림)<", m.group(0))
+        self.assertIn(">간소 (데이터 로드 짧음)<", m.group(0))
 
     def test_기본은_상세가_켜져_있다(self):
         self.assertIn('<button id="lp-raw"   class="toggle-btn on"', self.h)
@@ -290,6 +292,108 @@ class 화면의_상세_간소_단추(unittest.TestCase):
         # 간소로 보면 적재 색이 안 뜬다 — 눌러 보고 알면 늦다
         self.assertIn("적재·목적지는 안 온다", self.h)
         self.assertIn("10분 넘는 구간도 조회된다", self.h)
+
+
+class 시작_끝은_날짜_시각을_고른다(unittest.TestCase):
+    """고객: "시작~끝 데이터 기입해야 하는데 시간을 기입하는 거야 유저들이 사용 편하게"
+    · "시작~끝 시간이니까 날짜 시간을 선택하게 해 주면 좋지"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("dashboard.html")
+
+    def test_달력_시계로_고르는_칸(self):
+        for i in ("lp-from", "lp-to"):
+            m = re.search(r'<input type="datetime-local" step="1" id="%s"' % i, self.h)
+            self.assertIsNotNone(m, i + " 가 날짜·시각 고르기 칸이 아니다")
+        self.assertNotIn('placeholder="yyyyMMddHHmmss"', self.h, "14자리를 치게 하던 칸이 남았다")
+
+    def test_서버에는_여전히_14자리(self):
+        """★서버·관제 연동은 14자리를 쓴다 — 칸 모양만 바뀌고 보내는 값은 같다."""
+        self.assertIn("const from_dt = _toLP(fromEl.value);", self.h)
+        self.assertIn("const to_dt   = _toLP(toEl.value);", self.h)
+
+    def test_관제에서_넘어온_14자리를_칸_모양으로(self):
+        m = re.search(r"async function autoFromQuery\(\)\s*\{[\s\S]*?\n\}", self.h)
+        body = m.group(0)
+        self.assertIn("set('lp-from', _fromLP(from)); set('lp-to', _fromLP(to)); lpSetTable(tbl);",
+                      body)
+        self.assertLess(body.index("applyFab"), body.index("lpSetTable(tbl)"),
+                        "맵을 바꾼 뒤에 채워야 한다 (applyFab 이 테이블을 덮는다)")
+
+    def test_처음_열면_최근_10분(self):
+        self.assertIn("lpInitTimes();", self.h)
+        self.assertIn("const LP_SPAN_MIN = 10;", self.h)
+        self.assertIn("if (!f || !t || f.value || t.value) return;", self.h,
+                      "이미 값이 있으면(관제 연동 등) 건드리면 안 된다")
+
+    def test_끝이_비었거나_앞서면_시작_뒤로(self):
+        self.assertIn('onchange="lpFromChanged()"', self.h)
+        self.assertIn("if (!z || z <= a) t.value", self.h, "제대로 된 끝은 건드리지 않는다")
+
+    def test_달력_단추가_테마에서_보인다(self):
+        self.assertIn("color-scheme:dark", self.h)
+        self.assertIn('body[data-theme="hmi"] #topbar .tb-query input[type=datetime-local] '
+                      '{ color-scheme:light; }', self.h)
+
+    def test_변환이_제대로(self):
+        """_toLP ⇄ _fromLP 를 node 로 실제로 돌린다 (node 없으면 건너뜀)."""
+        import shutil, subprocess, json
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 가 없다")
+        i = self.h.index("function _toLP(ts)")
+        j = self.h.index("const LP_SPAN_MIN", i)
+        js = self.h[i:j] + """
+const out = {
+  a: _fromLP('20260831103500'), b: _toLP(_fromLP('20260831103500')),
+  c: _toLP('2026-08-31T10:35'), d: _fromLP(''), e: _toLP(_dtLocal(new Date(2026, 0, 2, 3, 4, 5)))
+};
+console.log(JSON.stringify(out));
+"""
+        r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertEqual(got, {"a": "2026-08-31T10:35:00", "b": "20260831103500",
+                               "c": "20260831103500", "d": "", "e": "20260102030405"})
+
+
+class 테이블은_고른다(unittest.TestCase):
+    """고객: "네이밍룰은 동일한데 테이블 선택할 수 있도록 해 주라 — 그래프에서 들어가는
+    거는 그대로 하고 수동으로 하는 경우가 있어"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.h = _read("dashboard.html")
+
+    def test_고르는_칸(self):
+        self.assertIn('<select id="lp-table" onchange="onLpTableChange()"', self.h)
+        self.assertNotIn('<input type="text" id="lp-table"', self.h)
+
+    def test_이름_규칙은_그대로(self):
+        self.assertIn("return `oht_data_m${num}${(prefix || '').toLowerCase()}`;", self.h)
+        self.assertIn("const t = _logpressoTableFor(e.fab, e.prefix);", self.h)
+
+    def test_FAB_별로_묶는다(self):
+        self.assertIn("document.createElement('optgroup')", self.h)
+
+    def test_고르면_맵도_맞춘다(self):
+        i = self.h.index("async function onLpTableChange()")
+        body = self.h[i:i + 500]
+        self.assertIn("await applyFab(e.fab, e.prefix);", body)
+        self.assertIn("syncLogpressoTable();", body, "전환이 실패하면 목록을 되돌린다")
+
+    def test_목록_밖_이름도_받는다(self):
+        """관제에서 넘어온 테이블이 목록에 없어도 조회는 예전처럼 돈다."""
+        i = self.h.index("function lpSetTable(name)")
+        body = self.h[i:i + 700]
+        self.assertIn(".toLowerCase()", body, "대문자가 섞이면 없는 테이블을 친다")
+        self.assertIn("sel.appendChild(opt);", body)
+
+    def test_부팅때_목록을_만든다(self):
+        i = self.h.index("async function bootFabs()")
+        body = self.h[i:i + 900]
+        self.assertLess(body.index("rebuildLpTableSelect();"), body.index("syncLogpressoTable();"))
 
 
 class 조회_멈춤(unittest.TestCase):
