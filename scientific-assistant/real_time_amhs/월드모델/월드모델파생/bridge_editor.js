@@ -59,7 +59,28 @@
 
   /* 바탕화면 — 틀에 박힌 원래 색 (고른 게 없으면 이 색 그대로 둔다) */
   var BG_DEF = { page: '#121c28', stage: '#0c131b', grid: '#3ad6c8', glow: '#3ad6c8' };
-  var BG_NAMES = { page: '바탕 (화면 전체)', stage: '무대 (판이 놓인 칸)', grid: '격자', glow: '은은한 빛' };
+  var BG_NAMES = { page: '바탕 (화면 전체)', stage: '무대 (판이 놓인 칸)', grid: '격자', glow: '은은한 빛',
+                   wm: '바탕 그림 (SK하이닉스 41주년)' };
+  /* 바탕 그림 — 고객: "지금 바탕화면 색상 4개 있는데 이것도 같이 투명하게 뒤에 집어
+     넣어주라 바탕화면에 맞게".
+     ★회색 바탕을 뺀(투명) 그림 한 장을 무대 **맨 뒤**(격자 밑)에 깐다 — 판·패널·
+       상황판은 늘 그 위에 선다. 무대 폭에 맞추고 위쪽(41주년 · Global No.1)을 살린다.
+     ★HTML 옆 파일이다 (설정 JSON 처럼). 없으면 아무것도 안 뜬다 — 화면은 그대로.
+       그림을 바꾸려면 같은 이름으로 갈아 끼운다.
+     ★바탕 넷에 맞춘다 — 어두운 바탕(다크·네이비·고대비)은 밝기를 뒤집어 글자가
+       밝게 비치게, 화이트는 그대로 얹어 살짝 찍히게. 고대비는 읽기가 먼저라 제일
+       옅게. ✎ 수정 → 화면 → '바탕 그림' 에서 끄거나 진하기를 바꾼다. */
+  var WM_NAME = 'OHT_Bridge_Monitor_배경.webp';
+  var WM_THEME = {
+    dark:     { a: .10, inv: true },
+    navy:     { a: .11, inv: true },
+    contrast: { a: .07, inv: true },
+    light:    { a: .16, inv: false }
+  };
+  function wmDef() {
+    var b = CFG.bg || {};
+    return WM_THEME[b.theme] || (b.light ? WM_THEME.light : WM_THEME.dark);
+  }
   var BG_FG = '#e8eff6';                       // 틀의 글자색
   /* 고객: "배경색상이 어두워서 기존에 다크,화이트,네이비,고대비 적용 가능하게 해주라"
        → 뒤에 "화이트 글자가 안보이네, 우리 화이트 빼자. 기존에 실시간 관제에서
@@ -211,6 +232,8 @@
       var k = e.getAttribute('data-bm-area'), o = ORIG.get(e);
       if (k === 'toolbar') return;
       var hide = CFG.areas[k] && CFG.areas[k].hide;
+      // ★틀에 없던 칸(오른쪽 상황판)은 처음 모습(ORIG)이 없다 — 보이기/숨기기만
+      if (!o) { e.style.display = hide ? 'none' : ''; return; }
       e.style.display = hide ? 'none' : o.display;
     });
     // 오른쪽 열이 빠지면 무대가 넓어진다 — 틀의 ResizeObserver 가 알아서 다시 맞춘다
@@ -252,6 +275,12 @@
     if (w && w.hide) rule('glow', 'display:none');
     else if (w && (w.col || w.a != null))
       rule('glow', 'background:radial-gradient(60% 50% at 50% 45%,' + hexA(w.col || BG_DEF.glow, alpha(w, 'glow')) + ',transparent 70%)');
+    // 바탕 그림 — 옛 설정(JSON 에 wm 이 없어도)이어도 바탕 테마에 맞춰 선다
+    var m = b.wm || {}, md = wmDef();
+    out.push('[data-bm-bg="wm"]{' + (m.hide ? 'display:none' :
+      'opacity:' + (m.a == null ? md.a : Math.max(0, Math.min(1, +m.a))) + ';' +
+      (md.inv ? 'filter:invert(1) hue-rotate(180deg);mix-blend-mode:screen'
+              : 'filter:none;mix-blend-mode:multiply')) + '}');
     if (b.light) out.push(LIGHT_CSS);
     return out.join('\n');
   }
@@ -275,6 +304,9 @@
     '.bm-clock b{color:#0d1620 !important}',
     '.bm-clock i{color:#5a6b7d !important}',
     '[data-bm-text="hint"]{color:#42546A !important}',
+    // 패널 숫자 — 정상일 때는 색을 안 줘서(liveApply) 바탕 글자색(어두운 색)을 물려받아
+    //   어두운 패널 위에서 묻혔다. 경계·위험·초위험 색은 인라인 !important 라 이 줄이 못 덮는다.
+    '[data-bm-slot="val"]{color:#e8eff6 !important}',
     '.bm-graph{background:rgba(255,255,255,.96) !important;border-color:#B3BECD !important;color:#22303f !important}',
     '.bm-gbody .hvr{stroke:#B3BECD !important}',
     '.bm-ghead{border-bottom-color:#CBD4E0 !important}',
@@ -290,6 +322,18 @@
     var s = $('#bm-bg-style');
     if (!s) { s = document.createElement('style'); s.id = 'bm-bg-style'; document.head.appendChild(s); }
     s.textContent = bgCss();
+    wmEl();
+  }
+
+  // 바탕 그림 칸 — 무대의 **첫 자식**(격자·빛보다 앞 = 그림 순서상 맨 뒤)
+  function wmEl() {
+    var stage = $('[data-bm-bg="stage"]');
+    if (!stage || $('[data-bm-bg="wm"]', stage)) return;
+    var e = document.createElement('div');
+    e.setAttribute('data-bm-bg', 'wm');
+    e.className = 'bm-wm';
+    e.style.backgroundImage = 'url("' + encodeURIComponent(WM_NAME) + '")';
+    stage.insertBefore(e, stage.firstChild);
   }
 
   /* ═══════ 관제 점수 — 패널에 그 FAB 의 AREA_SCORE 를 적는다 ═══════
@@ -368,6 +412,8 @@
           ' · 위험 ' + cuts.danger + ' · 초위험 ' + cuts.critical) +
         '\n관제 정책 탭에서 고치면 여기도 따라 바뀝니다.';
     });
+    SIDE_ROWS = by; SIDE_AT = LIVE_AT;
+    sideRender();                                   // 오른쪽 상황판도 같은 시각으로
   }
 
   function livePoll() {
@@ -377,6 +423,145 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { if (d && d.ok && d.rows) liveApply(d); })
       .catch(function () {});                                // 안 되면 틀의 숫자 그대로
+    // 오른쪽 상황판의 추이·걸린 룰 — 관제가 옛것이라 없으면(404) 숫자·팻말만 선다
+    fetch(location.origin + '/api/fab/trend?minutes=' + SIDE_MIN, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.ok) { SIDE_TREND = d; sideRender(); } })
+      .catch(function () {});
+  }
+
+  /* ═══════ 오른쪽 FAB 실시간 상황판 ═══════
+     고객: "각 FAB 별 숫자 · 경계·위험·초위험 알리는 내용 팻말 그리고 각각 그래프가
+     보이면 좋을 것 같은데" · "옆에 뭔가를 볼 수 있는 게 나와야 돼" · "실시간 상황표니까
+     간소하고 명확하게" · "실시간인 거 알지" · "오른쪽에 뭐가 잘 나와야 돼".
+     한 줄에 FAB 하나 — ① 이름 · 등급 팻말(정상/경계/위험/초위험 + 설정의 설명 그대로)
+     ② 지금 점수 / 경계값 ③ 최근 60분 추이(경계·위험·초위험 선) ④ 지금 걸린 룰 한 줄.
+     ★숫자·등급·컷은 패널과 같은 /api/fab/compare, 추이·걸린 룰은 /api/fab/trend —
+       둘 다 관제가 준 그대로다. 여기서 점수를 만들지 않는다.
+     ★원래 디자인의 오른쪽 열(BRIDGE STATUS …)은 **시안용 가짜 숫자**라 숨긴 그대로
+       둔다. 같은 줄(무대 옆)에 같은 모양새로 새 칸을 세운다 — 맵을 가리지 않는다.
+       ✎ 수정 → 화면 에서 끌 수 있다 (areas.side).
+     ★30초마다 다시 받는다(LIVE_MS). 머리에 **몇 시 자료인지**를 적는다 — 수집이
+       멎었는데 실시간처럼 보이는 것이 제일 위험하다.
+     ★줄을 누르면 그 FAB 구간 그래프(오른쪽 서랍)가 열린다. */
+  var SIDE_ORDER = ['M14', 'M14B', 'M16A', 'M16B', 'M16HUB'];
+  var SIDE_MIN = 60;
+  var SIDE_TREND = null, SIDE_ROWS = null, SIDE_AT = '';
+  var SIDE_COL = { '정상': '#3ad6c8', '경계': '#ffce7a', '위험': '#ff6b6b', '초위험': '#ff3b3b' };
+
+  function sideEl() {
+    var aside = $('[data-bm-area="aside"]');
+    var row = aside && aside.parentNode;               // 무대와 오른쪽 열이 같이 선 줄
+    if (!row) return null;
+    var e = row.querySelector('[data-bm-area="side"]');
+    if (!e) {
+      e = document.createElement('aside');
+      e.setAttribute('data-bm-area', 'side');
+      e.className = 'bm-side';
+      ['mousedown', 'wheel', 'pointerdown', 'dblclick'].forEach(function (ev) {
+        e.addEventListener(ev, function (x) { x.stopPropagation(); });   // 화면 돌리기·줌에 안 뺏긴다
+      });
+      e.addEventListener('click', function (x) {
+        var r = x.target.closest && x.target.closest('[data-side-fab]');
+        if (r) { x.stopPropagation(); graphOpen(r.getAttribute('data-side-fab')); }
+      });
+      row.appendChild(e);
+    }
+    e.style.display = (CFG.areas.side && CFG.areas.side.hide) ? 'none' : '';
+    return e;
+  }
+
+  // 설명에서 괄호 안만 — '위험/경고(모니터링 필요)' → '모니터링 필요'
+  function sideSev(lv) {
+    var s = (SIDE_TREND && SIDE_TREND.severity && SIDE_TREND.severity[lv]) || '';
+    var m = /\(([^)]+)\)/.exec(s);
+    return m ? m[1] : '';
+  }
+
+  // 최근 60분 — 눈금은 **값과 컷 셋이 다 들어가는 범위**다. 0~100 으로 두면 선이
+  //   납작해져 오르내림이 안 보였다 (재 보니 ±4점이 2px). 컷은 점선으로 늘 보인다.
+  function sideSpark(pts, cuts, col) {
+    var W = 240, H = 40, n = pts.length;
+    var vs = pts.map(function (p) { return +p[1] || 0; });
+    [cuts && cuts.warn, cuts && cuts.critical].forEach(function (c) { if (c != null) vs.push(+c); });
+    var lo = Math.max(0, Math.min.apply(null, vs) - 5), hi = Math.min(100, Math.max.apply(null, vs) + 5);
+    if (hi - lo < 10) { hi = Math.min(100, lo + 10); }
+    var y = function (v) {
+      var t = (Math.max(lo, Math.min(hi, +v || 0)) - lo) / (hi - lo);
+      return (H - 3 - t * (H - 6)).toFixed(1);
+    };
+    var out = '<svg class="bm-spark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">';
+    [['warn', '#ffce7a'], ['danger', '#ff6b6b'], ['critical', '#ff3b3b']].forEach(function (c) {
+      var v = cuts && cuts[c[0]];
+      if (v == null) return;
+      out += '<line x1="0" x2="' + W + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="' + c[1] +
+             '" stroke-width="1" stroke-dasharray="3 3" opacity=".75" vector-effect="non-scaling-stroke"/>';
+    });
+    if (n >= 2) {
+      var line = pts.map(function (p, i) { return (i * W / (n - 1)).toFixed(1) + ',' + y(p[1]); }).join(' ');
+      out += '<polyline points="' + line + '" fill="none" stroke="' + col +
+             '" stroke-width="2" vector-effect="non-scaling-stroke"/>';
+      out += '<circle cx="' + W + '" cy="' + y(pts[n - 1][1]) + '" r="3.2" fill="' + col + '"/>';
+    }
+    return out + '</svg>';
+  }
+
+  // 지금 걸린 룰 한 줄 — 길면 말줄임, 전체는 말풍선에.
+  //   ★추이(/api/fab/trend)를 못 받았으면(옛 관제) 아무것도 안 적는다 — 모르는 것을
+  //     '걸린 룰 없음' 이라고 적으면 거짓말이 된다.
+  function sideWhy(fab, t) {
+    if (!SIDE_TREND) return '';
+    var w = String(t.why || '').replace(new RegExp('^' + fab + '\\s*'), '');
+    return w ? '<div class="bm-swhy" title="' + esc(w) + '">' + esc(w) + '</div>'
+             : '<div class="bm-swhy"><span>걸린 룰 없음</span></div>';
+  }
+
+  function sideRender() {
+    if (!liveUrl() || !SIDE_ROWS) return;              // 관제가 없으면 안 세운다
+    var e = sideEl();
+    if (!e) return;
+    var tr = {};
+    ((SIDE_TREND && SIDE_TREND.fabs) || []).forEach(function (t) { if (t && t.fab) tr[t.fab] = t; });
+    // 자료가 3분 넘게 멎었으면 머리를 앰버로 — 점(●)도 멈춘다. 실시간인 척하지 않는다.
+    var old = '';
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(SIDE_AT));
+    if (m) {
+      var mins = Math.round((Date.now() - new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime()) / 60000);
+      if (mins >= 3) old = (mins < 120 ? mins + '분' : Math.round(mins / 60) + '시간') + ' 전 자료 — 수집 확인';
+    }
+    var h = '<div class="bm-shd' + (old ? ' old' : '') + '">' +
+            '<span class="t"><span class="bm-sdot"></span>FAB 실시간 상황</span>' +
+            '<i>' + esc(String(SIDE_AT).slice(11, 16) || '–') + ' 기준 · ' + (LIVE_MS / 1000) + '초마다 갱신' +
+              (old ? ' · <b>' + esc(old) + '</b>' : '') + '</i>' +
+            '<i>그래프 = 최근 ' + SIDE_MIN + '분 · 점선 = 경계·위험·초위험</i></div>';
+    // 다섯 FAB 은 늘 같은 순서 — 모르는 FAB 이 오면 뒤에 붙인다 (ALL 은 뺀다)
+    var order = SIDE_ORDER.slice();
+    Object.keys(SIDE_ROWS).forEach(function (f) {
+      var r = SIDE_ROWS[f];
+      if (order.indexOf(f) < 0 && f !== 'ALL' && !(r && r.is_all)) order.push(f);
+    });
+    order.forEach(function (fab) {
+      var r = SIDE_ROWS[fab];
+      if (!r) return;
+      var lv = String(r.level || '정상').trim() || '정상', col = SIDE_COL[lv] || SIDE_COL['정상'];
+      var sc = r.area_score != null ? r.area_score : r.score, cuts = r.cuts || {};
+      var t = tr[fab] || {}, sev = sideSev(lv);
+      h += '<div class="bm-srow lv' + esc(lv) + '" data-side-fab="' + esc(fab) + '" style="--c:' + col +
+           '" title="' + esc(fab) + ' — 누르면 구간 그래프가 열립니다">' +
+           '<div class="bm-sbar"></div><div class="bm-sbody">' +
+           '<div class="bm-shead"><b>' + esc(fab) + '</b><span class="bm-ssign">' + esc(lv) +
+             (sev && lv !== '정상' ? ' · ' + esc(sev) : '') + '</span></div>' +
+           '<div class="bm-sval"><span class="v">' + esc(sc == null ? '–' : sc) + '</span>' +
+             '<span class="c">점 · 경계 ' + esc(cuts.warn == null ? '–' : cuts.warn) +
+             ' · 위험 ' + esc(cuts.danger == null ? '–' : cuts.danger) +
+             ' · 초위험 ' + esc(cuts.critical == null ? '–' : cuts.critical) + '</span></div>' +
+           ((t.points && t.points.length > 1) ? sideSpark(t.points, cuts, col) : '') +
+           sideWhy(fab, t) +
+           '</div></div>';
+    });
+    // ★안쪽 칸(.bm-sin)을 절대 위치로 둔다 — 줄이 많아도 무대 높이를 밀어 올리지
+    //   않고, 넘치면 상황판 안에서만 굴린다 (그러지 않으면 다섯째 줄이 잘렸다).
+    e.innerHTML = '<div class="bm-sin">' + h + '</div>';
   }
 
   /* ═══════ 판·패널 더블클릭 → 오른쪽에 그 FAB 그래프 ═══════
@@ -967,7 +1152,8 @@
 
   function drawView() {
     var areas = [['header', '맨 위 제목 줄 (AMHS · INTER-BUILDING BRIDGE / 제목) — ★KPI 도 이 안에 있다'],
-                 ['aside', '오른쪽 열 (BRIDGE STATUS · ACTIVE ALARM · HUB THROUGHPUT)'], ['kpi', '위 KPI (IN TRANSIT · CAPACITY · ALARM · LOCAL)'],
+                 ['side', '오른쪽 FAB 실시간 상황판 (등급 팻말 · 60분 추이 · 걸린 룰)'],
+                 ['aside', '오른쪽 열 (BRIDGE STATUS · ACTIVE ALARM · HUB THROUGHPUT) — ★시안용 가짜 숫자'], ['kpi', '위 KPI (IN TRANSIT · CAPACITY · ALARM · LOCAL)'],
                  ['legend', '범례 (ISOMETRIC VIEW · UP · DOWN · ALARM)'], ['hint', '안내 (DRAG TO ORBIT …)']];
     var h = '<div class="bm-item"><div class="bm-row"><label style="flex:1">제목 <input type="text" style="flex:1" data-path="text.title" value="' +
       esc(CFG.texts.title || '') + '" placeholder="' + esc(origText('title')) + '"></label></div>' +
@@ -989,12 +1175,16 @@
       '<div class="bm-row">' + BG_PRESETS.map(function (p, i) {
         return '<button class="bm-btn" data-act="bgpreset" data-key="' + i + '">' + p.name + '</button>';
       }).join('') + '</div></div>';
-    return h + ['page', 'stage', 'grid', 'glow'].map(bgRow).join('');
+    return h + ['page', 'stage', 'grid', 'glow', 'wm'].map(bgRow).join('');
   }
   function bgRow(k) {
     var b = (CFG.bg || {})[k] || {};
     var h = '<div class="bm-item"><div class="bm-row"><b style="flex:1">' + BG_NAMES[k] + '</b>' +
       '<button class="bm-btn" data-act="bgreset" data-key="' + k + '">원래대로</button></div><div class="bm-row">';
+    if (k === 'wm')                                  // 그림이라 색은 없다 — 보이기 · 진하기만
+      return h + '<label><input type="checkbox" data-path="bg.wm.show"' + (b.hide ? '' : ' checked') + '> 보이기</label>' +
+        '<label class="bm-num">진하기 <input type="number" min="0" max="1" step="0.01" data-path="bg.wm.a" value="' +
+        (b.a == null ? wmDef().a : b.a) + '"></label><span class="bm-sub">바탕색에 맞춰 저절로</span></div></div>';
     if (k === 'grid' || k === 'glow')
       h += '<label><input type="checkbox" data-path="bg.' + k + '.show"' + (b.hide ? '' : ' checked') + '> 보이기</label>';
     h += '<label>색 <input type="color" data-path="bg.' + k + '.col" value="' + (b.col || BG_DEF[k]) + '"></label>';
@@ -1028,7 +1218,12 @@
       delete CFG.maps[key]; ensurePlates(); changed(); draw();
     } else if (act === 'cardreset') { delete CFG.cards[key]; applyCards(); changed(); draw(); }
     else if (act === 'bgreset') { if (CFG.bg) delete CFG.bg[key]; applyBg(); changed(); draw(); }
-    else if (act === 'bgpreset') { CFG.bg = clone(BG_PRESETS[+key].bg); applyBg(); changed(); draw(); }
+    else if (act === 'bgpreset') {
+      var wmOff = CFG.bg && CFG.bg.wm && CFG.bg.wm.hide;   // 바탕을 바꿔도 '그림 끔' 은 남긴다
+      CFG.bg = clone(BG_PRESETS[+key].bg);
+      if (wmOff) CFG.bg.wm = { hide: true };
+      applyBg(); changed(); draw();
+    }
     else if (act === 'import') load();
     else if (act === 'revert') {
       if (!confirm('연 때 설정으로 되돌릴까?')) return;
@@ -1319,6 +1514,43 @@
       '.bm-gbody .hv.bm-pin .hvr{opacity:.97}',
       '.bm-gerr{padding:22px 16px;color:#ffb0b0;font-size:12.5px;line-height:1.7}',
       '.bm-gerr span{color:#7d93a6}',
+      // 바탕 그림 — 무대 맨 뒤. 폭에 맞추고(cover) 위쪽(41주년 · Global No.1)을 살린다.
+      //   진하기·색 뒤집기는 bgCss 가 바탕 테마에 맞춰 건다.
+      '.bm-wm{position:absolute;inset:0;pointer-events:none;background-repeat:no-repeat;'
+        + 'background-size:cover;background-position:center top}',
+      // 오른쪽 FAB 실시간 상황판 — 원래 오른쪽 열(BRIDGE STATUS) 카드와 같은 면·테두리·글꼴.
+      //   ★밝은 테마에서도 어둡게 둔다 — 판·패널과 같은 규칙(방은 밝게, 판은 어둡게).
+      '.bm-side{flex:1 1 290px;max-width:380px;min-width:0;position:relative;min-height:320px;'
+        + 'background:linear-gradient(180deg,#0d141c,#0a0f15);border:1px solid #17212d;border-radius:12px;'
+        + 'font:13px/1.45 "IBM Plex Sans KR","Malgun Gothic",sans-serif;color:#dce7f0}',
+      '.bm-sin{position:absolute;inset:0;overflow:auto;padding:13px 14px;display:flex;flex-direction:column}',
+      '.bm-shd{display:flex;flex-direction:column;gap:1px;margin-bottom:6px;font-family:"IBM Plex Mono",monospace;'
+        + 'font-size:13px;font-weight:700;letter-spacing:.08em;color:#cfe0ec}',
+      '.bm-shd .t{display:flex;align-items:center;gap:7px;margin-bottom:2px}',
+      '.bm-shd i{font-style:normal;letter-spacing:0;font-weight:400;font-size:11.5px;color:#8fa3b5;'
+        + 'font-family:"IBM Plex Sans KR","Malgun Gothic",sans-serif}',
+      '.bm-shd i b{color:#ffce7a;font-weight:700}',
+      // 살아 있다는 점 — 관제 머리의 로그프레소 점과 같은 뜻. 자료가 멎으면 앰버로 멈춘다.
+      '.bm-sdot{width:8px;height:8px;border-radius:50%;flex:none;background:#3ad6c8;animation:bmlive 2s ease-out infinite}',
+      '.bm-shd.old .bm-sdot{background:#ffce7a;animation:none}',
+      '@keyframes bmlive{0%{box-shadow:0 0 0 0 rgba(58,214,200,.65)}80%,100%{box-shadow:0 0 0 7px rgba(58,214,200,0)}}',
+      '.bm-srow{display:flex;gap:10px;padding:7px 6px 7px 0;border-top:1px solid #141d27;cursor:pointer;border-radius:6px}',
+      '.bm-srow:hover{background:rgba(58,214,200,.06)}',
+      '.bm-sbar{width:4px;flex:none;border-radius:2px;background:var(--c);box-shadow:0 0 8px var(--c)}',
+      '.bm-sbody{flex:1;min-width:0}',
+      '.bm-shead{display:flex;align-items:center;gap:8px}',
+      '.bm-shead b{font-family:"IBM Plex Mono",monospace;font-size:15px;letter-spacing:.04em;color:#fff}',
+      '.bm-ssign{margin-left:auto;padding:2px 10px;border-radius:99px;font-size:12.5px;font-weight:700;white-space:nowrap;'
+        + 'color:var(--c);border:1px solid var(--c);background:rgba(0,0,0,.25)}',
+      '.bm-srow.lv정상 .bm-ssign{opacity:.75;font-weight:600}',
+      '.bm-srow.lv초위험 .bm-ssign{color:#fff;background:#ff3b3b;border-color:#ff3b3b;animation:bmsign 1.2s ease-in-out infinite}',
+      '@keyframes bmsign{0%,100%{box-shadow:0 0 0 0 rgba(255,59,59,.7)}50%{box-shadow:0 0 0 6px rgba(255,59,59,0)}}',
+      '.bm-sval{display:flex;align-items:baseline;gap:8px;margin-top:3px}',
+      '.bm-sval .v{font:700 24px/1.05 "IBM Plex Mono",monospace;color:var(--c)}',
+      '.bm-sval .c{font-size:11.5px;color:#9fb2c3}',
+      '.bm-spark{display:block;width:100%;height:40px;margin-top:4px}',
+      '.bm-swhy{margin-top:3px;font-size:12.5px;color:#dce7f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.bm-swhy span{color:#7d93a6}',
       '.bm-editing [data-bm-plate]{cursor:default}',
       '.bm-clock i{font-style:normal;color:#7d93a6;margin-left:8px}',
       '.bm-hl{outline:2px dashed #fff !important;outline-offset:3px;animation:bmblink .8s ease-in-out infinite}',

@@ -368,7 +368,8 @@ class 바탕색은_관제_것을_쓴다(unittest.TestCase):
     def test_다크는_아무것도_안_덮는다(self):
         """틀이 원래 쓰던 색 그대로 — 색 규칙을 아예 안 만든다.
         (그래프 테마 이름만 들고 있다. bgCss 는 page/stage/grid/glow/light 만 보므로
-         theme 이 있어도 규칙은 한 줄도 안 나온다.)"""
+         theme 이 있어도 틀 색을 덮는 규칙은 한 줄도 안 나온다. 바탕 그림 층
+         [data-bm-bg="wm"] 규칙은 나오지만 그건 이 화면이 넣은 칸이다 — test_ui_side_board.)"""
         m = re.search(r"\{ name: '다크', bg: (\{[^}]*\}) \}", self.h)
         self.assertTrue(m, "다크 칸을 못 찾았다")
         for k in ("page", "stage", "grid", "glow", "light"):

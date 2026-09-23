@@ -738,6 +738,80 @@ def api_fab_compare():
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 
+TREND_CACHE = http_cache.JsonCache("fab_trend")
+
+
+@app.route("/api/fab/trend")
+def api_fab_trend():
+    """UI대쉬보드 오른쪽 상황판 — FAB 마다 최근 N분 area_score 추이 + 지금 걸린 룰 한 줄.
+
+    /api/fab/trend?minutes=60
+    고객: "각 FAB 별 숫자 · 경계·위험·초위험 알리는 내용 팻말 그리고 각각 그래프가
+    보이면 … 옆에 뭔가를 볼 수 있는 게 나와야 돼 · 간소하고 명확하게 · 실시간".
+    ★FAB 분리 파일(data/{FAB}/…)을 읽는다 — 그 FAB 자기 점수(area_score)라 패널
+      숫자(/api/fab/compare)와 같은 원본이다. 점수를 다시 계산하지 않는다.
+    ★등급 이름·설명은 config.grade 의 것을 그대로 준다('확인필요'·'조치필요' …).
+      화면은 패널과 같은 등급(compare 의 level)에 이 설명을 붙인다.
+    ★오늘 파일이 없으면 가장 최근 날로 물러서되 그 날짜를 같이 준다 — 옛 자료를
+      실시간이라고 내놓으면 안 된다.
+    """
+    try:
+        minutes = max(10, min(360, int(request.args.get("minutes", 60))))
+    except ValueError:
+        minutes = 60
+    try:
+        from sentinel import _row_dt, _score
+        try:
+            from sentinel import fab_reason        # sentinel.py 가 옛것이면 걸린 룰만 빈다
+        except ImportError:
+            fab_reason = None
+        from store_csv import latest_day, list_days, read_day
+        today = datetime.now().strftime("%Y%m%d")
+        plan = []
+        for f in systems():
+            if f == "ALL":
+                continue
+            cfg = get_ctx(f)["cfg"]
+            has = any(d["day"] == today and d["rows"] > 0 for d in list_days(cfg))
+            plan.append((f, today if has else (latest_day(cfg) or today), cfg))
+        sig = tuple((f, d, _days_sig({d}, c)) for f, d, c in plan)
+        if any(s is None for _f, _d, s in sig):
+            sig = None                       # 원본을 못 읽었다 — 캐시하지 않는다
+        g = CFG.get("grade") or {}
+        sev = {"정상": "정상"}
+        sev.update({b.get("level"): b.get("severity") or b.get("level")
+                    for b in (g.get("bands") or []) if b.get("level")})
+
+        def _build():
+            out = []
+            for f, day, cfg in plan:
+                seq = []
+                for r in read_day(day, cfg):
+                    t = _row_dt(r)
+                    if t is not None:
+                        seq.append((t, r))
+                if not seq:
+                    out.append({"fab": f, "day": day, "points": []})
+                    continue
+                seq.sort(key=lambda x: x[0])
+                t_end, last = seq[-1]
+                t0 = t_end - timedelta(minutes=minutes)
+                out.append({
+                    "fab": f, "day": day, "at": t_end.strftime("%Y-%m-%d %H:%M"),
+                    "score": round(_score(last), 1),
+                    "why": (fab_reason(str(last.get("reason") or ""), f, last)
+                            if fab_reason else ""),
+                    "points": [[t.strftime("%H:%M"), round(_score(r), 1)]
+                               for t, r in seq if t > t0],
+                })
+            return {"ok": True, "minutes": minutes, "severity": sev, "fabs": out}
+
+        return _cached_json(TREND_CACHE, str(minutes), sig, _build)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
 @app.route("/api/fab/why")
 def api_fab_why():
     """**이 점수는 어디서 온 숫자인가** — 한 FAB 을 놓고 끝까지 따진다.
