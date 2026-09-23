@@ -1165,6 +1165,9 @@
        KPI 는 어느 탭에서든 보여야 한다. 시안엔 큰 KPI 타일이 없어 LLM 카드 오른쪽에
        작은 스탯 4개로 접었다(id 와 .kpis 마크업은 그대로). -->
 <div class="livehead">
+  <!-- 고객: "맨 LLM 최근 판단 위에 내용 하나 붙여 주라" — 이 관제가 어떤 순서로 보는지.
+       글자 모양은 탭 머리 설명(.tabhead p)과 같다 — 따로 꾸미지 않는다. -->
+  <div class="tabhead" id="livenote"><p>스코어 시스템은 문제 되는 FAB를 점수 예측(룰베이스 기반)을 하고 문제를 파악합니다. 이후에 OHT 로드를 통해서 상태를 확인합니다.</p></div>
   <div class="llmcard">
     <div id="llmnow" class="llmnow hidden"></div>
   </div>

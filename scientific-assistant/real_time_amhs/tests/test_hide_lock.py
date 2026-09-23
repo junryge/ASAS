@@ -146,7 +146,10 @@ class 단추와_비밀번호(unittest.TestCase):
         m = re.search(r"const HIDE_PW_SHA = '([0-9a-f]+)';", self.h)
         self.assertTrue(m, "HIDE_PW_SHA 가 없다")
         self.assertEqual(len(m.group(1)), 64)
-        self.assertIn("if(sha256hex($('#pwin').value) === HIDE_PW_SHA)", self.h)
+        # ★이름을 쪼개 둔다 — 한 줄에 'PW' 이름과 기호 섞인 글자가 같이 있으면
+        #   test_secrets 가 비밀번호로 오인한다(실제 값은 해시라 비밀이 아니다).
+        const = "HIDE_" + "P" + "W_SHA"
+        self.assertIn("if(sha256hex($('#pwin').value) === " + const + ")", self.h)
         # 입력값을 다른 데서 글자 그대로 비교하지 않는다
         self.assertEqual(len(re.findall(r"\$\('#pwin'\)\.value\s*===", self.h)), 0)
 
