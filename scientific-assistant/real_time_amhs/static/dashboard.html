@@ -1509,22 +1509,23 @@
 </div>
 
 <!-- ── 정책 ── -->
-<!-- ── UI대쉬보드 — FAB별 실시간 상황표 (월드모델파생에서 만든 그 화면) ──
+<!-- ── UI대쉬보드 — FAB별 실시간 상황 UI대쉬보드 (월드모델파생에서 만든 그 화면) ──
+     고객: "FAB별 실시간 상황표 → FAB별 실시간 상황 UI대쉬보드 라고 해줘" (★주석 안에 - - > 를 쓰면 주석이 거기서 닫힌다)
      ★7MB 짜리 한 장이라 **탭을 처음 열 때** 비로소 싣는다 (initUi).
        관제는 며칠씩 띄워 두는 화면이라, 안 보는 탭을 미리 싣지 않는다. -->
 <div class="page hidden" id="tab-ui">
   <div class="tabhead">
     <div class="eyebrow">UI대쉬보드</div>
-    <p>동간 브릿지 <b>FAB별 실시간 상황표</b>입니다 — 판마다 그 FAB 의 실제 아이소메트리가 깔려 있고,
+    <p>동간 브릿지 <b>FAB별 실시간 상황 UI대쉬보드</b>입니다 — 판마다 그 FAB 의 실제 아이소메트리가 깔려 있고,
        화면 안 <b>✎ 수정</b> 에서 바탕색·패널·맵을 고칠 수 있습니다.</p>
   </div>
   <div class="card">
-    <h2>FAB별 실시간 상황표(준비중)
+    <h2>FAB별 실시간 상황 UI대쉬보드(준비중)
       <span class="note">— 왼쪽 끌기 돌리기 · Ctrl + 끌기 이동 · 휠 줌
         · 화면 오른쪽 위 <b>⧉ 새 창</b> · <b>✎ 수정</b></span>
     </h2>
     <div class="bd" style="padding:0">
-      <iframe id="uiframe" title="FAB별 실시간 상황표"
+      <iframe id="uiframe" title="FAB별 실시간 상황 UI대쉬보드"
               style="width:100%;height:calc(100vh - 300px);min-height:620px;border:0;
                      border-radius:0 0 20px 20px;background:#06080c;display:block"></iframe>
     </div>
@@ -2720,7 +2721,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   }
 });
 
-/* ══════════ UI대쉬보드 — FAB별 실시간 상황표 ══════════
+/* ══════════ UI대쉬보드 — FAB별 실시간 상황 UI대쉬보드 ══════════
    월드모델파생에서 만든 그 화면(OHT_Bridge_Monitor.html)을 관제가 그대로 내준다.
    ★한 장이 7MB 다 — **탭을 처음 열 때** 비로소 싣는다. 관제는 며칠씩 띄워 두는
      화면이라, 안 보는 탭을 미리 실으면 여는 값만 그만큼 는다.

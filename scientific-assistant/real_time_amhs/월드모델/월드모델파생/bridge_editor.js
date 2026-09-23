@@ -312,6 +312,9 @@
     '.bm-ghead{border-bottom-color:#CBD4E0 !important}',
     '.bm-ghead b{color:#0d1620 !important}',
     '.bm-ghead button{background:#EDF1F7 !important;border-color:#B3BECD !important;color:#22303f !important}',
+    '.bm-goht .down{color:#B3261E !important}',
+    // 눌린 단추(구간 · 서랍 FAB) — 바로 위 줄의 !important 가 .on 을 지워 버려 어느 게 눌렸는지 안 보였다
+    '.bm-ghead button.on{background:rgba(58,214,200,.20) !important;border-color:#1F9E93 !important;color:#0d1620 !important}',
     // 도구줄은 **어둡게 둔다** — 단추마다 제 어두운 배경이 있어서, 밝게 뒤집으면
     //   어두운 단추 위에 어두운 글자가 된다 (한 번 그렇게 했다가 1.21 로 떨어졌다).
     //   판과 같은 수를 쓴다 — 뒤에 불투명한 어두운 바닥을 깔아 무대 빛만 막는다.
@@ -580,10 +583,11 @@
   function graphOpen(fab) {
     if (!fab || !liveUrl()) return;
     GRAPH_FAB = fab;
+    GRAPH_PICK = null; OHT_WIN = null;            // 새로 열면 '지금' 분부터 · 월드모델 생사도 다시 묻는다
     graphDraw();
   }
   function graphClose() {
-    GRAPH_FAB = null;
+    GRAPH_FAB = null; GRAPH_PICK = null;
     var e = $('.bm-graph');
     if (e) e.remove();
   }
@@ -610,7 +614,16 @@
           var was = hv.classList.contains('bm-pin');
           $$('.hv.bm-pin', box).forEach(function (x) { x.classList.remove('bm-pin'); });
           if (!was) hv.classList.add('bm-pin');
+          ohtPick(was ? null : hv, box);            // 고른 분 = OHT 재생 분 (다시 누르면 풀린다)
           e.stopPropagation();
+          return;
+        }
+        var ob = e.target.closest && e.target.closest('[data-oht]');
+        if (ob) { e.stopPropagation(); ohtGo(ob.getAttribute('data-oht')); return; }
+        if (e.target.closest && e.target.closest('[data-oht-now]')) {
+          e.stopPropagation();
+          $$('.hv.bm-pin', box).forEach(function (x) { x.classList.remove('bm-pin'); });
+          ohtPick(null, box);
           return;
         }
         var t = e.target.closest('[data-g]');
@@ -642,7 +655,10 @@
       }).join('') +
       '<button data-g="w"' + (GRAPH_WIDE ? ' class="on"' : '') + ' title="넓게 / 좁게">⤢</button>' +
       '<button data-g="x" title="닫기">✕</button></div>' +
+      '<div class="bm-ghead bm-goht"><span class="bm-gsub">그 1분 OHT 재생</span><b class="bm-gat"></b>' +
+      '<span class="bm-gbtns"></span><span class="bm-gsub bm-gnote"></span></div>' +
       '<div class="bm-gbody">불러오는 중…</div>';
+    ohtRow(box);
 
     /* ★<img> 로 받지 않는다 — /api/graph 는 그 구간에 자료가 없으면 SVG 가 아니라
          <div>이 구간에 자료가 없습니다</div> 를 돌려준다(graphs.py). <img> 는 그걸
@@ -655,11 +671,102 @@
       .then(function (t) {
         if (want !== GRAPH_FAB + '|' + q || !$('.bm-gbody', box)) return;   // 그새 다른 걸 골랐다
         body.innerHTML = t;
+        ohtRepin(body);                             // 30초마다 다시 그려도 고른 분은 남긴다
       })
       .catch(function (e) {
         if ($('.bm-gbody', box)) body.innerHTML = '<div class="bm-gerr">그래프를 못 불러왔습니다 — ' +
           esc(e.message) + '<br><span>관제가 떠 있는지, 그 구간에 자료가 있는지 보세요.</span></div>';
       });
+  }
+
+  /* ═══════ 그래프 서랍 → 그 1분 OHT 재생 (월드모델) ═══════
+     고객: "UI대쉬보드 위 그래프에 똑같이 월드모델 들어갈 수 있게 해주라" ·
+           "골라서 OHT 들어갈 수 있게 해주면 좋을 것 같은데".
+     관제 구간 그래프의 '그 1분 OHT 재생' 줄과 **같은 것**이다 — 같은 /api/world 가
+     FAB 다섯의 주소와 월드모델(10005) 생사를 준다. 여기서 주소를 만들지 않는다.
+     ★고르기 — 그래프에서 한 분을 누르면(붙박이) 그 분으로 바뀐다. 안 골랐으면
+       지금 자료 시각(LIVE_AT). 30초마다 다시 그려도 고른 분은 남고, '지금으로' 로
+       되돌린다.
+     ★버튼은 관제처럼 FAB 다섯 다 — 서랍의 FAB 이 눈에 띄게(on). 누르면 관제와
+       같은 팝업 창('oht_world')으로 연다 — 이 화면을 덮지 않고 나란히 본다.
+     ★월드모델이 안 떠 있으면 버튼을 잠그고 무엇을 하면 되는지 적는다 (관제와 같다).
+     ★어느 건인지(서랍 FAB · 그 분 · 점수)를 주소에 실어 보낸다 — 팝업에 같이 찍혀
+       증거 자료가 된다. */
+  var GRAPH_PICK = null, GRAPH_PICK_N = 0;        // 그래프에서 고른 분(data-at) · 같은 분 칸 중 몇째
+  var OHT_WIN = null;                             // { at, d } — 같은 분이면 다시 안 묻는다
+
+  function ohtAt() { return GRAPH_PICK || String(LIVE_AT || '').replace(' ', 'T'); }
+
+  function ohtPick(hv, box) {
+    var g = hv && $('.ghit', hv), at = g && g.getAttribute('data-at');
+    GRAPH_PICK = at || null;
+    GRAPH_PICK_N = at ? $$('.ghit[data-at="' + at + '"]', box).indexOf(g) : 0;
+    ohtRow(box);
+  }
+
+  function ohtRepin(body) {
+    if (!GRAPH_PICK) return;
+    var same = $$('.ghit[data-at="' + GRAPH_PICK + '"]', body);
+    var g = same[GRAPH_PICK_N] || same[0];
+    if (g && g.parentNode) g.parentNode.classList.add('bm-pin');
+  }
+
+  function ohtLabel(box) {
+    var pin = box && $('.hv.bm-pin .hvt', box), r = SIDE_ROWS && SIDE_ROWS[GRAPH_FAB];
+    var s = 'UI대쉬보드 · ' + GRAPH_FAB + ' · ' + ohtAt().replace('T', ' ').slice(0, 16);
+    // 붙박이 글자('10:35 · 66점 위험 · M16B')의 앞 시각은 이미 s 에 있다 — 떼고 붙인다
+    if (GRAPH_PICK) return pin ? s + ' · ' + pin.textContent.replace(/^[\d:~]+(\s*최고)?\s*·\s*/, '') : s;
+    var sc = r && (r.area_score != null ? r.area_score : r.score);
+    return sc == null ? s : s + ' · ' + sc + '점 ' + String(r.level || '').trim();
+  }
+
+  function ohtRow(box) {
+    var row = box && $('.bm-goht', box), at = ohtAt();
+    if (!row) return;
+    if (!at) { row.style.display = 'none'; return; }
+    if (OHT_WIN && OHT_WIN.at === at) { ohtPaint(row, OHT_WIN.d, at); return; }
+    $('.bm-gat', row).textContent = at.replace('T', ' ').slice(5, 16);
+    $('.bm-gbtns', row).innerHTML = '';
+    $('.bm-gnote', row).textContent = '불러오는 중…';
+    fetch(location.origin + '/api/world?at=' + encodeURIComponent(at) +
+          '&label=' + encodeURIComponent(ohtLabel(box)), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function (d) {
+        OHT_WIN = { at: at, d: d };
+        var now = $('.bm-graph .bm-goht');
+        if (now && ohtAt() === at) ohtPaint(now, d, at);      // 그새 다른 분을 골랐으면 버린다
+      })
+      .catch(function () {
+        var now = $('.bm-graph .bm-goht');
+        if (now && ohtAt() === at) {
+          $('.bm-gbtns', now).innerHTML = '';
+          $('.bm-gnote', now).textContent = '· OHT 재생 주소를 못 만들었습니다';
+        }
+      });
+  }
+
+  function ohtPaint(row, d, at) {
+    if (!d || !d.enabled) { row.style.display = 'none'; return; }   // config.world_model.enabled=false
+    row.style.display = '';
+    var up = (d.server || {}).ok, links = d.links || [], one = links[0] || {};
+    $('.bm-gat', row).textContent = at.replace('T', ' ').slice(5, 16);
+    $('.bm-gbtns', row).innerHTML = links.map(function (x) {
+      return '<button data-oht="' + esc(x.url) + '"' + (x.fab === GRAPH_FAB ? ' class="on"' : '') +
+             (up ? '' : ' disabled') + ' title="' + esc(x.table) + ' · ' + esc(x.wm_fab) + '/' + esc(x.prefix) +
+             ' · ' + esc(x.from) + '~' + esc(x.to) + '">' + esc(x.fab) + '</button>';
+    }).join('') + (GRAPH_PICK ? '<button data-oht-now title="고른 분을 풀고 지금 자료 시각으로">지금으로</button>' : '');
+    var f = String(one.from || ''), t = String(one.to || '');
+    $('.bm-gnote', row).innerHTML = esc('· ' + f.slice(8, 10) + ':' + f.slice(10, 12) + '~' + t.slice(8, 10) + ':' +
+      t.slice(10, 12) + ' (' + d.minutes + '분)') +
+      (up ? (GRAPH_PICK ? '' : ' · 그래프에서 분을 누르면 그 분으로')
+          : ' · <span class="down">월드모델이 안 떠 있습니다</span> — ' + esc((d.server || {}).how || ''));
+  }
+
+  function ohtGo(url) {
+    // ★팝업으로 띄운다 — 관제와 같은 창 이름이라 여러 번 눌러도 창 하나로 모인다
+    var w = window.open(url, 'oht_world', 'width=1480,height=920,menubar=no,toolbar=no,location=no');
+    if (!w) alert('팝업이 막혀 있습니다. 이 주소의 팝업을 허용해 주세요.');
+    else w.focus();
   }
 
   /* 더블클릭 — 판 위든 패널 위든 그 FAB 으로 연다.
@@ -1504,6 +1611,11 @@
       '.bm-ghead button:hover{border-color:#3ad6c8;color:#fff}',
       '.bm-ghead button.on{background:rgba(58,214,200,.16);border-color:rgba(58,214,200,.55);color:#bff6f0}',
       '.bm-graph.wide{width:calc(100% - 24px)}',
+      // 그 1분 OHT 재생 줄 — 머리 줄(.bm-ghead) 모양새 그대로. 잠긴 단추·경고만 더한다
+      '.bm-goht{flex-wrap:wrap;row-gap:5px}',
+      '.bm-goht .bm-gbtns{display:inline-flex;gap:5px;flex-wrap:wrap}',
+      '.bm-ghead button:disabled{opacity:.4;cursor:not-allowed}',
+      '.bm-goht .down{color:#ffb0b0;font-weight:700}',
       // ★그림은 viewBox 1000 짜리다. 좁은 칸에 욱여넣으면 글자가 뭉개진다 —
       //   최소 너비를 주고 모자라면 옆으로 굴린다.
       '.bm-gbody{flex:1;overflow:auto;padding:8px}',

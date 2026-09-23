@@ -558,9 +558,28 @@ class 다시_싣기를_뺐다(unittest.TestCase):
 
 class 제목에_준비중(unittest.TestCase):
     """고객: "UI대쉬보드 FAB별 실시간상황별 ---> FAB별 실시간상황별(준비중) 이라고 해줄래".
-    ★제목 글자는 그대로 두고 뒤에 (준비중)만 붙였다."""
+    ★제목 글자는 그대로 두고 뒤에 (준비중)만 붙였다.
+    고객: "FAB별 실시간 상황표 ---> FAB별 실시간 상황 UI대쉬보드 라고 해줘" — 이름만
+    바꾸고 (준비중)은 그대로 둔다."""
 
     def test_탭_제목(self):
         h = _read("static", "dashboard.html")
         i = h.index('<div class="page hidden" id="tab-ui">')
-        self.assertIn("<h2>FAB별 실시간 상황표(준비중)", h[i:i + 1500])
+        self.assertIn("<h2>FAB별 실시간 상황 UI대쉬보드(준비중)", h[i:i + 1500])
+
+    def test_HTML_주석이_일찍_닫히지_않는다(self):
+        """★주석에 고객 말('상황표 ---> …')을 그대로 옮겼다가 '-->' 에서 주석이 닫혀,
+           나머지 주석 글이 화면에 그대로 찍혔다. 주석을 걷어 낸 뒤 '-->' 가 남으면
+           어딘가 일찍 닫힌 것이다 (스크립트 안은 HTML 주석이 아니라 뺀다)."""
+        for name in ("dashboard.html", MON):
+            h = _read("static", name)
+            body = re.sub(r"<script\b.*?</script>", "", h, flags=re.S)
+            left = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+            self.assertNotIn("-->", left, name + " 에 일찍 닫힌 주석이 있다")
+
+    def test_옛_이름은_화면에_안_남는다(self):
+        h = _read("static", "dashboard.html")
+        i = h.index('<div class="page hidden" id="tab-ui">')
+        blk = h[i:h.index("</iframe>", i)]
+        self.assertNotIn("실시간 상황표", blk)
+        self.assertIn('title="FAB별 실시간 상황 UI대쉬보드"', blk)
