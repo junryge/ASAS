@@ -556,16 +556,20 @@ class 다시_싣기를_뺐다(unittest.TestCase):
         self.assertIn("mk('⧉ 새 창'", self.h)
 
 
-class 제목에_준비중(unittest.TestCase):
+class 탭_제목(unittest.TestCase):
     """고객: "UI대쉬보드 FAB별 실시간상황별 ---> FAB별 실시간상황별(준비중) 이라고 해줄래".
-    ★제목 글자는 그대로 두고 뒤에 (준비중)만 붙였다.
-    고객: "FAB별 실시간 상황표 ---> FAB별 실시간 상황 UI대쉬보드 라고 해줘" — 이름만
-    바꾸고 (준비중)은 그대로 둔다."""
+    고객: "FAB별 실시간 상황표 ---> FAB별 실시간 상황 UI대쉬보드 라고 해줘".
+    고객: "UI대쉬보드 준비중 빼라" — 이제 제목은 이름만."""
 
     def test_탭_제목(self):
         h = _read("static", "dashboard.html")
         i = h.index('<div class="page hidden" id="tab-ui">')
-        self.assertIn("<h2>FAB별 실시간 상황 UI대쉬보드(준비중)", h[i:i + 1500])
+        self.assertIn("<h2>FAB별 실시간 상황 UI대쉬보드\n", h[i:i + 1500])
+
+    def test_준비중을_뺐다(self):
+        h = _read("static", "dashboard.html")
+        i = h.index('<div class="page hidden" id="tab-ui">')
+        self.assertNotIn("준비중", h[i:h.index("</iframe>", i)])
 
     def test_HTML_주석이_일찍_닫히지_않는다(self):
         """★주석에 고객 말('상황표 ---> …')을 그대로 옮겼다가 '-->' 에서 주석이 닫혀,
