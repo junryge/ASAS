@@ -439,7 +439,12 @@ def _assign_api_models_to_groups(parallel_groups, primary_reg_key=None):
 
         if not assigned:
             # 모든 모델 소진 → 첫 번째 large 모델 재사용
-            fallback_key = API_MODEL_TIERS["large"][0]
+            # 큰 모델이 없는 게이트웨이도 있다 — 아무 티어의 첫 모델로
+            fallback_key = next((k for t in ("large", "medium", "small")
+                                 for k in API_MODEL_TIERS.get(t, []) if k in MODEL_REGISTRY),
+                                next(iter(MODEL_REGISTRY), None))
+            if fallback_key is None:
+                break
             reg = MODEL_REGISTRY[fallback_key]
             assignments[pg["group"]] = {
                 "url": reg["url"], "model": reg["model"], "reg_key": fallback_key,

@@ -17,7 +17,7 @@ if os.path.isfile(_CONFIG_PATH):
     try:
         with open(_CONFIG_PATH, "r", encoding="utf-8") as _cf:
             _EXT_CONFIG = json.load(_cf)
-        print(f"[CONFIG] api_config.json 로드 완료 ({len(_EXT_CONFIG.get('models', {}))}개 모델)")
+        print("[CONFIG] api_config.json 로드 완료 (API 모델은 게이트웨이 /v1/models 에서 읽음)")
     except Exception as _cfg_err:
         print(f"[CONFIG] api_config.json 로드 실패, 기본값 사용: {_cfg_err}")
 else:

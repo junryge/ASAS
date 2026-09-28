@@ -209,7 +209,13 @@ def register_api_routes(app):
 
     @app.route("/api/config")
     def api_config():
-        """환경 설정 및 토큰 상태 반환"""
+        """환경 설정 및 토큰 상태 반환
+
+        ★API 모델 목록은 게이트웨이 /v1/models 에서 온다(demos_v1/models.py). 5분이 지났으면
+          여기서 다시 읽는다 — 데모스 본창 · 개인 에이전트 창 · UIO 가 모두 이 주소로 목록을 받는다.
+        """
+        from demos_v1.models import refresh_models, GATEWAY_STATUS
+        refresh_models(wait=False)
         # 모델별 자동 토큰 정보 생성
         model_token_info = {}
         for reg_key, reg in MODEL_REGISTRY.items():
@@ -224,8 +230,17 @@ def register_api_routes(app):
                 "cost_tier": cost,
                 "auto_max_tokens": auto_max,
             }
+        def _env(k, v):
+            e = {"url": v["url"], "model": v["model"], "name": v["name"]}
+            reg = MODEL_REGISTRY.get(ENV_TO_REGISTRY.get(k, ""), {})
+            if reg:                                   # 화면이 크기 · 이미지 모델로 묶을 때 쓴다
+                e["tier"] = reg.get("cost_tier", "medium")
+                e["vision"] = "vision" in reg.get("capabilities", set())
+            return e
         return jsonify({
-            "envs": {k: {"url": v["url"], "model": v["model"], "name": v["name"]} for k, v in ENV_CONFIG.items()},
+            "envs": {k: _env(k, v) for k, v in ENV_CONFIG.items()},
+            "gateway": {"base": GATEWAY_STATUS["base"], "count": GATEWAY_STATUS["count"],
+                        "error": GATEWAY_STATUS["error"], "fetched_at": GATEWAY_STATUS["fetched_at"]},
             "has_token": bool(API_TOKEN),
             "token_file": TOKEN_FILE,
             "token_optional": True,

@@ -25,9 +25,9 @@ def register_model_routes(app):
         code_assist_v1은 별도 빌드 없이 그것을 그대로 사용한다.
         """
         # demos_v1의 모델 정보 직접 import (요청 시점이라 부팅 후 최신 상태 보장)
-        from demos_v1.models import MODEL_REGISTRY, ENV_CONFIG
-        # priority 순서는 code_assist_v1 자체 설정 사용 (demos_v1엔 없음)
-        from code_assist_v1.config import DEFAULT_MODEL_PRIORITY
+        # ★API 모델은 게이트웨이 /v1/models 목록 — 5분이 지났으면 여기서 다시 읽는다
+        from demos_v1.models import MODEL_REGISTRY, ENV_CONFIG, DEFAULT_MODEL_PRIORITY, refresh_models
+        refresh_models(wait=False)
 
         api_models = []
         for mid, info in MODEL_REGISTRY.items():
@@ -59,7 +59,7 @@ def register_model_routes(app):
                     "kind": "gguf",
                 })
 
-        # default 모델 — demos_v1 priority 첫 항목
+        # default 모델 — 게이트웨이 목록의 기본 순서 첫 항목
         default_id = next(
             (mid for mid in DEFAULT_MODEL_PRIORITY if mid in MODEL_REGISTRY),
             next(iter(MODEL_REGISTRY.keys()), "")

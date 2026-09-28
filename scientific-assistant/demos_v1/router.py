@@ -3,7 +3,7 @@ demos_v1/router.py - classify_and_route, classify_format_and_style, build_orches
 """
 import re
 from demos_v1.config import API_TOKEN
-from demos_v1.models import ENV_CONFIG
+from demos_v1.models import ENV_CONFIG, pick_env, env_name
 from demos_v1.skills import SKILL_DESC_KO
 
 def build_orchestration_prompt(query, skill_ids, loaded_skills_content):
@@ -70,7 +70,7 @@ def classify_and_route(query, history, uploaded_files_list):
     if not API_TOKEN:
         gguf_envs = {k: v for k, v in ENV_CONFIG.items() if str(k).startswith("gguf-")}
         if not gguf_envs:
-            return "common", "토큰 없음 & 로컬 모델 없음 → 실패 예상"
+            return pick_env("default"), "토큰 없음 & 로컬 모델 없음 → 실패 예상"
         
         vl_ggufs = [k for k, v in gguf_envs.items() if "vl" in v["name"].lower()]
         normal_ggufs = [k for k, v in gguf_envs.items() if "vl" not in v["name"].lower()]
@@ -87,46 +87,49 @@ def classify_and_route(query, history, uploaded_files_list):
             first_key = list(gguf_envs.keys())[0]
             return first_key, f"로컬 기본 모델 → {ENV_CONFIG[first_key]['name']}"
 
-    # 1순위: 이미지 첨부 → VL 모델
+    # ★모델은 게이트웨이(/v1/models)가 준 목록에서 고른다 — 큰 모델 · 빠른 모델 · 이미지 모델.
+    #   (예전엔 'dev' · 'vl-fast' · 'common' 을 박아 두어, 목록이 바뀌면 없는 모델을 골랐다)
+    def _to(kind, why):
+        env = pick_env(kind)
+        return env, f"{why} → {env_name(env)}"
+
+    # 1순위: 이미지 첨부 → 이미지 모델
     if has_images:
-        # 복잡한 분석 요청 → VL-30B (현재 유일 VL)
         if any(kw in q for kw in COMPLEX_SIGNALS) or len(q) > 200:
-            return "vl-fast", "이미지+복잡 분석 → VL-30B"
-        # 보통 요청
+            return _to("vision", "이미지+복잡 분석")
         elif len(q) > SIMPLE_MAX_LEN:
-            return "vl-fast", "이미지 분석 → VL-30B"
-        # 간단한 요청
+            return _to("vision", "이미지 분석")
         else:
-            return "vl-fast", "간단 이미지 → VL-30B"
+            return _to("vision", "간단 이미지")
 
     # 비전 키워드는 있지만 이미지가 없는 경우 (이미지 업로드 유도)
     if has_vision_kw and not has_images:
-        return "vl-fast", "비전 키워드 감지 → VL-30B (이미지 업로드 권장)"
+        return _to("vision", "비전 키워드 감지 (이미지 업로드 권장)")
 
-    # 2순위: PPT 생성 → Qwen3.6-35B
+    # 2순위: PPT 생성 → 큰 모델
     if any(kw in q for kw in PPT_SIGNALS):
-        return "dev", "PPT 생성 → Qwen3.6-35B"
+        return _to("large", "PPT 생성")
 
-    # 3순위: 복잡한 분석/코드/데이터 → Qwen3.6-35B
+    # 3순위: 복잡한 분석/코드/데이터 → 큰 모델
     complex_count = sum(1 for kw in COMPLEX_SIGNALS if kw in q)
     if complex_count >= 2 or (complex_count >= 1 and len(q) > 200):
-        return "dev", "복잡한 분석 → Qwen3.6-35B"
+        return _to("large", "복잡한 분석")
 
     # 4순위: 데이터 분석 (CSV 로드 + 분석 키워드)
     if has_csv or any(kw in q for kw in DATA_SIGNALS):
-        return "dev", "데이터 분석 → Qwen3.6-35B"
+        return _to("large", "데이터 분석")
 
     # 5순위: 코드 작성 요청 (중간~긴 쿼리)
     code_kw = ["코드", "함수", "클래스", "구현", "작성", "코딩", "스크립트", "프로그래밍"]
     if any(kw in q for kw in code_kw) and len(q) > 80:
-        return "dev", "코드 작성 → Qwen3.6-35B"
+        return _to("large", "코드 작성")
 
-    # 6순위: 간단한 Q&A → 가장 빠른 모델
+    # 6순위: 간단한 Q&A → 빠른 모델
     if len(q) <= SIMPLE_MAX_LEN:
-        return "common", "간단 Q&A → gpt-oss-20b"
+        return _to("small", "간단 Q&A")
 
-    # 기본값: Qwen3.6-35B
-    return "dev", "일반 요청 → Qwen3.6-35B"
+    # 기본값
+    return _to("default", "일반 요청")
 
 
 def classify_format_and_style(query, history, uploaded_files_list, skill_ids):

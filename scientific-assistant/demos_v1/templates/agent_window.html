@@ -547,7 +547,7 @@ async function loadEnvs(){
     Object.keys(envs).forEach(function(id){
       var env=envs[id]||{};
       var o=document.createElement('option');
-      o.value=id; o.textContent=(env.name||id)+(env.model?(' — '+env.model):'');
+      o.value=id; o.textContent=(env.name||id)+(env.model&&env.model!==env.name?(' — '+env.model):'');
       if(id.indexOf('gguf-')===0) ggufGroup.appendChild(o); else apiGroup.appendChild(o);
     });
     if(apiGroup.children.length) sel.appendChild(apiGroup);

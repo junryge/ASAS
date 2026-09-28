@@ -3415,11 +3415,15 @@ def register_chat_routes(app):
                         })
                     elif len(successes) >= 2:
                         # 합성 모델 결정: low cost tier → 대형 모델로 업그레이드
-                        _synth_reg_key = _primary_reg_key or "qwen36-35b"
+                        # ★기본 큰 모델은 게이트웨이 목록에서 (예전엔 'qwen36-35b' 를 박아 둠)
+                        from demos_v1.models import pick_env as _pick_env
+                        _big_key = ENV_TO_REGISTRY.get(_pick_env("large"), "")
+                        _synth_reg_key = _primary_reg_key or _big_key
                         _primary_cost = MODEL_REGISTRY.get(_synth_reg_key, {}).get("cost_tier", "medium")
-                        if _primary_cost == "low":
-                            _synth_reg_key = "qwen36-35b"
-                        _synth_reg = MODEL_REGISTRY.get(_synth_reg_key, MODEL_REGISTRY["qwen36-35b"])
+                        if _primary_cost == "low" and _big_key:
+                            _synth_reg_key = _big_key
+                        _synth_reg = MODEL_REGISTRY.get(_synth_reg_key) or MODEL_REGISTRY.get(_big_key) \
+                            or next(iter(MODEL_REGISTRY.values()), {})
 
                         # 합성 프롬프트
                         expert_sections = []

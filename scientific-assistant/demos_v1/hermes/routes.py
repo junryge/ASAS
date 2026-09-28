@@ -32,10 +32,11 @@ def _demos_review_complete(messages):
         return ""
     # 리뷰용 가벼운 API env 선택 (gguf 제외)
     env = None
-    for cand in ("common", "summary", "dev"):
-        if cand in ENV_CONFIG:
-            env = cand
-            break
+    try:
+        from demos_v1.models import pick_env
+        env = pick_env("small") or None                   # 게이트웨이 목록의 빠른 모델
+    except Exception:
+        env = None
     if env is None:
         for e in ENV_CONFIG:
             if not str(e).startswith("gguf"):

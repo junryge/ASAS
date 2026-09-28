@@ -2976,11 +2976,12 @@
         // 현재 선택된 모델이 대형(고용량)인지 확인 (availableEnvs 이름 기준 휴리스틱)
         const _curEnv = aEnv(currentAgent);
         const _curName = (availableEnvs[_curEnv]?.name || '').toLowerCase();
-        const _isLarge = /72b|35b|qwen3\.6/.test(_curName);  // 72B 이상 또는 Qwen3.6-35B(대형)
+        const _isLarge = availableEnvs[_curEnv]?.tier === 'high' || /72b|35b|qwen3\.6/.test(_curName);  // 서버가 준 크기(게이트웨이 목록) 또는 예전 이름 규칙
         const _needModelBump = !_isLarge && _curEnv !== 'auto';
 
         // 권장 대형 모델 우선순위: Qwen3.6-35B(dev) → VL-72B
-        const _preferredLarge = ['dev', 'vl-72b'].find(id => availableEnvs[id]);
+        const _preferredLarge = Object.keys(availableEnvs).find(id => availableEnvs[id]?.tier === 'high' && !availableEnvs[id]?.vision)
+          || ['dev', 'vl-72b'].find(id => availableEnvs[id]);
         const _targetName = _preferredLarge ? (availableEnvs[_preferredLarge]?.name || _preferredLarge) : '80B+ 모델';
 
         let _dialogMsg = `[${_kind}] 요청 감지됨.\n\n` +

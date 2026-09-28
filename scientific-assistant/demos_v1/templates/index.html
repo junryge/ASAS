@@ -1575,6 +1575,8 @@ Promise.all([
   fetch('/api/skills').then(r=>r.json()),
 ]).then(([cfgData, skillData])=>{
   envs = cfgData.envs || {};
+  // 게이트웨이 목록에서 빠진 모델(예전 등록)을 고른 채면 AUTO 로 — 없는 모델로 보내지 않게
+  selEnvs = selEnvs.filter(id => id==='auto' || envs[id]); if(!selEnvs.length) selEnvs=['auto'];
   hasToken = cfgData.has_token;
   catalog = skillData || {};
   try{ renderTokenStatus(); }catch(e){ console.error('renderTokenStatus:',e); }
@@ -1612,7 +1614,9 @@ function _makeEnvBtn(id, env, icons){
   const idx = isSel ? selEnvs.indexOf(id)+1 : 0;
   const badge = selEnvs.length > 1 && isSel ? `<span style="position:absolute;top:4px;right:6px;background:#6366f1;color:#fff;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold">${idx}</span>` : '';
   btn.style.position='relative';
-  btn.innerHTML = `${badge}<div class="env-name">${icons[id]||'🔗'} ${env.name}</div><div class="env-model">${env.model}</div>`;
+  const sub = (env.model && env.model !== env.name) ? env.model
+    : (({high:'대형',medium:'중형',low:'소형'})[env.tier] || '') + (env.vision ? ' · 이미지' : '');
+  btn.innerHTML = `${badge}<div class="env-name">${icons[id]||'🔗'} ${env.name}</div><div class="env-model">${sub}</div>`;
   btn.onclick = ()=>{
     // 단일 선택만 허용 (병렬 제거)
     if(selEnvs.includes(id)){
@@ -1655,13 +1659,13 @@ function renderEnvs(){
     } else if(id.startsWith('gguf-')){
       rowGguf.appendChild(_makeEnvBtn(id, env, icons));
       hasGguf = true;
-    } else if(id.startsWith('vl-')){
+    } else if(env.vision || id.startsWith('vl-')){
       rowVl.appendChild(_makeEnvBtn(id, env, icons));
       hasVl = true; hasApi = true;
-    } else if(highIds.has(id)){
+    } else if(env.tier==='high' || highIds.has(id)){
       rowHigh.appendChild(_makeEnvBtn(id, env, icons));
       hasHigh = true; hasApi = true;
-    } else if(lowIds.has(id)){
+    } else if(env.tier==='low' || lowIds.has(id)){
       rowLow.appendChild(_makeEnvBtn(id, env, icons));
       hasLow = true; hasApi = true;
     } else {

@@ -1,7 +1,8 @@
 """
-code_assist_v1/models.py - 자체 MODEL_REGISTRY (api_config.json 자체 로딩)
+code_assist_v1/models.py - 모델 목록 · 토큰/GGUF 설정
 
-demos_v1.models 와 분리. 같은 프로세스에서도 독립 동작.
+API 모델 목록은 데모스(demos_v1.models)의 것을 그대로 쓴다 — 게이트웨이 /v1/models 목록.
+api_config.json 에서는 token_settings · gguf 설정만 읽는다. GGUF 는 예전 그대로다.
 """
 from __future__ import annotations
 import json
@@ -17,51 +18,23 @@ if os.path.isfile(API_CONFIG_PATH):
     try:
         with open(API_CONFIG_PATH, "r", encoding="utf-8") as _cf:
             _EXT_CONFIG = json.load(_cf)
-        print(f"[code_assist_v1] api_config.json 로드 완료 ({len(_EXT_CONFIG.get('models', {}))}개 모델)")
+        print("[code_assist_v1] api_config.json 로드 완료 (토큰 · GGUF 설정)")
     except Exception as _e:
         print(f"[code_assist_v1] api_config.json 로드 실패, 기본값 사용: {_e}")
 else:
     print(f"[code_assist_v1] api_config.json 없음 → 기본값 사용 ({API_CONFIG_PATH})")
 
 
-def _build_model_registry(config_models: dict) -> dict:
-    """JSON config 의 models → Python MODEL_REGISTRY (capabilities: list→set)."""
-    registry = {}
-    for key, info in config_models.items():
-        entry = dict(info)
-        if "capabilities" in entry and isinstance(entry["capabilities"], list):
-            entry["capabilities"] = set(entry["capabilities"])
-        registry[key] = entry
-    return registry
-
-
-# 기본 모델 (api_config.json 없을 때 폴백) - 2026-06-08 사용 가능 모델
-_DEFAULT_MODELS = {
-    "qwen36-35b": {
-        "env_id": "dev",
-        "model": "Qwen3.6-35B-A3B",
-        "url": "http://common.llm.skhynix.com/v1/chat/completions",
-        "name": "Qwen3.6-35B-A3B (Common)",
-        "capabilities": {"text", "code", "analysis", "large"},
-        "context_window": 128000,
-        "priority": 1,
-        "cost_tier": "high",
-    },
-}
-
-if _EXT_CONFIG.get("models"):
-    MODEL_REGISTRY = _build_model_registry(_EXT_CONFIG["models"])
-else:
-    MODEL_REGISTRY = _DEFAULT_MODELS
-
-# env_id → {url, model, name} 매핑 (GGUF는 app_code 에서 동적 추가됨)
-ENV_CONFIG: dict = {
-    v["env_id"]: {"url": v["url"], "model": v["model"], "name": v["name"]}
-    for v in MODEL_REGISTRY.values()
-}
-
-# env_id → registry key 역매핑
-ENV_TO_REGISTRY: dict = {v["env_id"]: k for k, v in MODEL_REGISTRY.items()}
+# ★API 모델 목록은 데모스와 같은 것 — 게이트웨이(/v1/models)가 준 목록이다 (demos_v1/models.py).
+#   예전엔 api_config.json 의 "models" 를 여기서도 따로 읽어, 데모스와 목록이 어긋날 수 있었다.
+#   같은 dict 객체를 가져오므로 데모스가 목록을 다시 읽으면 여기도 그대로 바뀐다.
+try:
+    from demos_v1.models import (  # noqa: E402
+        MODEL_REGISTRY, ENV_CONFIG, ENV_TO_REGISTRY, DEFAULT_MODEL_PRIORITY,
+    )
+except Exception as _e:  # 데모스 없이 따로 켠 경우(더는 지원하지 않음) — 빈 목록
+    print(f"[code_assist_v1] 데모스 모델 목록을 못 가져옴: {_e}")
+    MODEL_REGISTRY, ENV_CONFIG, ENV_TO_REGISTRY, DEFAULT_MODEL_PRIORITY = {}, {}, {}, []
 
 # 토큰/컨텍스트 설정 (api_config.json > 환경변수 > 기본값)
 _token_cfg = _EXT_CONFIG.get("token_settings", {})
@@ -82,12 +55,3 @@ VRAM_BUDGET_GB = float(os.getenv("GGUF_VRAM_BUDGET_GB", str(_gguf_cfg.get("vram_
 GGUF_DEFAULT_N_CTX = int(_gguf_cfg.get("n_ctx", 32768))
 GGUF_DEFAULT_N_GPU_LAYERS = int(_gguf_cfg.get("n_gpu_layers", 99))
 GGUF_DEFAULT_N_BATCH = int(_gguf_cfg.get("n_batch", 2048))
-
-# 기본 모델 우선순위 (api_config.json > 코드 기본값)
-DEFAULT_MODEL_PRIORITY = _EXT_CONFIG.get("default_model_priority", [
-    "qwen36-35b",
-    "gemma-4-31b",
-    "gpt-oss-20b",
-    "qwen25-vl-72b",
-    "qwen3-vl-30b",
-])
