@@ -1906,7 +1906,9 @@ def api_window():
                 return jsonify({"error": f"poll_interval_s 는 {popts} 중 하나여야 합니다"}), 400
             q["poll_interval_s"] = p
             print(f"[관제] 수집 주기 → {p}초")
-        STATE["settings_changed_at"] = datetime.now().isoformat()
+        # ★여기서 STATE 에 settings_changed_at 을 적던 줄을 뺐다. STATE 는 이 파일에
+        #   없는 이름이라(accuracy.py 에만 있다) 값은 바뀌는데 응답이 500 으로
+        #   끝났다 — 화면의 '수집 주기' 를 바꾸면 늘 실패로 떴다. 읽는 곳도 없었다.
 
     return jsonify({"window": q.get("window", "10m"), "window_options": wopts,
                     "poll_interval_s": q.get("poll_interval_s", 60), "poll_options": popts})
