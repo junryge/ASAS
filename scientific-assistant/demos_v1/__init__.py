@@ -85,6 +85,15 @@ def create_app():
     except Exception as _he:
         print(f"  ⚠️  헤르메스 라우트 등록 실패(무시): {_he}")
 
+    # 🖼 화이트보드 (답변 속 Mermaid 글 → 그림) — 데모스·코딩 어시스턴트가 같이 쓴다.
+    #    실패해도 본체는 정상 동작 (그림 대신 글이 그대로 보인다)
+    try:
+        from demos_v1.whiteboard import register_whiteboard_routes
+        register_whiteboard_routes(app)
+        print("  🖼  화이트보드 라우트 등록 완료 (/api/whiteboard/render)")
+    except Exception as _wbe:
+        print(f"  ⚠️  화이트보드 등록 실패(무시): {_wbe}")
+
     # code_assist_v1 통합 (Blueprint, url_prefix="/code", demos_v1 리소스 공유)
     try:
         from code_assist_v1.blueprint import register_code_blueprint

@@ -2622,6 +2622,12 @@ function renderMd(text){
       <details class="md-raw-toggle"><summary>📝 원본 마크다운 보기</summary><pre><code class="language-markdown">${trimmed}</code></pre></details>
     </div>`;
   });
+  // 2b-2) mermaid 코드블록 — 그림은 whiteboard.js 가 이 블록을 찾아 서버에서 받아 그린다.
+  //   빈 줄·*·` 가 아래 단계(문단 나누기·굵게·기울임)에 걸려 원문이 쪼개지지 않게 문자 참조로 싸 둔다.
+  s=s.replace(/```mermaid(?![\w-])[ \t]*\n?([\s\S]*?)```/gi,(_,code)=>{
+    const body=code.trim().replace(/\n/g,'&#10;').replace(/\*/g,'&#42;').replace(/`/g,'&#96;');
+    return `<pre><code class="language-mermaid">${body}</code></pre>`;
+  });
   // 2c) 일반 코드블록 — xml 블록 안에 mxfile이 있으면 drawio로 자동 변환
   s=s.replace(/```(\w*)\s*([\s\S]*?)```/g,(_,lang,code)=>{
     const trimmed=code.trim();
@@ -6701,5 +6707,8 @@ async function searchHermesSessions(){
   </div>
 </div>
 
+<!-- 🖼 화이트보드: 답변 속 ```mermaid 글 → 그림 (틀·버튼은 Draw.io 블록 모양 그대로) -->
+<script src="/static/whiteboard.js?v=20260928a"></script>
+<script>if(window.WB){WB.setup({cls:{block:'drawio-block',head:'drawio-header',acts:'drawio-actions',btn:'drawio-btn'},accent:'#6366f1'});WB.watch(document.getElementById('msgs'));}</script>
 </body>
 </html>

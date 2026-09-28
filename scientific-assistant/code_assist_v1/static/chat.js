@@ -17,6 +17,8 @@ const Chat = {
     c.dataset.raw = content;
     if (role === "user") c.textContent = content;
     else c.innerHTML = renderMd(content);
+    // 🖼 지난 세션을 다시 열 때도 ```mermaid 글을 그림으로 (whiteboard.js)
+    if (role !== "user" && content && window.WB) WB.renderIn(c);
     body.appendChild(r);
     body.appendChild(c);
     wrap.appendChild(av);
@@ -453,6 +455,11 @@ function renderMd(text) {
 // marked.js 로드 실패 시 폴백 (코드블록·헤딩·리스트만)
 function miniRenderMd(t) {
   const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // ```mermaid — 그림은 whiteboard.js 가 그린다. 빈 줄·*·` 가 아래 단계(단락·굵게·인라인 코드)에
+  //   걸려 원문이 쪼개지지 않게 문자 참조로 싸 둔다 (폐쇄망에선 marked 대신 이 함수가 돈다)
+  t = t.replace(/```mermaid(?![\w-])[ \t]*\n([\s\S]*?)```/gi, (m, code) =>
+    `<pre><code class="language-mermaid">${esc(code.trim()).replace(/\n/g, "&#10;")
+      .replace(/\*/g, "&#42;").replace(/`/g, "&#96;")}</code></pre>`);
   // 코드블록
   t = t.replace(/```(\w*)\n([\s\S]*?)```/g, (m, lang, code) =>
     `<pre><code class="language-${lang}">${esc(code)}</code></pre>`);
@@ -498,6 +505,8 @@ function attachCopyButtons(root) {
   if (window.hljs) {
     $$("pre code", root).forEach(c => { try { hljs.highlightElement(c); } catch {} });
   }
+  // 🖼 ```mermaid 글 → 그림 (데모스 서버가 그린다 · whiteboard.js). 스트리밍이 끝난 뒤에만 부른다
+  if (window.WB) WB.renderIn(root);
 }
 
 // ── 긴 코드 블록은 접는다 ──

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Freedom 코딩 어시스턴트</title>
-<link rel="stylesheet" href="static/app.css?v=20260818a">
+<link rel="stylesheet" href="static/app.css?v=20260928a">
 <!-- highlight.js 테마는 app.js 에서 라이트/다크에 따라 동적 로드 -->
 </head>
 <body>
@@ -145,10 +145,13 @@
 <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
 
 <script src="static/app.js?v=20260818a"></script>
-<script src="static/chat.js?v=20260818a"></script>
+<script src="static/chat.js?v=20260928a"></script>
 <script src="static/skills.js?v=20260818a"></script>
 <script src="static/knowledge.js?v=20260818a"></script>
 <script src="static/workspace.js?v=20260818a"></script>
 <script src="static/sessions.js?v=20260818a"></script>
+<!-- 🖼 화이트보드: 답변 속 ```mermaid 글 → 그림 (데모스 서버가 그린다 · 틀은 수정 제안 카드 모양) -->
+<script src="/static/whiteboard.js?v=20260928a"></script>
+<script>if(window.WB){WB.setup({cls:{block:'edit-offer',head:'edit-offer-head'},accent:'var(--accent)'});}</script>
 </body>
 </html>
