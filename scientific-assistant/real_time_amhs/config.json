@@ -443,7 +443,7 @@
     "metric_groups": [
       {
         "id": "amos",
-        "name": "AMOS 컬럼",
+        "name": "스코어컬럼",
         "desc": "발동이벤트_요약 기준 — AMOS 실제 컬럼명으로 표시",
         "metrics": [
           {
@@ -621,7 +621,7 @@
       },
       {
         "id": "csv",
-        "name": "CSV 컬럼",
+        "name": "CSV스코어데이터 컬럼",
         "desc": "저장된 CSV 컬럼명 그대로 — 점수 계열(M16HUB_score·flow_score·hot_score) 포함",
         "metrics": [
           {

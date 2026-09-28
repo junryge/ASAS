@@ -185,19 +185,22 @@ def _fab_pio(s: str) -> list[dict]:
 def _fab_groups(sys: str) -> list[dict]:
     """FAB 화면의 지표 묶음 — ALL 화면과 같은 두 버튼.
 
-      · AMOS 컬럼 — 실제 지표 컬럼명(M14.QUE.LOAD.AVGLOADTIME1MIN …)으로 표시.
+    ★버튼 이름: 고객 "AMOS 컬럼 말고 → 스코어컬럼, CSV_컬럼 → CSV스코어데이터 컬럼".
+      id(amos/csv)는 그대로다 — 화면·시험이 id 로 고른다.
+
+      · 스코어컬럼(옛 'AMOS 컬럼') — 실제 지표 컬럼명(M14.QUE.LOAD.AVGLOADTIME1MIN …)으로 표시.
         스코어만 예외로 area_score 를 그대로 보여준다 (그 FAB 의 자기 점수라는
         걸 화면에서 알 수 있게). 파생 계산 컬럼(ra_count·rb_diff 등)은 AMOS
         원본이 없으므로 CSV 컬럼명 그대로다.
-      · CSV 컬럼 — 전부 CSV 컬럼명 그대로.
+      · CSV스코어데이터 컬럼(옛 'CSV 컬럼') — 전부 CSV 컬럼명 그대로.
     """
     amos = _fab_strip(sys)
     csv = [dict(m, raw=("area_score" if m["key"] == "unified_risk_score"
                         else m["key"])) for m in amos]
     return [
-        {"id": "amos", "name": "AMOS 컬럼",
+        {"id": "amos", "name": "스코어컬럼",
          "desc": f"{sys} 실제 지표 컬럼명으로 표시", "metrics": amos},
-        {"id": "csv", "name": "CSV 컬럼",
+        {"id": "csv", "name": "CSV스코어데이터 컬럼",
          "desc": "fab분리 CSV 컬럼명 그대로", "metrics": csv},
     ]
 
@@ -247,7 +250,7 @@ def sys_cfg(cfg: dict, sys: str | None) -> dict:
 
     # 추이 그래프 지표 — FAB 파일의 실제 컬럼으로 갈아끼운다. ui 의 기존
     # 설정(metric_groups/strip_metrics)은 ALL 기준이라 FAB 화면에는 대부분
-    # 없는 컬럼들이다. ALL 과 똑같이 'AMOS 컬럼 / CSV 컬럼' 두 묶음을 준다.
+    # 없는 컬럼들이다. ALL 과 똑같이 '스코어컬럼 / CSV스코어데이터 컬럼' 두 묶음을 준다.
     # 시스템별로 직접 지정하고 싶으면 ui["metric_groups_M14"] 처럼 코드가
     # 붙은 키를 만들면 그걸 쓴다.
     ui = dict(cfg.get("ui") or {})
