@@ -1,0 +1,2 @@
+    // 🖼 지난 세션을 다시 열 때도 ```mermaid 글을 그림으로 (whiteboard.js)
+    if (role !== "user" && content && window.WB) WB.renderIn(c);

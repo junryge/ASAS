@@ -1,0 +1,6 @@
+  // 2b-2) mermaid 코드블록 — 그림은 whiteboard.js 가 이 블록을 찾아 서버에서 받아 그린다.
+  //   빈 줄·*·` 가 아래 단계(문단 나누기·굵게·기울임)에 걸려 원문이 쪼개지지 않게 문자 참조로 싸 둔다.
+  s=s.replace(/```mermaid(?![\w-])[ \t]*\n?([\s\S]*?)```/gi,(_,code)=>{
+    const body=code.trim().replace(/\n/g,'&#10;').replace(/\*/g,'&#42;').replace(/`/g,'&#96;');
+    return `<pre><code class="language-mermaid">${body}</code></pre>`;
+  });

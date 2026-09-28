@@ -1,0 +1,8 @@
+.edit-offer {
+  margin-top: 12px; border: 1px solid #30363d; border-radius: 8px;
+  background: var(--bg-1); overflow: hidden;
+}
+.edit-offer-head {
+  padding: 8px 12px; font-size: 13px; font-weight: 600;
+  background: #1c2128; border-bottom: 1px solid #30363d;
+}

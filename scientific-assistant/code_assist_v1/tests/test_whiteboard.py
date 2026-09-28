@@ -245,5 +245,102 @@ class 화면_연결(unittest.TestCase):
         self.assertIn("'/api/whiteboard/render'", js)
 
 
+class 따로_쓰기(unittest.TestCase):
+    """데모스 없이 그림만 뽑기 — python wb_render.py 보고서.md → 보고서-1.svg …"""
+
+    def test_마크다운의_그림마다_SVG_한_장(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            md = os.path.join(d, "보고서.md")
+            with open(md, "w", encoding="utf-8") as f:
+                f.write("# 보고서\n\n```mermaid\nflowchart LR\n  A[수집] --> B[판정]\n```\n\n"
+                        "```mermaid\nsequenceDiagram\n  A->>B: 요청\n```\n")
+            engine = os.path.join(_ROOT, "demos_v1", "wb_render.py")
+            r = subprocess.run([sys.executable, engine, md], capture_output=True)
+            self.assertEqual(r.returncode, 0, r.stdout.decode("utf-8", "replace"))
+            for n in ("보고서-1.svg", "보고서-2.svg"):
+                with open(os.path.join(d, n), encoding="utf-8") as f:
+                    svg = f.read()
+                ET.fromstring(svg)
+                self.assertNotIn("currentColor", svg)               # 색을 박았다 — 뷰어 · PPT 에서도 같게
+                self.assertNotIn("var(--", svg)
+
+
+_ADDON = os.path.join(_ROOT, "tools", "whiteboard_addon", "whiteboard_install.py")
+
+
+@unittest.skipUnless(os.path.isfile(_ADDON), "추가팩 설치기는 저장소에만 있다")
+class 추가팩_설치기(unittest.TestCase):
+    """다른 분 데모스에 파일을 덮어쓰지 않고 몇 줄씩 끼워 넣는 설치기.
+    ★저장소 파일에서 빼고 다시 넣으면 저장소 파일과 한 글자도 다르지 않아야 한다 —
+      snippets/ 가 실제 코드와 어긋나면 여기서 걸린다."""
+
+    FILES = ["demos_v1/__init__.py", "demos_v1/templates/index.html", "demos_v1/templates/agent_window.html",
+             "code_assist_v1/static/index.html", "code_assist_v1/static/chat.js", "code_assist_v1/static/app.css"]
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wb_install", _ADDON)
+        cls.inst = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.inst)
+
+    def _copy(self, crlf=False):
+        import shutil
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        for rel in self.FILES:
+            dst = os.path.join(d, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            with open(os.path.join(_ROOT, rel), "rb") as f:
+                b = f.read()
+            if crlf:
+                b = b.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+            with open(dst, "wb") as f:
+                f.write(b)
+        return d
+
+    def _same_as_repo(self, d, crlf=False):
+        for rel in self.FILES:
+            with open(os.path.join(_ROOT, rel), "rb") as f:
+                want = f.read()
+            if crlf:
+                want = want.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+            with open(os.path.join(d, rel), "rb") as f:
+                self.assertEqual(f.read(), want, rel)
+
+    def test_빼고_다시_넣으면_저장소와_같다(self):
+        d = self._copy()
+        self.inst.unpatch(d)
+        with open(os.path.join(d, "demos_v1", "templates", "index.html"), encoding="utf-8") as f:
+            self.assertNotIn("whiteboard.js", f.read())
+        rows = self.inst.patch(d)
+        self.assertEqual({r[2] for r in rows}, {"넣음"})
+        self._same_as_repo(d)
+        self.assertEqual({r[2] for r in self.inst.patch(d)}, {"있음"})    # 두 번 돌려도 같다
+        self._same_as_repo(d)
+
+    def test_윈도_줄바꿈도_지킨다(self):
+        d = self._copy(crlf=True)
+        self.inst.unpatch(d)
+        self.inst.patch(d)
+        self._same_as_repo(d, crlf=True)
+
+    def test_자리를_못_찾으면_건드리지_않는다(self):
+        d = self._copy()
+        self.inst.unpatch(d)
+        p = os.path.join(d, "code_assist_v1", "static", "chat.js")
+        with open(p, encoding="utf-8") as f:
+            t = f.read().replace("function attachCopyButtons(", "function attachButtons(")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(t)
+        rows = self.inst.patch(d)
+        self.assertIn(("code_assist_v1/static/chat.js", "답변이 끝나면 그림으로", "손으로"), rows)
+        with open(p, encoding="utf-8") as f:
+            self.assertNotIn("WB.renderIn(root)", f.read())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,3 @@
+<!-- 🖼 화이트보드: 답변 속 ```mermaid 글 → 그림 (데모스 서버가 그린다 · 틀은 수정 제안 카드 모양) -->
+<script src="/static/whiteboard.js?v=20260928a"></script>
+<script>if(window.WB){WB.setup({cls:{block:'edit-offer',head:'edit-offer-head'},accent:'var(--accent)'});}</script>

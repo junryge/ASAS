@@ -1,0 +1,5 @@
+  // ```mermaid — 그림은 whiteboard.js 가 그린다. 빈 줄·*·` 가 아래 단계(단락·굵게·인라인 코드)에
+  //   걸려 원문이 쪼개지지 않게 문자 참조로 싸 둔다 (폐쇄망에선 marked 대신 이 함수가 돈다)
+  t = t.replace(/```mermaid(?![\w-])[ \t]*\n([\s\S]*?)```/gi, (m, code) =>
+    `<pre><code class="language-mermaid">${esc(code.trim()).replace(/\n/g, "&#10;")
+      .replace(/\*/g, "&#42;").replace(/`/g, "&#96;")}</code></pre>`);

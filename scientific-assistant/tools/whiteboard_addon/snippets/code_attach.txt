@@ -1,0 +1,2 @@
+  // 🖼 ```mermaid 글 → 그림 (데모스 서버가 그린다 · whiteboard.js). 스트리밍이 끝난 뒤에만 부른다
+  if (window.WB) WB.renderIn(root);

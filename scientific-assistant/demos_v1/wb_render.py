@@ -28,7 +28,7 @@ import re
 import threading
 from collections import defaultdict, deque
 
-__all__ = ["render", "detect_kind", "WbError", "SUPPORTED"]
+__all__ = ["render", "detect_kind", "paper_svg", "WbError", "SUPPORTED"]
 
 SUPPORTED = ("flowchart", "sequence", "er", "state")
 
@@ -1896,12 +1896,63 @@ def _render_uncached(src: str, uid: str) -> dict:
         return {"ok": False, "kind": kind, "error": f"그리다가 멈췄습니다: {type(e).__name__}: {e}", "line": 0}
 
 
+def paper_svg(svg: str, accent: str = "#4f46e5") -> str:
+    """파일로 내보낼 SVG — 둘레 글자색 · CSS 변수를 못 받는 곳(뷰어 · 문서 · PPT)에서도 같게
+    보이도록 색을 박고 흰 바탕을 깐다. 화면의 'SVG 저장'(whiteboard.js)과 같은 모습이다."""
+    def fix(m):
+        st = m.group(1).replace("var(--wb-accent,currentColor)", accent).replace("var(--wb-bg,#fff)", "#fff")
+        st = re.sub(r"var\(--wb-font,([^)]*)\)", r"\1", st).replace("currentColor", "#1f2328")
+        return "<style>" + st + "</style>"
+    svg = re.sub(r"<style>(.*?)</style>", fix, svg, count=1, flags=re.S)
+    return svg.replace("<g transform=", '<rect width="100%" height="100%" fill="#fff"/><g transform=', 1)
+
+
+def _main(argv) -> int:
+    """데모스 없이 그림만 뽑기.
+        python wb_render.py 그림.mmd         → 그림.svg
+        python wb_render.py 보고서.md        → 보고서-1.svg, 보고서-2.svg … (```mermaid 마다)
+        python wb_render.py < 그림.mmd > 그림.svg
+    """
+    import os
+    import sys
+    for s in (sys.stdout, sys.stderr):
+        try:
+            s.reconfigure(errors="replace")         # 윈도 콘솔(cp949)에서 글자 때문에 멈추지 않게
+        except (AttributeError, ValueError):
+            pass
+    if not argv:
+        r = render(sys.stdin.read())
+        if not r["ok"]:
+            sys.stderr.write(f"못 그림 ({r.get('line')}째 줄): {r['error']}\n")
+            return 1
+        sys.stdout.buffer.write(paper_svg(r["svg"]).encode("utf-8"))
+        return 0
+    bad = 0
+    for path in argv:
+        with open(path, encoding="utf-8-sig") as f:
+            text = f.read()
+        blocks = re.findall(r"^```mermaid[^\n]*\n(.*?)^```", text, re.S | re.M | re.I)
+        if not blocks:
+            if "```" in text:
+                print(f"{path}: ```mermaid 블록이 없습니다")
+                bad += 1
+                continue
+            blocks = [text]                           # 파일 전체가 Mermaid 글
+        base = os.path.splitext(path)[0]
+        for i, src in enumerate(blocks, 1):
+            out = base + (f"-{i}" if len(blocks) > 1 else "") + ".svg"
+            r = render(src)
+            if r["ok"]:
+                with open(out, "w", encoding="utf-8") as f:
+                    f.write(paper_svg(r["svg"]))
+                print(f"그림 → {out}  ({r['kind_ko']} {r['w']:.0f}×{r['h']:.0f})")
+            else:
+                bad += 1
+                where = f" {r['line']}째 줄" if r.get("line") else ""
+                print(f"못 그림: {path} {i}번째 그림{where} — {r['error']}")
+    return 1 if bad else 0
+
+
 if __name__ == "__main__":
     import sys
-    text = sys.stdin.read()
-    r = render(text)
-    if r["ok"]:
-        sys.stdout.write(r["svg"])
-    else:
-        sys.stderr.write(f"못 그림 ({r.get('line')}째 줄): {r['error']}\n")
-        sys.exit(1)
+    sys.exit(_main(sys.argv[1:]))

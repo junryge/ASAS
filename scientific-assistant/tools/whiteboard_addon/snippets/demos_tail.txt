@@ -1,0 +1,3 @@
+<!-- 🖼 화이트보드: 답변 속 ```mermaid 글 → 그림 (틀·버튼은 Draw.io 블록 모양 그대로) -->
+<script src="/static/whiteboard.js?v=20260928a"></script>
+<script>if(window.WB){WB.setup({cls:{block:'drawio-block',head:'drawio-header',acts:'drawio-actions',btn:'drawio-btn'},accent:'#6366f1'});WB.watch(document.getElementById('msgs'));}</script>
