@@ -381,6 +381,18 @@ def upsert_llm_rows(rows: list[dict], cfg: dict | None = None) -> dict:
     return {"written": written, "updated": updated, "files": sorted(files)}
 
 
+# ★list_days 는 부를 때마다 **모든 날짜 파일을 처음부터 끝까지 읽어** 줄 수를
+#   셌다. UI대쉬보드 한 화면이 30초마다 6번(패널 1 + 오른쪽 상황판 5) 부르니,
+#   날짜가 쌓일수록 느려졌다 — 재 보니 180일치에서 상황판 한 번에 2.4초, 그동안
+#   다른 요청도 같이 밀렸다 (고객: "파일을 전에 것까지 같이 읽어 들이나 보네.
+#   그래서 느리네").
+# ★파일이 안 바뀌었으면(크기·수정 시각 그대로) 세어 둔 줄 수를 쓴다. 오늘 파일처럼
+#   바뀐 것만 다시 센다 → 180일치에서도 0.005초. 목록·줄 수는 전과 똑같다.
+# ★과거 날짜를 여는 read_day 는 그대로다 — 과거 데이터 조회는 전과 같다
+#   (고객: "과거 파일 읽어 들이는 부분은 그대로 하자"). 이 고침은 데이터를 지우지 않는다.
+_rows_cache: dict[str, tuple] = {}
+
+
 def list_days(cfg: dict | None = None) -> list[dict]:
     """저장된 날짜 파일 목록 (최신순)."""
     d = data_dir(cfg)
@@ -389,12 +401,20 @@ def list_days(cfg: dict | None = None) -> list[dict]:
         if fn.upper().endswith("_TOTAL.CSV"):
             p = os.path.join(d, fn)
             try:
-                with open(p, "r", encoding="utf-8-sig") as f:
-                    n = max(0, sum(1 for _ in f) - 1)
-            except Exception:
-                n = 0
-            out.append({"day": fn[:8], "file": fn, "rows": n,
-                        "bytes": os.path.getsize(p)})
+                st = os.stat(p)
+            except OSError:
+                continue                    # 목록을 읽는 사이에 없어졌다
+            hit = _rows_cache.get(p)
+            if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+                n = hit[2]
+            else:
+                try:
+                    with open(p, "r", encoding="utf-8-sig") as f:
+                        n = max(0, sum(1 for _ in f) - 1)
+                    _rows_cache[p] = (st.st_mtime_ns, st.st_size, n)
+                except Exception:
+                    n = 0                   # ★못 읽은 것은 기억하지 않는다 — 다음에 다시 센다
+            out.append({"day": fn[:8], "file": fn, "rows": n, "bytes": st.st_size})
     return out
 
 
