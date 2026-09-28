@@ -566,6 +566,17 @@ class 탭_제목(unittest.TestCase):
         i = h.index('<div class="page hidden" id="tab-ui">')
         self.assertIn("<h2>FAB별 실시간 상황 UI대쉬보드\n", h[i:i + 1500])
 
+    def test_화면_안_제목_기본값도_같은_이름(self):
+        """UI대쉬보드 화면(OHT_Bridge_Monitor) 안의 제목 기본값 — ✎ 수정 → 화면 → 제목 칸.
+        ★맨 위 제목 줄은 기본이 숨김이라 평소엔 안 보이지만, 수정 창의 제목 칸에는
+          이 글자가 그대로 뜬다. 옆의 설정 JSON 이 있으면 그 값이 이긴다."""
+        import json
+        h = _read("static", MON)
+        cfg = json.loads(re.search(r'id="bm-config">(.*?)</script>', h, re.S).group(1).replace("<\\/", "</"))
+        self.assertEqual(cfg["texts"]["title"], "FAB별 실시간 상황 UI대쉬보드")
+        with open(os.path.join(APP, "월드모델", "월드모델파생", "MAP_아이소_얹기.py"), encoding="utf-8") as fh:
+            self.assertIn('TEXTS = {"title": "FAB별 실시간 상황 UI대쉬보드"', fh.read())
+
     def test_준비중을_뺐다(self):
         h = _read("static", "dashboard.html")
         i = h.index('<div class="page hidden" id="tab-ui">')

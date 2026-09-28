@@ -98,7 +98,7 @@ AREAS = {"header": dict(hide=True),               # "맨위에 … 이거 삭제
          "aside": dict(hide=True),                # "오른쪽 열 — 방해된다"
          "legend": dict(hide=True),               # "ISOMETRIC VIEW 범례 삭제"
          "kpi": dict(hide=True)}                  # "IN TRANSIT · CAPACITY · ALARM · LOCAL 삭제 — 필요없어"
-TEXTS = {"title": "FAB별 실시간 상황표",           # "동간 브릿지 통합 반송 현황 말고"
+TEXTS = {"title": "FAB별 실시간 상황 UI대쉬보드",   # "동간 브릿지 통합 반송 현황 말고" → "상황표" → 지금 이름
          "hint": "DRAG TO ORBIT · CTRL+DRAG TO MOVE · SCROLL TO ZOOM"}    # Ctrl + 왼쪽 끌기 = 이동
 
 # ── 틀에서 이름표 달 자리 (고객 마크업 그대로의 앞머리) ──────────────────
