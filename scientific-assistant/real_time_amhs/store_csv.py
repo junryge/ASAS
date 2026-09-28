@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from lp_client import load_config
 
@@ -27,6 +28,11 @@ _keys_cache: dict[str, set] = {}      # {파일경로: {이미 쓴 키}}
 _MADE: set = set()          # 이미 만들어 본 폴더 (같은 mkdir 을 매번 부르지 않게)
 
 
+def _dir_of(cfg: dict) -> str:
+    """저장 폴더 경로만 (만들지는 않는다 — 정리처럼 '보기만' 하는 쪽이 쓴다)."""
+    return os.path.join(BASE_DIR, cfg.get("storage", {}).get("daily_csv_dir", "data"))
+
+
 def data_dir(cfg: dict | None = None) -> str:
     """저장 폴더. 없으면 만든다 — 단, **한 번만**.
 
@@ -36,7 +42,7 @@ def data_dir(cfg: dict | None = None) -> str:
       폴더가 생겼는지 한 번 확인했으면 그 뒤로는 안 물어도 된다.
     """
     cfg = cfg or load_config()
-    d = os.path.join(BASE_DIR, cfg.get("storage", {}).get("daily_csv_dir", "data"))
+    d = _dir_of(cfg)
     if d not in _MADE:
         os.makedirs(d, exist_ok=True)
         _MADE.add(d)
@@ -381,6 +387,7 @@ def upsert_llm_rows(rows: list[dict], cfg: dict | None = None) -> dict:
     return {"written": written, "updated": updated, "files": sorted(files)}
 
 
+# 날짜 목록의 줄 수 — {경로: (mtime_ns, size, 줄 수)}
 # ★list_days 는 부를 때마다 **모든 날짜 파일을 처음부터 끝까지 읽어** 줄 수를
 #   셌다. UI대쉬보드 한 화면이 30초마다 6번(패널 1 + 오른쪽 상황판 5) 부르니,
 #   날짜가 쌓일수록 느려졌다 — 재 보니 180일치에서 상황판 한 번에 2.4초, 그동안
@@ -437,6 +444,109 @@ def recent_days(limit: int, cfg: dict | None = None) -> list[str]:
     d = [x["day"] for x in list_days(cfg)]     # 최신순
     return list(reversed(d[:max(0, int(limit))]))
 
+
+
+# ─────────────────────── 과거 파일 정리 (보관 기간) ───────────────────────
+# 고객: "주기적으로 데이터 삭제 필요하네" · "정책에서 과거 파일 정리 기간 해주라"
+#       · "설정할수 있게".
+# ★지우는 것은 **이름에 날짜가 박힌 파일**뿐이다 —
+#     {날짜}_TOTAL.CSV (원본) · {날짜}_LLM.CSV (LLM 판단) · {날짜}_ML.CSV (ML)
+#     raw/{날짜}_*.csv (주피터에서 받은 원본 그대로)
+#   케이스(cases.json)·리포트·분석·피드백·설정은 건드리지 않는다.
+# ★보관 기간 N일 = 오늘을 포함해 N일을 남긴다 (30 → 오늘과 그 앞 29일).
+#   0 이하면 아무것도 안 지운다 — 기본값이다. 설정하기 전에는 안 지운다.
+# ★이름의 날짜가 달력에 없는 날(예: 20261399)이면 모르는 파일로 보고 그대로 둔다.
+_DATED_TOP = re.compile(r"^(\d{8})(_[^.\\/]+)\.CSV$", re.I)
+_DATED_RAW = re.compile(r"^(\d{8})_[^\\/]*\.CSV$", re.I)
+
+
+def _dated_files(cfg: dict | None = None) -> list[tuple]:
+    """정리 대상이 될 수 있는 날짜 파일 [(날짜, 경로, 크기), …].
+
+    ★폴더를 만들지 않는다 — 수집을 안 하는 FAB 의 빈 폴더가 생기면 안 된다.
+    """
+    cfg = cfg or load_config()
+    d = _dir_of(cfg)
+    kinds = {"_TOTAL", "_ML", llm_suffix(cfg).upper()}
+    out = []
+    for sub, pat in (("", _DATED_TOP), ("raw", _DATED_RAW)):
+        folder = os.path.join(d, sub) if sub else d
+        try:
+            ents = list(os.scandir(folder))
+        except OSError:
+            continue                            # raw 폴더가 없는 시스템도 있다
+        for ent in ents:
+            m = pat.match(ent.name)
+            if not m or (not sub and m.group(2).upper() not in kinds):
+                continue
+            try:
+                datetime.strptime(m.group(1), "%Y%m%d")
+                if not ent.is_file():
+                    continue
+                size = ent.stat().st_size
+            except (ValueError, OSError):
+                continue
+            out.append((m.group(1), ent.path, size))
+    return out
+
+
+def keep_from(keep_days: int, today: datetime | None = None) -> str:
+    """보관 기간 N일이면 남기는 첫 날 (yyyymmdd) — 이 날보다 앞선 날을 지운다."""
+    t = today or datetime.now()
+    return (t - timedelta(days=max(1, int(keep_days)) - 1)).strftime("%Y%m%d")
+
+
+def usage(cfg: dict | None = None) -> dict:
+    """지금 쌓인 날짜 파일 → {files, bytes, days, oldest, day_list}."""
+    fs = _dated_files(cfg)
+    days = sorted({d for d, _p, _s in fs})
+    return {"files": len(fs), "bytes": sum(s for _d, _p, s in fs),
+            "days": len(days), "oldest": days[0] if days else None,
+            "day_list": days}
+
+
+def prune_days(keep_days: int, cfg: dict | None = None, dry_run: bool = False,
+               today: datetime | None = None) -> dict:
+    """보관 기간을 넘긴 날짜 파일을 지운다.
+
+    → {files, bytes, days, first, last, keep_from, failed, errors, day_list}
+    dry_run=True 면 지울 것을 세기만 한다 (정책 화면의 '이 기간이면 지울 것').
+    못 지운 파일(잠김·권한)은 건너뛰고 errors 에 적는다 — 다음 정리 때 또 해 본다.
+    """
+    out = {"files": 0, "bytes": 0, "days": 0, "first": None, "last": None,
+           "keep_from": None, "failed": 0, "errors": [], "day_list": []}
+    try:
+        keep = int(keep_days)
+    except (TypeError, ValueError):
+        keep = 0
+    if keep <= 0:
+        return out
+    cut = keep_from(keep, today)
+    out["keep_from"] = cut
+    days = set()
+    for day, p, size in _dated_files(cfg):
+        if day >= cut:
+            continue
+        if not dry_run:
+            try:
+                with _lock:
+                    os.remove(p)
+                    # ★지운 파일을 기억에서도 뺀다 — 안 빼면 같은 날을 다시 받을 때
+                    #   '이미 쓴 줄' 로 착각하거나, 목록에 옛 줄 수가 남는다.
+                    for c in (_rows_cache, _day_cache, _keys_cache, _fields_cache):
+                        c.pop(p, None)
+            except OSError as e:
+                out["failed"] += 1
+                if len(out["errors"]) < 20:
+                    out["errors"].append(f"{os.path.basename(p)}: {type(e).__name__}: {e}")
+                continue
+        out["files"] += 1
+        out["bytes"] += size
+        days.add(day)
+    if days:
+        out["day_list"] = sorted(days)
+        out["days"], out["first"], out["last"] = len(days), min(days), max(days)
+    return out
 
 if __name__ == "__main__":
     cfg = load_config()

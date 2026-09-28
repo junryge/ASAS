@@ -1662,6 +1662,38 @@
     </div>
   </div>
 
+  <!-- 과거 파일 정리 — 보관 기간. 고객: "주기적으로 데이터 삭제 필요하네" ·
+       "정책에서 과거 파일 정리 기간 해주라" · "설정할수 있게".
+       0 = 끔(기본). 저장은 바로 지우지 않는다 — 하루 한 번 자동, 바로는 '지금 정리'. -->
+  <div class="card">
+    <h2>과거 파일 정리 — 보관 기간 <span class="note" id="rtnote"></span></h2>
+    <div class="bd">
+      <p class="note" style="margin:0 0 10px">
+        보관 기간(<b style="color:var(--tx2)">오늘 포함 N일</b>)보다 오래된 날짜 파일을
+        <b style="color:var(--tx2)">하루 한 번</b>(서버를 켤 때 · 날이 바뀐 뒤 첫 수집 때) 지웁니다.
+        지우는 것 — 원본 <b style="color:var(--tx2)">TOTAL</b> ·
+        <b style="color:var(--tx2)">LLM 판단</b> · <b style="color:var(--tx2)">ML</b> ·
+        <b style="color:var(--tx2)">raw</b> 날짜 파일. <b style="color:var(--tx2)">ALL 과 FAB 전부</b>
+        같은 기간입니다. 케이스·리포트·설정은 지우지 않습니다.</p>
+      <p class="note" style="margin:0 0 10px">
+        <b style="color:var(--tx2)">0</b> 이면 지우지 않습니다(기본). 지운 날은
+        <b style="color:var(--tx2)">과거 데이터 조회에서 사라지고</b>, 그날의
+        <b style="color:var(--tx2)">LLM 판단 기록은 다시 받을 수 없습니다</b>.
+        보관 기간보다 오래된 날을 다시 확보해도 다음 정리 때 지워집니다.
+        저장만으로는 바로 지우지 않습니다 — 바로 지우려면 '지금 정리'.</p>
+      <table class="pol"><thead><tr>
+        <th style="width:190px">보관 기간</th>
+        <th>지금 쌓인 날짜 파일</th>
+        <th>이 기간이면 지울 것</th>
+      </tr></thead><tbody id="rtrow"><tr><td colspan="3" class="empty">불러오는 중…</td></tr></tbody></table>
+      <div class="row" style="margin-top:14px">
+        <button class="act pri" id="rt-save">저장</button>
+        <button class="act" id="rt-run">지금 정리</button>
+        <span class="note" id="rt-now">—</span>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <h2>LLM 판단 모델 <span class="note" id="lmnote"></span></h2>
     <div class="bd">
@@ -2715,6 +2747,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     initScoreTune();
     initLlmModel();
     initLlmPolicy();
+    initRetention();
   }
   if(b.dataset.tab!=='past' && b.dataset.tab!=='analysis' && ACC){
     renderLlmNow(ACC);                   // 그 외 탭 = 오늘 최근 판단
@@ -4270,6 +4303,103 @@ async function initLlmPolicy(){
   }catch(e){ policyFail('lprows', 'lpnote', initLlmPolicy); }
 }
 let LP_SYS = [];
+
+/* ── 과거 파일 정리 — 보관 기간 (정책 탭) ─────────────────────────
+   고객: "주기적으로 데이터 삭제 필요하네" · "정책에서 과거 파일 정리 기간
+   해주라" · "설정할수 있게".
+   ★지우기는 되돌릴 수 없다. 칸을 고치면 '이 기간이면 지울 것' 을 먼저 보여 주고,
+     저장·지금 정리 모두 지울 것이 있으면 한 번 더 묻는다. */
+let RT = null, RT_INIT = false, RT_T = null;
+const rtMB = b => (b / 1048576).toFixed(b >= 1048576 * 100 ? 0 : 1) + 'MB';
+const rtDay = d => d ? `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}` : '';
+function rtSpan(x){
+  return x.files ? `${x.days}일치 · 파일 ${x.files.toLocaleString()}개 · ${rtMB(x.bytes)}
+     <span class="note">(${rtDay(x.first)} ~ ${rtDay(x.last)})</span>` : '<span class="note">없음</span>';
+}
+function rtFill(d){
+  RT = d;
+  /* ★칸(입력)은 한 번만 그린다 — 고칠 때마다 줄을 통째로 다시 그리면 치던
+     중에 커서가 날아간다. 그 뒤로는 옆 두 칸만 바꾼다. */
+  if(!$('#rt-days')){
+    $('#rtrow').innerHTML = `<tr>
+      <td><input type="number" id="rt-days" value="${esc(d.days)}" min="0" max="${d.max}"
+            style="width:90px;background:var(--panel2);border:1px solid var(--line2);
+                   color:var(--tx);border-radius:7px;padding:5px 8px;font:inherit">
+          <span class="note">일 (0 = 끔)</span></td>
+      <td id="rt-have"></td><td id="rt-prev"></td>
+    </tr>`;
+    $('#rt-days').oninput = () => {
+      clearTimeout(RT_T);
+      RT_T = setTimeout(() => rtLoad($('#rt-days').value), 400);
+    };
+  }
+  $('#rt-have').innerHTML = rtSpan(d.have);
+  $('#rt-prev').innerHTML = d.asked > 0
+      ? rtSpan(d.preview) + (d.keep_from
+          ? `<div class="note">${rtDay(d.keep_from)} 부터 남깁니다</div>` : '')
+      : '<span class="note">0 = 끔 — 지우지 않습니다</span>';
+  const L = d.last;
+  $('#rt-now').textContent = (d.days > 0
+      ? `· 저장된 보관 기간 ${d.days}일 — 하루 한 번 자동 정리`
+      : '· 저장된 보관 기간 0 — 자동 정리 꺼짐')
+    + (d.running ? ' · 지금 정리 중…' : '')
+    + (L ? ` · 마지막 정리 ${L.at} (${L.why}) — ${L.files.toLocaleString()}개 · ${rtMB(L.bytes)} 지움`
+          + (L.failed ? ` · 못 지움 ${L.failed}개` : '') : '');
+}
+async function rtLoad(days){
+  const n = parseInt(days);
+  const q = Number.isFinite(n) && n >= 0 ? `?days=${n}` : '';
+  try{ rtFill(await apiRetry('/api/retention' + q)); }
+  catch(e){ policyFail('rtrow', 'rtnote', initRetention); }
+}
+async function initRetention(){
+  await rtLoad(RT_INIT && $('#rt-days') ? $('#rt-days').value : '');
+  if(RT_INIT || !RT) return;
+  RT_INIT = true;
+  $('#rt-save').onclick = async () => {
+    const n = parseInt($('#rt-days').value);
+    if(!Number.isFinite(n) || (n !== 0 && (n < RT.min || n > RT.max))){
+      alert(`보관 기간은 0(끔) 또는 ${RT.min}~${RT.max} 일입니다`); return;
+    }
+    let p;
+    try{ p = (await apiRetry('/api/retention?days=' + n)).preview; }   // 지울 것을 새로 세어 보고 묻는다
+    catch(e){ alert('지울 것을 세지 못했습니다 — 잠시 뒤 다시 누르세요'); return; }
+    if(n > 0 && p.files && !confirm(
+        `보관 기간 ${n}일로 저장합니다.\n`
+        + `하루 한 번 자동 정리 때 ${p.days}일치 · 파일 ${p.files.toLocaleString()}개 · `
+        + `${rtMB(p.bytes)} 가 지워집니다 (${rtDay(p.first)} ~ ${rtDay(p.last)}).\n`
+        + `지운 파일은 되돌릴 수 없습니다. 저장할까요?`)) return;
+    const btn = $('#rt-save');
+    btn.disabled = true;
+    try{
+      const r = await post('/api/retention', {days: n, save: true});
+      if(r.error){ alert(r.error); $('#rtnote').textContent = '— 저장 실패'; return; }
+      $('#rtnote').textContent = n > 0 ? `— 저장됨 · 보관 ${n}일` : '— 저장됨 · 끔';
+      rtFill(r);
+    } finally { btn.disabled = false; }
+  };
+  $('#rt-run').onclick = async () => {
+    if(!(RT.days > 0)){ alert('저장된 보관 기간이 0(끔)입니다 — 먼저 기간을 저장하세요'); return; }
+    let d;
+    try{ d = await apiRetry('/api/retention?days=' + RT.days); }
+    catch(e){ alert('지울 것을 세지 못했습니다 — 잠시 뒤 다시 누르세요'); return; }
+    const p = d.preview;
+    if(!p.files){ rtFill(d); $('#rtnote').textContent = `— 보관 ${RT.days}일 — 지울 파일이 없습니다`; return; }
+    if(!confirm(`보관 기간 ${RT.days}일 — 지금 지웁니다.\n`
+        + `${p.days}일치 · 파일 ${p.files.toLocaleString()}개 · ${rtMB(p.bytes)} `
+        + `(${rtDay(p.first)} ~ ${rtDay(p.last)})\n되돌릴 수 없습니다. 지울까요?`)) return;
+    const btn = $('#rt-run');
+    btn.disabled = true;
+    try{
+      const r = await post('/api/retention', {run: true});
+      if(r.error){ alert(r.error); $('#rtnote').textContent = '— 정리 실패'; return; }
+      const x = r.ran || {};
+      $('#rtnote').textContent = `— ${(x.files||0).toLocaleString()}개 · ${rtMB(x.bytes||0)} 지움`
+        + (x.failed ? ` · 못 지움 ${x.failed}개 (잠김·권한 — 다음 정리 때 다시)` : '');
+      rtFill(r);
+    } finally { btn.disabled = false; }
+  };
+}
 
 function renderPolicy(p, ev){
   if(p && p.routing && !$('#routing').dataset.done){

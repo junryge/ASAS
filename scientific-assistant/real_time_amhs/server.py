@@ -430,6 +430,12 @@ def _poll_loop() -> None:
         #   넘겼다. 서로 다른 파일·다른 저장소라 기다릴 이유가 없다.
         _fan_out(scan, list(enumerate(systems())))
 
+        # 과거 파일 정리 — 하루 한 번만 실제로 돈다 (보관 기간이 0 이면 안 돈다)
+        try:
+            _retention_tick()
+        except Exception as e:                          # noqa: BLE001
+            print(f"[정리] ⚠️ 건너뜀: {type(e).__name__}: {e}")
+
         # 주기를 나눠 자며 변경을 빠르게 반영
         slept = 0
         while slept < interval:
@@ -982,6 +988,9 @@ def version():
                                 for r in app.url_map.iter_rules()),
         "API_llm_policy": any(str(r) == "/api/llm_policy"
                               for r in app.url_map.iter_rules()),
+        "정책_보관기간카드": 'id="rtrow"' in body,
+        "API_retention": any(str(r) == "/api/retention"
+                             for r in app.url_map.iter_rules()),
     })
 
 
@@ -1875,6 +1884,200 @@ def api_llm_policy():
                                                         pm.get("max_per_cycle", 3)) or 3),
         } for s_ in systems()],
         "saved": saved,
+    })
+
+
+# ─────────────────────── 과거 파일 정리 (보관 기간) ───────────────────────
+# 고객: "주기적으로 데이터 삭제 필요하네" · "정책에서 과거 파일 정리 기간 해주라"
+#       · "설정할수 있게".
+# ★느린 원인이었던 '옛 파일 다시 읽기' 는 store_csv.list_days 에서 따로 고쳤다.
+#   이것은 디스크가 끝없이 차는 것을 막는 쪽이다.
+# ★config 의 storage.retention_days (일). 0 = 끔 (기본 — 설정 전에는 안 지운다).
+#   하루 한 번(서버를 켤 때 + 날이 바뀐 뒤 첫 수집 때) ALL 과 FAB 전부에서
+#   보관 기간을 넘긴 날짜 파일(원본 TOTAL · LLM 판단 · ML · raw)을 지운다.
+#   저장한다고 바로 지우지 않는다 — 바로 지우려면 정책 탭의 '지금 정리'.
+RETENTION_MIN, RETENTION_MAX = 7, 3650
+_RET: dict = {"day": None, "last": None}
+_RET_LOCK = threading.Lock()
+
+
+def _retention_days() -> int:
+    try:
+        return max(0, int((CFG.get("storage", {}) or {}).get("retention_days", 0) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _retention_cfgs() -> list:
+    """정리할 시스템 [(코드, 설정), …] — ALL + config 의 FAB 전부.
+
+    ★수집 방식과 상관없이 FAB 폴더까지 본다 — 로그프레소로 바꾼 뒤에도 전에
+      쌓인 FAB 파일은 남아 있다. 같은 폴더를 두 번 세지 않는다.
+    """
+    out, seen = [], set()
+    for s_ in ["ALL"] + [x for x in fab_codes(CFG) if x != "ALL"]:
+        c = sys_cfg(CFG, s_)
+        d = os.path.normcase(os.path.abspath(
+            str((c.get("storage") or {}).get("daily_csv_dir", "data"))))
+        if d in seen:
+            continue
+        seen.add(d)
+        out.append((s_, c))
+    return out
+
+
+def _persist_retention() -> str:
+    """보관 기간(storage.retention_days)을 config.json 에 적는다 → 오류 글.
+
+    파일을 새로 읽어 그 한 칸만 고친다 — 손으로 고친 다른 설정은 그대로 둔다.
+    """
+    from lp_client import CONFIG_PATH
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8-sig") as f:
+            disk = json.load(f)
+        st = disk.setdefault("storage", {})
+        st["retention_days"] = _retention_days()
+        st.setdefault("_retention_days_doc",
+                      "과거 파일 정리 — 이 일수(오늘 포함)보다 오래된 날짜 파일"
+                      "(TOTAL·LLM 판단·ML·raw)을 하루 한 번 지운다. 0 = 끔. "
+                      "정책 탭에서 바꾼다.")
+        tmp = CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(disk, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, CONFIG_PATH)
+        return ""
+    except Exception as e:                              # noqa: BLE001
+        return f"{type(e).__name__}: {e}"
+
+
+def _run_retention(keep: int, why: str) -> dict:
+    """모든 시스템에서 보관 기간을 넘긴 날짜 파일을 지운다 → 합계."""
+    from store_csv import prune_days
+    if not _RET_LOCK.acquire(blocking=False):
+        return {"error": "이미 정리 중입니다 — 잠시 뒤 다시 보세요"}
+    try:
+        t0 = time.time()
+        tot = {"files": 0, "bytes": 0, "failed": 0, "errors": [], "by_sys": {}}
+        days: set = set()
+        for s_, c in _retention_cfgs():
+            try:
+                r = prune_days(keep, c)
+            except Exception as e:                      # noqa: BLE001
+                r = {"files": 0, "bytes": 0, "failed": 1, "day_list": [],
+                     "errors": [f"{type(e).__name__}: {e}"]}
+            tot["files"] += r.get("files", 0)
+            tot["bytes"] += r.get("bytes", 0)
+            tot["failed"] += r.get("failed", 0)
+            tot["errors"] += [f"{s_} {x}" for x in r.get("errors") or []][:5]
+            days.update(r.get("day_list") or [])
+            if r.get("files") or r.get("failed"):
+                tot["by_sys"][s_] = {"files": r.get("files", 0),
+                                     "bytes": r.get("bytes", 0),
+                                     "failed": r.get("failed", 0)}
+        from store_csv import keep_from
+        tot.update(days=len(days), first=min(days) if days else None,
+                   last=max(days) if days else None, keep=keep,
+                   keep_from=keep_from(keep), why=why,
+                   at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                   sec=round(time.time() - t0, 1))
+        _RET["last"] = tot
+        print(f"[정리] {why} · 보관 {keep}일({tot['keep_from']} 부터 남김) → "
+              f"{tot['files']}개 · {tot['bytes'] / 1048576:.1f}MB 지움"
+              + (f" ({tot['first']}~{tot['last']}, {tot['days']}일치)" if days else "")
+              + (f" · 못 지움 {tot['failed']}개: {tot['errors'][0]}" if tot["failed"] else "")
+              + f"  [{tot['sec']}초]")
+        return tot
+    finally:
+        _RET_LOCK.release()
+
+
+def _retention_tick() -> None:
+    """수집 루프가 매 바퀴 부른다 — 하루 한 번만 실제로 정리한다.
+
+    ★지우는 일은 **따로 떼어 보낸다**. 백신·네트워크 드라이브에서 지우기가
+      느려도 수집이 밀리면 안 된다.
+    """
+    today = datetime.now().strftime("%Y%m%d")
+    if _RET.get("day") == today:
+        return
+    _RET["day"] = today
+    keep = _retention_days()
+    if keep <= 0:
+        return
+    threading.Thread(target=_run_retention, args=(keep, "하루 한 번"),
+                     daemon=True, name="retention").start()
+
+
+@app.route("/api/retention", methods=["GET", "POST"])
+def api_retention():
+    """과거 파일 정리 — 보관 기간 (정책 탭).
+
+    GET  ?days=N               → 지금 쌓인 것 + N일(없으면 저장된 값)이면 지울 것
+    POST {"days": N, "save": true} → 보관 기간 바꾸기 (0 = 끔, 7~3650)
+    POST {"run": true}             → 저장된 보관 기간으로 지금 바로 정리
+    ★저장은 바로 지우지 않는다. 자동 정리는 하루 한 번이다.
+    """
+    from store_csv import keep_from, prune_days, usage
+    st = CFG.setdefault("storage", {})
+    ran = None
+    if request.method == "POST":
+        b = request.get_json(silent=True) or {}
+        if "days" in b:
+            try:
+                n = int(b["days"])
+            except (TypeError, ValueError):
+                return jsonify({"error": "보관 기간은 숫자(일)로 넣으세요"}), 400
+            if n != 0 and not (RETENTION_MIN <= n <= RETENTION_MAX):
+                return jsonify({"error": f"보관 기간은 0(끔) 또는 "
+                                         f"{RETENTION_MIN}~{RETENTION_MAX} 일입니다"}), 400
+            st["retention_days"] = n
+            if b.get("save"):
+                err = _persist_retention()
+                if err:
+                    return jsonify({"error": f"config.json 저장 실패 — {err} "
+                                             f"(메모리에는 적용됨)", "applied": True}), 500
+            print(f"[정책] 과거 파일 정리 → 보관 {n}일" + (" (끔)" if n == 0 else "")
+                  + (" · 저장됨" if b.get("save") else ""))
+        if b.get("run"):
+            keep = _retention_days()
+            if keep <= 0:
+                return jsonify({"error": "보관 기간이 0(끔)입니다 — 먼저 기간을 "
+                                         "저장하세요"}), 400
+            ran = _run_retention(keep, "지금 정리")
+            if ran.get("error"):
+                return jsonify(ran), 409
+    keep = _retention_days()
+    try:
+        ask = int(request.args.get("days", keep))
+    except (TypeError, ValueError):
+        ask = keep
+    have = {"files": 0, "bytes": 0, "days": set()}
+    prev = {"files": 0, "bytes": 0, "days": set()}
+    for _s, c in _retention_cfgs():
+        u = usage(c)
+        have["files"] += u["files"]
+        have["bytes"] += u["bytes"]
+        have["days"].update(u["day_list"])
+        if ask > 0:
+            p_ = prune_days(ask, c, dry_run=True)
+            prev["files"] += p_["files"]
+            prev["bytes"] += p_["bytes"]
+            prev["days"].update(p_["day_list"])
+
+    def _sum(x):
+        d = sorted(x["days"])
+        return {"files": x["files"], "bytes": x["bytes"], "days": len(d),
+                "first": d[0] if d else None, "last": d[-1] if d else None}
+    last = dict(_RET["last"]) if _RET.get("last") else None
+    if last:
+        last.pop("by_sys", None)
+    return jsonify({
+        "days": keep, "min": RETENTION_MIN, "max": RETENTION_MAX,
+        "asked": ask, "keep_from": keep_from(ask) if ask > 0 else None,
+        "have": _sum(have), "preview": _sum(prev),
+        "last": last, "running": _RET_LOCK.locked(),
+        "ran": ran,
     })
 
 
