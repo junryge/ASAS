@@ -29,11 +29,25 @@ eval(grab(/function drawJamBlobs\(ctx, toS, sc\) \{[\s\S]*?\n\}/));
 ok(mapSettings.jamMinJam === 1, '기본 JAM 1대 이상');
 ok(mapSettings.jamMinObs === 0, '기본 OBS 는 안 봄(0)');
 ok(mapSettings.jamMinStop === 0, '기본 멈춘 차도 안 봄(0)');
-ok(JAM_KIND.length === 3 && JAM_KIND[2].name === '멈춘 차', '멈춘 차가 제일 마지막');
-ok(JAM_KIND[0].has(7) && JAM_KIND[1].has(6), 'JAM=7 · OBS=6');
-ok(JAM_KIND[2].has(2) && JAM_KIND[2].has(8) && JAM_KIND[2].has(9), '멈춘 차 = 2·8·9');
-ok(jamKindOf(7) === 0 && jamKindOf(6) === 1 && jamKindOf(8) === 2, '코드 → 종류');
-ok(jamKindOf(1) === -1 && jamKindOf(3) === -1, '운행·가속은 어느 종류도 아니다');
+/* ★2026-09-29 미보고 · HT_STOP 칸을 **뒤에** 붙였다. 앞 셋(JAM · OBS · 멈춘 차)은 아이소메트리와
+     같은 순서 그대로 — 멈춘 차는 '앞 세 칸 중 마지막' 이다. has() 는 이제 차 하나(v)를 받는다
+     (미보고 차는 마지막 상태를 믿지 않아야 해서). */
+ok(JAM_KIND.map(k => k.name).join(',') === 'JAM,OBS,멈춘 차,미보고,HT_STOP',
+   '앞 셋은 JAM · OBS · 멈춘 차, 미보고 · HT_STOP 은 뒤');
+ok(mapSettings.jamMinMiss === 3 && mapSettings.jamMinHt === 1, '기본 미보고 3대 · HT_STOP 1대 이상');
+ok(JAM_KIND[0].has({ state: 7 }) && JAM_KIND[1].has({ state: 6 }), 'JAM=7 · OBS=6');
+ok([2, 8, 9].every(s => JAM_KIND[2].has({ state: s })), '멈춘 차 = 2·8·9');
+ok(JAM_KIND[4].has({ state: 8 }) && !JAM_KIND[4].has({ state: 2 }), 'HT_STOP = 8');
+/* 켜 둔(0 이 아닌) 칸 중에서만 고른다 — 다 켜면 예전처럼 코드 → 종류 */
+mapSettings.jamMinObs = 1; mapSettings.jamMinStop = 1;
+ok(jamKindOf({ state: 7 }) === 0 && jamKindOf({ state: 6 }) === 1 && jamKindOf({ state: 8 }) === 2,
+   '코드 → 종류 (다 켜면 8 은 앞 칸 멈춘 차)');
+mapSettings.jamMinObs = 0; mapSettings.jamMinStop = 0;
+ok(jamKindOf({ state: 6 }) === -1, '꺼 둔 칸(OBS 0)은 종류로 안 고른다');
+ok(jamKindOf({ state: 8 }) === 4, '멈춘 차를 꺼 두어도 HT_STOP 칸이 따로 잡는다');
+ok(jamKindOf({ state: 7, missing: true }) === 3, '미보고 차는 마지막 상태(JAM)를 믿지 않고 미보고로');
+ok(jamKindOf({ state: 7, idle: true }) === -1, '운휴(30분+) 차는 어느 종류도 아니다');
+ok(jamKindOf({ state: 1 }) === -1 && jamKindOf({ state: 3 }) === -1, '운행·가속은 어느 종류도 아니다');
 /* 빈칸·글자·음수는 0(안 봄)으로 */
 mapSettings.jamMinObs = '';   ok(jamMins()[1] === 0, '빈칸은 0');
 mapSettings.jamMinObs = 'abc'; ok(jamMins()[1] === 0, '글자는 0');
@@ -179,10 +193,12 @@ ok(!ctx.log.calls.some(x => x[0] === 'arc'), '화면 밖은 안 그린다');
 /* ── 설정 한 곳이 셋을 같이 몬다 ── */
 ok(/zone: zoneAt\(bx, by\)/.test(H), '무리마다 구역을 붙인다');
 ok(!/jamStates/.test(H), '옛 문자열 설정이 남아 있으면 안 된다');
-for (const i of ['ms-jamMinJam', 'ms-jamMinObs', 'ms-jamMinStop'])
+for (const i of ['ms-jamMinJam', 'ms-jamMinObs', 'ms-jamMinStop', 'ms-jamMinMiss', 'ms-jamMinHt'])
   ok(H.includes('id="' + i + '"'), '⚙ 에 ' + i + ' 칸이 있다');
 ok(/<input type="number" id="ms-jamMinJam"/.test(H), '고르는 상자가 아니라 **직접 적는** 숫자 칸');
-ok(H.indexOf('id="ms-jamMinStop"') > H.indexOf('id="ms-jamMinObs"'), '멈춘 차가 제일 마지막');
+ok(H.indexOf('id="ms-jamMinStop"') > H.indexOf('id="ms-jamMinObs"'), '멈춘 차는 앞 세 칸 중 마지막');
+ok(H.indexOf('id="ms-jamMinMiss"') > H.indexOf('id="ms-jamMinStop"')
+   && H.indexOf('id="ms-jamMinHt"') > H.indexOf('id="ms-jamMinMiss"'), '미보고 · HT_STOP 칸은 그 뒤');
 ok(/panel: false,/.test(H), '아이소메트리 안 패널은 아예 안 만든다 (사이드바 하나로 본다)');
 
 /* ── 어느 HID 구역인가 ── */

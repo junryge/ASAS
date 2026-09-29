@@ -96,7 +96,10 @@ class 그리기(unittest.TestCase):
                           i + " 는 고르는 상자가 아니라 적는 칸이어야 한다")
         self.assertNotIn("jamStates", self.h, "옛 문자열 설정이 남아 있다")
         self.assertGreater(self.h.index('id="ms-jamMinStop"'), self.h.index('id="ms-jamMinObs"'),
-                           "멈춘 차가 제일 마지막")
+                           "멈춘 차는 앞 세 칸 중 마지막")
+        # ★2026-09-29 미보고 · HT_STOP 칸은 그 뒤에 붙였다 (앞 세 칸 순서는 아이소메트리와 같다)
+        self.assertGreater(self.h.index('id="ms-jamMinMiss"'), self.h.index('id="ms-jamMinStop"'))
+        self.assertGreater(self.h.index('id="ms-jamMinHt"'), self.h.index('id="ms-jamMinMiss"'))
         self.assertIn("{ key: 'jamMinStop', name: '멈춘 차'", self.h)
 
     def test_0_이면_아무_효과_없다(self):

@@ -167,7 +167,9 @@ function jamHeat(cnt) {
 /* 정체로 볼 상태 — 3D 상태 코드다 (0 운행 · 1 적재 · 2 정지 · 3 JAM · 4 OBS).
    차례는 화면 설정과 같다: JAM · OBS · 멈춘 차. */
 const JAM_ST = [3, 4, 2];
-const JAM_NAME = ['JAM', 'OBS', '멈춘 차'];
+/* ★2026-09-29 — 정체 판정 칸 4 미보고 · 5 HT_STOP 을 뒤에 붙였다. 이 둘은 상태 코드가 아니라
+     화면이 넘긴 표시(row.miss · row.ht)로 본다 — 차량 상태·색은 예전 그대로다. */
+const JAM_NAME = ['JAM', 'OBS', '멈춘 차', '미보고', 'HT_STOP'];
 
 function heatRGB(level) {
   const st = [[154, 161, 169], [240, 160, 40], [226, 70, 70]];
@@ -964,6 +966,8 @@ class Viewer {
       sl.stop = +r.stop_sec || 0;
       if (this.o.jamSec > 0 && st === 2 && sl.stop >= this.o.jamSec) st = 3;
       sl.st = st;
+      sl.miss = !!r.miss;                  // ★미보고 (정체 판정용)
+      sl.ht = !!r.ht;                      // ★HT_STOP (정체 판정용)
       sl.ld = r.loaded ? 1 : 0;
       sl.hoist = r.hoist != null ? clamp(+r.hoist, 0, 1) : 0;
       sl.row = r;
@@ -1278,9 +1282,11 @@ class Viewer {
   /* 이 차가 정체로 볼 종류인가 — 0 JAM · 1 OBS · 2 멈춘 차, 아니면 -1.
      ★jamMin 을 안 받았으면(null) 예전 규칙이다: JAM·OBS 를 대수 무관하게 본다.
        다른 화면에서 이 뷰어를 그냥 열었을 때 갑자기 아무것도 안 잡히면 안 된다. */
-  jamKind(st) {
+  jamKind(st, sl) {
     const m = this.o.jamMin;
     if (!Array.isArray(m)) return st >= 3 ? 0 : -1;
+    if (sl && sl.miss) return m[3] > 0 ? 3 : -1;          // ★미보고 — 마지막 상태는 믿지 않는다
+    if (sl && sl.ht && m[4] > 0) return 4;                // ★HT_STOP (끄면 예전처럼 '멈춘 차' 로)
     for (let i = 0; i < JAM_ST.length; i++) if (st === JAM_ST[i] && m[i] > 0) return i;
     return -1;
   }
@@ -1291,13 +1297,13 @@ class Viewer {
          jamMin 으로 넘어온다 (고객: "아이소메트리 정체 판정 만들어야되").
        ★어느 HID 구역인지도 같이 들고 다닌다 (sl.zone) — 표시 위에 이름을 적는다. */
     this.slots.forEach((sl, k) => {
-      const ki = (sl.live && d[k]) ? this.jamKind(sl.st) : -1;
+      const ki = (sl.live && d[k]) ? this.jamKind(sl.st, sl) : -1;
       if (ki >= 0 && (zi < 0 || sl.zone === zi)) jams.push({ p: d[k], z: sl.zone, k: ki });
     });
     let best = null, bc = 0, bz = -1, bk = null;
     for (const a of jams) {
       let c = 0, sx = 0, sy = 0;
-      const zc = new Map(), cnt = [0, 0, 0];
+      const zc = new Map(), cnt = JAM_NAME.map(() => 0);
       for (const b of jams) if (Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y) < 12) {
         c++; sx += b.p.x; sy += b.p.y; cnt[b.k]++;
         if (b.z != null && b.z >= 0) zc.set(b.z, (zc.get(b.z) || 0) + 1);

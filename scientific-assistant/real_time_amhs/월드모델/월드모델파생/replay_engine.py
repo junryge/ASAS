@@ -16,6 +16,28 @@ from data_loader import DateDataLoader, LayoutData, HIDZoneData
 from world_model import WorldModel
 from macro_predictor import MacroPredictor
 
+try:
+    from config import MISS_SEC, IDLE_SEC, OHT_ALERT
+except ImportError:          # 예전 config.py 에서도 돌게
+    MISS_SEC, IDLE_SEC = 50, 1800
+    OHT_ALERT = {"pre_miss": 5, "pre_jam": 10, "pre_ht": 1, "alert_miss": 30, "alert_jam": 20,
+                 "alert_ht": 10, "confirm_miss": 100, "confirm_jam": 40, "confirm_ht": 30,
+                 "gap_ratio": 0.9}
+
+
+def oht_alert_level(miss: int, jam: int, ht: int, total: int) -> str:
+    """OHT 전조 판정 — 정상 / 전조 / 경보 / 확정 / 수집누락"""
+    a = OHT_ALERT
+    if total and miss >= total * a["gap_ratio"] and jam == 0 and ht == 0:
+        return "수집누락"
+    if (miss >= a["confirm_miss"] and (jam > 0 or ht > 0)) or jam >= a["confirm_jam"] or ht >= a["confirm_ht"]:
+        return "확정"
+    if miss >= a["alert_miss"] or jam >= a["alert_jam"] or ht >= a["alert_ht"]:
+        return "경보"
+    if (miss >= a["pre_miss"] and jam >= a["pre_jam"]) or ht >= a["pre_ht"]:
+        return "전조"
+    return "정상"
+
 
 class ReplayState:
     """리플레이 상태"""
@@ -60,6 +82,8 @@ class ReplayEngine:
 
         # 누적 차량 상태 (vid → 최신 상태)
         self._cumulative_state: Dict[str, dict] = {}
+        # ★미보고 — 차량별 마지막 보고 시각 (vid → datetime)
+        self._last_seen: Dict[str, datetime] = {}
 
         # 현재 프레임 데이터
         self.current_vehicles: List[dict] = []
@@ -76,6 +100,7 @@ class ReplayEngine:
         self.current_date = date_key
         self.current_frame_idx = 0
         self._cumulative_state = {}
+        self._last_seen = {}
 
         self.data_loader = DateDataLoader(date_key, date_config)
         stats = self.data_loader.load_all()
@@ -164,11 +189,13 @@ class ReplayEngine:
         if 0 <= frame_idx < len(self.data_loader.oht_timeline):
             # 누적 상태 재구축: 처음부터 해당 프레임까지 모든 업데이트 적용
             self._cumulative_state = {}
+            self._last_seen = {}
             for i in range(frame_idx + 1):
-                _, updates = self.data_loader.oht_timeline[i]
+                ft, updates = self.data_loader.oht_timeline[i]
                 for v in updates:
                     if v.get('vid'):
                         self._cumulative_state[v['vid']] = v
+                        self._last_seen[v['vid']] = ft
 
             self.current_frame_idx = frame_idx
             self.current_time = self.data_loader.oht_timeline[frame_idx][0]
@@ -211,6 +238,7 @@ class ReplayEngine:
         for v in updates:
             if v.get('vid'):
                 self._cumulative_state[v['vid']] = v
+                self._last_seen[v['vid']] = t
 
         self.current_vehicles = list(self._cumulative_state.values())
 
@@ -229,6 +257,34 @@ class ReplayEngine:
         """현재 시점 전체 스냅샷 (WebSocket 전송용)"""
         vehicle_stats = self.world.get_vehicle_stats()
         positions = self.world.get_vehicle_positions(self.layout)
+
+        # ★미보고 — 마지막 보고 뒤 MISS_SEC(50초) 넘게 없으면 미보고, IDLE_SEC(30분) 넘으면 운휴.
+        #   누적 상태는 마지막 메시지를 계속 들고 있어서, 예전에는 멈춘 차가 '운행' 으로 보였다.
+        miss_n = idle_n = jam_live = ht_live = 0
+        for p in positions:
+            ls = self._last_seen.get(p['vid'])
+            ms = int((self.current_time - ls).total_seconds()) if (ls and self.current_time) else 0
+            p['missSec'] = ms
+            p['missing'] = MISS_SEC <= ms < IDLE_SEC
+            p['idle'] = ms >= IDLE_SEC
+            if p['missing']:
+                miss_n += 1
+            elif p['idle']:
+                idle_n += 1
+            else:                              # 보고가 살아 있는 차만 JAM · HT 로 센다
+                if p.get('state') == 7:
+                    jam_live += 1
+                elif p.get('state') == 8:
+                    ht_live += 1
+        live_total = len(positions) - idle_n
+        vehicle_stats['missing'] = miss_n
+        vehicle_stats['idle'] = idle_n
+        vehicle_stats['ht_stop'] = ht_live
+        vehicle_stats['jam_live'] = jam_live
+        vehicle_stats['ohtAlert'] = {
+            'level': oht_alert_level(miss_n, jam_live, ht_live, live_total),
+            'miss': miss_n, 'jam': jam_live, 'ht': ht_live, 'missSec': MISS_SEC,
+        }
 
         prediction = self.predictor.get_prediction()
 
@@ -444,6 +500,7 @@ class ReplayEngine:
 
         from collections import defaultdict
         cumulative_state: Dict[str, dict] = {}
+        last_seen: Dict[str, datetime] = {}
         per_minute: Dict[str, dict] = {}
 
         for t, updates in self.data_loader.oht_timeline:
@@ -451,11 +508,21 @@ class ReplayEngine:
                 vid = v.get('vid', '')
                 if vid:
                     cumulative_state[vid] = v
+                    last_seen[vid] = t
             t_min = t.strftime('%H:%M')
             obs_count = sum(1 for v in cumulative_state.values() if v.get('state') == 6)
             jam_count = sum(1 for v in cumulative_state.values() if v.get('state') == 7)
+            # ★미보고 · HT_STOP (2026-09-29) — 50초 넘게 보고 없는 차 / 보고가 살아 있는 HT_STOP 차
+            miss_count = ht_count = 0
+            for vid, v in cumulative_state.items():
+                gap = (t - last_seen[vid]).total_seconds()
+                if MISS_SEC <= gap < IDLE_SEC:
+                    miss_count += 1
+                elif gap < MISS_SEC and v.get('state') == 8:
+                    ht_count += 1
             # 같은 분에 여러 sample이 있으면 마지막 값 (분 끝)을 유지
-            per_minute[t_min] = {'time': t_min, 'obs': obs_count, 'jam': jam_count}
+            per_minute[t_min] = {'time': t_min, 'obs': obs_count, 'jam': jam_count,
+                                 'miss': miss_count, 'ht': ht_count}
 
         return list(per_minute.values())
 

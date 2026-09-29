@@ -386,6 +386,9 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <div class="sr"><span class="sl">운행중</span><span class="sv g" id="s-running">-</span></div>
       <div class="sr"><span class="sl">OBS 정지</span><span class="sv y" id="s-obs">-</span></div>
       <div class="sr"><span class="sl">JAM</span><span class="sv r" id="s-jam">-</span></div>
+      <div class="sr"><span class="sl">미보고 <small>(50초+)</small></span><span class="sv" id="s-miss">-</span></div>
+      <div class="sr"><span class="sl">HT_STOP</span><span class="sv" id="s-ht">-</span></div>
+      <div class="sr"><span class="sl">OHT 판정</span><span class="sv" id="s-oht-alert" title="전조: 미보고 5 + JAM 10 동시 또는 HT_STOP 1 · 경보: 미보고 30 · JAM 20 · HT_STOP 10 · 확정: 미보고 100 · JAM 40 · HT_STOP 30">-</span></div>
       <div class="sr"><span class="sl">가동률</span><span class="sv b" id="s-util">-</span></div>
       <div class="sr"><span class="sl">적재율</span><span class="sv" id="s-loaded">-</span></div>
     </div>
@@ -471,12 +474,18 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
           <button class="rtab" onclick="switchRTab('zone')">HID Zone</button>
         </div>
         <div id="rtab-oht">
+          <!-- ★2026-09-29 미보고 · JAM · HT_STOP — 왼쪽 '차량 현황' 은 숨겨져 있어 여기에 보인다 -->
+          <div id="oht-sum" class="rsum" style="font-size:12px;padding:4px 2px 8px;line-height:1.6"
+               title="미보고 = 50초 넘게 보고 없는 차 · OHT 판정 — 전조: 미보고 5 + JAM 10 동시 또는 HT_STOP 1 · 경보: 미보고 30 · JAM 20 · HT_STOP 10 · 확정: 미보고 100 · JAM 40 · HT_STOP 30">
+            미보고 <b id="r-miss">-</b> · JAM <b id="r-jam">-</b> · HT_STOP <b id="r-ht">-</b> · OHT 판정 <b id="r-oht-alert">-</b>
+          </div>
           <div class="rfilter">
             <button class="active" onclick="filterOHT('all',this)">전체</button>
             <button onclick="filterOHT('running',this)">운행</button>
             <button onclick="filterOHT('loaded',this)">적재</button>
             <button onclick="filterOHT('stopped',this)">정지</button>
             <button onclick="filterOHT('jam',this)">JAM</button>
+            <button onclick="filterOHT('miss',this)">미보고</button>
           </div>
           <input type="text" id="ohtSearch" placeholder="OHT ID 검색..." oninput="renderOHTList()" class="rsearch">
           <div id="ohtList" class="rlist"></div>
@@ -582,7 +591,7 @@ const DEFAULT_MAP_SETTINGS = {
        여전히 상태(공차·적재·OBS·정지·JAM)가 정한다 — 캡처에서도 노란 삼각형,
        하늘 삼각형 안에 똑같이 검은 점이 찍혀 있다. */
   /* ★정체 판정 — **몇 대 이상 모이면** 정체로 볼까. 종류마다 직접 적는다.
-       0 = 그 종류는 **안 본다**. 셋 다 0 이면 정체 표시가 아무것도 안 나온다.
+       0 = 그 종류는 **안 본다**. 모두 0 이면 정체 표시가 아무것도 안 나온다.
        한 무리 안에서 **어느 한 종류라도** 그 수를 넘으면 정체로 잡는다.
          예) 1 0 0 → JAM 이 한 대라도 있으면 정체
              3 5 0 → JAM 세 대 이상 **또는** OBS 다섯 대 이상
@@ -590,7 +599,9 @@ const DEFAULT_MAP_SETTINGS = {
        (고객: "아이소메트리 그냥 나둬라") — 거기는 예전대로 JAM+OBS 다. */
   jamMinJam:      1,              // JAM       (STATUS 7)
   jamMinObs:      0,              // OBS       (STATUS 6)
-  jamMinStop:     0,              // 멈춘 차   (STATUS 2 · 8 · 9)  ← 제일 마지막
+  jamMinStop:     0,              // 멈춘 차   (STATUS 2 · 8 · 9)  ← 예전 그대로
+  jamMinMiss:     3,              // ★미보고   (50초 넘게 보고 없음)  2026-09-29
+  jamMinHt:       1,              // ★HT_STOP  (STATUS 8) — 평소 0대라 1대도 본다
   carryDot:       'on',           // 'on' | 'off'
   dotLoaded:      '#000000',      // 들고 감 — 검은 점
   dotAssign:      '#ffffff',      // 가지러 감 — 흰 점
@@ -1070,6 +1081,12 @@ function updateUI(d) {
   const vs = d.vehicleStats || {};
   setText('s-total', vs.total||0); setText('s-running', vs.running||0);
   setText('s-obs', vs.obs_bz_stop||0); setText('s-jam', vs.jam||0);
+  setText('s-miss', vs.missing||0); setText('s-ht', vs.ht_stop||0);          // ★미보고 · HT_STOP (서버가 셈)
+  setText('s-oht-alert', (vs.ohtAlert && vs.ohtAlert.level) || '-');       // ★전조 · 경보 · 확정
+  // ★오른쪽 'OHT 상태' 탭 위 한 줄 — 보고가 살아 있는 차 기준 JAM · HT_STOP
+  { const oa = vs.ohtAlert || {};
+    setText('r-miss', vs.missing||0); setText('r-jam', oa.jam ?? (vs.jam||0));
+    setText('r-ht', vs.ht_stop||0); setText('r-oht-alert', oa.level || '-'); }
   setText('s-util', (vs.utilization||0)+'%'); setText('s-loaded', (vs.loaded_pct||0)+'%');
 
   const star = d.star || {};
@@ -1227,6 +1244,9 @@ function updateUI(d) {
       vehicleDisplay[v.vid].nextNode = v.nextNode;
       vehicleDisplay[v.vid].destination = v.destination;
       vehicleDisplay[v.vid].ratio = v.ratio;
+      vehicleDisplay[v.vid].missing = !!v.missing;   // ★미보고 (50초+) — 정체 판정에만 쓴다
+      vehicleDisplay[v.vid].idle = !!v.idle;         // 운휴 (30분+)
+      vehicleDisplay[v.vid].missSec = v.missSec || 0;
     } else {
       vehicleDisplay[v.vid] = {
         // ★_vid 를 여기서 바로 박는다. 예전엔 다섯 프레임에 한 번 몰아서 찍어서,
@@ -1236,7 +1256,8 @@ function updateUI(d) {
         dx:v.x, dy:v.y, tx:v.x, ty:v.y,
         state:v.state, isFull:v.isFull, vhlCycle:v.vhlCycle, velocity:v.velocity,
         currentNode:v.currentNode, nextNode:v.nextNode,
-        destination:v.destination, ratio:v.ratio
+        destination:v.destination, ratio:v.ratio,
+        missing:!!v.missing, idle:!!v.idle, missSec:v.missSec||0
       };
     }
   }
@@ -1695,10 +1716,15 @@ function jamHeat(cnt) {
      만들어야되;;;있어야겠네" 해서 같은 설정을 따라가게 했다 — 뷰어에는
      jamMin 으로 넘긴다(sync3DTheme).
    ★순서가 화면 순서다 — 멈춘 차가 제일 마지막. */
+/* ★2026-09-29 — 미보고 · HT_STOP 칸을 **뒤에** 붙였다 (앞 세 칸 순서는 아이소메트리와 맞춘 것).
+     미보고 차는 마지막 상태를 믿을 수 없어 다른 종류로 세지 않는다. 차량 색은 그대로다. */
+const _live = v => !v.missing && !v.idle;
 const JAM_KIND = [
-  { key: 'jamMinJam',  name: 'JAM',     has: st => st === 7 },
-  { key: 'jamMinObs',  name: 'OBS',     has: st => st === 6 },
-  { key: 'jamMinStop', name: '멈춘 차', has: st => st === 2 || st === 8 || st === 9 },
+  { key: 'jamMinJam',  name: 'JAM',     has: v => _live(v) && v.state === 7 },
+  { key: 'jamMinObs',  name: 'OBS',     has: v => _live(v) && v.state === 6 },
+  { key: 'jamMinStop', name: '멈춘 차', has: v => _live(v) && (v.state === 2 || v.state === 8 || v.state === 9) },
+  { key: 'jamMinMiss', name: '미보고',  has: v => !!v.missing },
+  { key: 'jamMinHt',   name: 'HT_STOP', has: v => _live(v) && v.state === 8 },
 ];
 function jamMins() {
   return JAM_KIND.map(k => {
@@ -1706,14 +1732,16 @@ function jamMins() {
     return (isNaN(n) || n < 0) ? 0 : n;      // 0·빈칸·음수 = 안 봄
   });
 }
-function jamKindOf(state) {
-  for (let i = 0; i < JAM_KIND.length; i++) if (JAM_KIND[i].has(state)) return i;
+function jamKindOf(v) {
+  /* ★켜 둔(0 이 아닌) 칸 중 먼저 맞는 것 — 멈춘 차(2·8·9)를 꺼 두어도 HT_STOP 칸이 따로 잡는다 */
+  const mins = jamMins();
+  for (let i = 0; i < JAM_KIND.length; i++) if (mins[i] > 0 && JAM_KIND[i].has(v)) return i;
   return -1;
 }
 /* 이 차를 세기는 하나 — 그 종류를 '안 봄(0)' 으로 뒀으면 후보에도 안 넣는다.
    (몇 대 이상인지는 무리를 만든 **뒤에** 따진다.) */
 function isJam(v) {
-  const i = jamKindOf(v.state);
+  const i = jamKindOf(v);
   return i >= 0 && jamMins()[i] > 0;
 }
 
@@ -1757,11 +1785,11 @@ function zoneAt(x, y) {
 
 function jamClusters(radius) {
   const mins = jamMins();
-  if (!mins.some(n => n > 0)) return [];      // 셋 다 0 — 아무것도 안 잡는다
+  if (!mins.some(n => n > 0)) return [];      // 모두 0 — 아무것도 안 잡는다
   const js = [];
   for (const vid in vehicleDisplay) {
     const v = vehicleDisplay[vid];
-    const k = jamKindOf(v.state);
+    const k = jamKindOf(v);
     if (k >= 0 && mins[k] > 0) js.push({ dx: v.dx, dy: v.dy, k });
   }
   if (!js.length) return [];
@@ -1790,7 +1818,7 @@ function jamClusters(radius) {
     /* ★'몇 대 이상' 은 여기서 따진다. 한 무리 안에서 **어느 한 종류라도**
        그 수를 넘으면 정체다 (3 5 0 = JAM 3대 이상 **또는** OBS 5대 이상).
        못 넘으면 그 무리는 버린다 — 이미 used 로 빠졌으니 다시 묶이지 않는다. */
-    const cnt = [0, 0, 0];
+    const cnt = JAM_KIND.map(() => 0);
     for (let k = 0; k < js.length; k++)
       if (used[k] && !counted[k] && Math.hypot(js[bi].dx - js[k].dx, js[bi].dy - js[k].dy) <= radius) {
         cnt[js[k].k]++; counted[k] = true;
@@ -1926,7 +1954,7 @@ function drawCarryDot(ctx, sx, sy, rr, kind, ang) {
 // 도면 길이) 중앙값 9.99, p10~p90 9.98~10.00 — 1 단위 = 10 mm 다.
 const V3D_SCALE = 0.01;
 // 3D 뷰어 판 번호 — oht3d.js 를 고쳐 올릴 때 같이 올린다 (브라우저 캐시 우회)
-const V3D_BUILD = '20260918c';
+const V3D_BUILD = '20260929a';   // ★oht3d.js 정체 판정에 미보고 · HT_STOP 추가
 
 // 2D 차량 상태 코드 → 3D 상태(0 운행 · 1 적재 · 2 정지 · 3 JAM · 4 OBS).
 // ★2D 의 색 규칙(drawMap)과 **같은 순서**로 판정한다. 7=JAM, 6=OBS, 2/8/9=정지,
@@ -1956,6 +1984,8 @@ function vehicle3D(v) {
     speed_mpm: (typeof v.velocity === 'number') ? v.velocity : 0,
     state: state3D(v),
     loaded: !!v.isFull,
+    miss: !!v.missing,                          // ★정체 판정용 — 미보고 (50초+)
+    ht: !v.missing && !v.idle && v.state === 8, // ★정체 판정용 — HT_STOP
   };
 }
 // 존 이름 — 3D 패널·라벨에 보이는 글자. HID 마스터의 Full_Name(예: HID-B19-1(026)).
@@ -2055,7 +2085,7 @@ async function open3D() {
         panel: false,
         /* 정체 판정 — ⚙ 설정의 '몇 대 이상' 을 그대로 넘긴다 (고객:
            "아이소메트리 정체 판정 만들어야되;;;있어야겠네").
-           [JAM, OBS, 멈춘 차] 순서는 2D 의 JAM_KIND 와 같다. 0 은 '안 봄'.
+           [JAM, OBS, 멈춘 차, 미보고, HT_STOP] 순서는 2D 의 JAM_KIND 와 같다. 0 은 '안 봄'.
            설정을 바꾸면 sync3DTheme 이 다시 넘긴다. */
         jamMin: jamMins(),
       });
@@ -2487,7 +2517,7 @@ mapCanvas.addEventListener('click', e => {
   if (!nearest) { tt.style.display = 'none'; return; }
 
   const { vid, v } = nearest;
-  const sn = stateNames[v.state] || '?';
+  const sn = (stateNames[v.state] || '?') + (v.missing ? ` · 미보고 ${v.missSec}초` : '');
   const vel = (typeof v.velocity === 'number') ? v.velocity.toFixed(1) + ' m/min' : '- 측정 불가';
   const cn = v.currentNode ?? '-';
   const nn = v.nextNode ?? '-';
@@ -3107,6 +3137,7 @@ function renderOHTList() {
   else if (ohtFilter === 'loaded') vehicles = vehicles.filter(v => v.isFull);
   else if (ohtFilter === 'stopped') vehicles = vehicles.filter(v => v.state === 2 || v.state === 8);
   else if (ohtFilter === 'jam') vehicles = vehicles.filter(v => v.state === 7 || v.state === 6);
+  else if (ohtFilter === 'miss') vehicles = vehicles.filter(v => v.missing);
   if (search) vehicles = vehicles.filter(v => (v._vid||'').includes(search));
   const pri = {7:0, 6:1, 8:2, 9:2, 2:3};
   vehicles.sort((a,b) => (pri[a.state]??5) - (pri[b.state]??5));
@@ -3116,7 +3147,7 @@ function renderOHTList() {
     const v = vehicles[i];
     const vid = v._vid || '?';
     const cls = stateClasses[v.state] || 'stopped';
-    const sn = stateNames[v.state] || '?';
+    const sn = (stateNames[v.state] || '?') + (v.missing ? ` · 미보고 ${v.missSec}초` : '');
     const loadTxt = v.isFull ? ' [적재]' : '';
     const vel = (typeof v.velocity === 'number') ? v.velocity : null;
     let velTxt, velCls;
@@ -3799,7 +3830,7 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
     <section class="ms-sec">
       <h4>정체 판정 <small>2D · 유사 3D · 아이소메트리</small></h4>
       <p class="ms-note">한자리에 <b>몇 대 이상</b> 모이면 정체로 볼지 직접 적습니다.
-        <b>0 은 그 종류를 안 봅니다.</b> 셋 다 0 이면 아무것도 안 잡습니다.<br>
+        <b>0 은 그 종류를 안 봅니다.</b> 모두 0 이면 아무것도 안 잡습니다.<br>
         한 무리 안에서 <b>어느 한 종류라도</b> 그 수를 넘으면 정체입니다 —
         예) <b>3 · 5 · 0</b> 이면 JAM 3대 이상 <b>또는</b> OBS 5대 이상.</p>
       <div class="ms-row"><label>JAM<small>STATUS 7</small></label>
@@ -3810,6 +3841,12 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
       </div>
       <div class="ms-row"><label>멈춘 차<small>STATUS 2 · 8 · 9</small></label>
         <span><input type="number" id="ms-jamMinStop" step="1" min="0" max="999"><small>대 이상</small></span>
+      </div>
+      <div class="ms-row"><label>미보고<small>50초+ 보고 없음</small></label>
+        <span><input type="number" id="ms-jamMinMiss" step="1" min="0" max="999"><small>대 이상</small></span>
+      </div>
+      <div class="ms-row"><label>HT_STOP<small>STATUS 8</small></label>
+        <span><input type="number" id="ms-jamMinHt" step="1" min="0" max="999"><small>대 이상</small></span>
       </div>
       <p class="ms-note">아래 <b>저장 + 적용</b> 을 누르면 이 브라우저에 남아 다음에 열어도 그대로입니다.<br>
         ★<b>세 화면이 같은 기준</b>입니다 — 2D · 유사 3D 의 <b>정체</b> 단추와
