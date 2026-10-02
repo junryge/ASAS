@@ -303,7 +303,7 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <label>끝</label>
       <input type="datetime-local" step="1" id="lp-to" title="끝 날짜·시각 — 눌러서 달력·시계로 고릅니다">
       <label>테이블</label>
-      <select id="lp-table" onchange="onLpTableChange()" title="로그프레소 테이블 — 고르면 그 FAB·레이아웃 맵으로 바뀝니다 (이름 규칙: oht_data_m번호레이아웃, 예: oht_data_m16br)"></select>
+      <select id="lp-table" onchange="onLpTableChange()" title="로그프레소 테이블 — 고르면 그 FAB·레이아웃 맵으로 바뀝니다 (운영: m14 · m14b · m16a · m16b · m16hub)"></select>
       <div class="tb-seg" title="조회 형태 — 상세는 원본 그대로(컬럼 전부), 간소는 30초로 묶어 가볍게">
         <span class="tb-cap">조회</span>
         <button id="lp-raw"   class="toggle-btn on" onclick="setLpProfile('raw')"
@@ -849,17 +849,19 @@ async function logpressoStop() {
   try { lpAbort.abort(); } catch (e) {}
 }
 
-// FAB/Layout 에 맞는 기본 테이블명 생성 — config.py 규칙과 동일.
-// 예) M14A/A → oht_data_m14a,  M16A/BR → oht_data_m16br,  M16A/E → oht_data_m16e
+// FAB/Layout 에 맞는 로그프레소 테이블.
+// ★2026-10-02 운영 — 이름 규칙이 없어졌다 (M14A/A → m14,  M16A/BR → m16hub).
+//   서버(logpresso_query.LAYOUT_TABLE)가 /api/fabs 로 준 이름을 그대로 쓴다.
+//   운영 테이블이 없는 맵(M16A/E 등)은 '' — 목록에 안 나온다.
 function _logpressoTableFor(fab, prefix) {
   if (!fab) return '';
-  const num = (String(fab).match(/\d+/) || [''])[0];
-  return `oht_data_m${num}${(prefix || '').toLowerCase()}`;
+  const e = fabCatalog.find(x => x.fab === fab && x.prefix === prefix);
+  return (e && e.table) || '';
 }
 /* ── 테이블 고르기 ──────────────────────────────────────────────────
    ★고객: "네이밍룰은 동일한데 테이블 선택할 수 있도록 해 주라". 치는 칸을 고르는
-     칸으로 바꿨다. 목록은 FAB 카탈로그(/api/fabs)에 있는 FAB·레이아웃마다 위
-     규칙으로 만든 이름 — FAB 별로 묶어 보인다.
+     칸으로 바꿨다. 목록은 FAB 카탈로그(/api/fabs)에 있는 FAB·레이아웃마다 서버가
+     준 운영 테이블 이름 — FAB 별로 묶어 보인다.
    ★고르면 그 FAB·레이아웃 맵으로 바꾼다. 테이블과 맵이 다르면 다른 구역 맵 위에
      OHT 를 그리게 된다 (관제 연동이 맵부터 맞추는 것과 같은 이유).
    ★목록에 없는 이름(관제에서 ?table= 로 넘어온 것 등)은 그 자리에 하나 더 넣는다 —
@@ -899,7 +901,8 @@ function rebuildLpTableSelect() {
    없는 테이블을 쳐서 조회가 빈다 (실제로 oht_data_m16A 가 넘어와 그랬다). */
 function lpSetTable(name) {
   const sel = document.getElementById('lp-table');
-  const t = String(name || '').trim().toLowerCase();
+  let t = String(name || '').trim().toLowerCase();
+  t = lpAlias[t] || t;      // ★QA 때 이름(oht_data_…)으로 넘어와도 운영 이름으로 (관제 링크)
   if (!sel || !t) return;
   if (![...sel.options].some(o => o.value === t)) {
     const opt = document.createElement('option');
@@ -938,7 +941,7 @@ async function logpressoLoad() {
   const profile = lpProfile;
   if (table && tblEl.value !== table) lpSetTable(table);
   if (!from_dt || !to_dt || !table) {
-    alert('시작·끝 날짜/시각과 테이블을 모두 고르세요.\n예) 테이블 oht_data_m16br');
+    alert('시작·끝 날짜/시각과 테이블을 모두 고르세요.\n예) 테이블 m16hub');
     return;
   }
   if (from_dt >= to_dt) {
@@ -3359,7 +3362,7 @@ drawMap();
 // ============================================================
 // 관제 목록에서 행을 더블클릭 → 구간 그래프 → FAB 버튼을 누르면 이 화면이
 // 아래 주소로 열린다:
-//   /?from=20260831103500&to=20260831103600&table=oht_data_m16br
+//   /?from=20260831103500&to=20260831103600&table=m16hub   (QA 때 이름 oht_data_m16br 도 받는다)
 //    &fab=M16A&prefix=BR&auto=1&case=2026-08-31 10:35 · M16HUB · 12점 정상
 //
 // ★case 는 화면 위에 그대로 띄운다. 이 화면은 **증거 자료**로 쓰인다 —
@@ -3369,7 +3372,8 @@ async function autoFromQuery() {
   if (q.get('auto') !== '1') return;
   const from = (q.get('from') || '').trim();
   const to   = (q.get('to')   || '').trim();
-  const tbl  = (q.get('table')|| '').trim();
+  const raw  = (q.get('table')|| '').trim().toLowerCase();
+  const tbl  = lpAlias[raw] || raw;      // ★관제가 QA 때 이름(oht_data_…)을 보내도 운영 이름으로
   const fab  = (q.get('fab')  || '').trim();
   const pre  = (q.get('prefix') || '').trim();
   const cs   = (q.get('case') || '').trim();
@@ -3621,7 +3625,8 @@ function jumpToHotspot(x, y) {
 // ============================================================
 // FAB / Layout 선택 + 날짜 목록
 // ============================================================
-let fabCatalog = [];   // [{fab, prefix, has_data, dates}]
+let fabCatalog = [];   // [{fab, prefix, has_data, dates, table}]
+let lpAlias = {};      // QA 때 테이블 이름 → 운영 이름 (/api/fabs 의 lp_alias)
 let currentFab = '', currentPrefix = '';
 
 // refreshDateOptions() 제거됨 — 데이터 로드는 로그프레소 조회 전담
@@ -3722,11 +3727,12 @@ async function bootFabs() {
     const resp = await fetch('/api/fabs');
     const data = await resp.json();
     fabCatalog = data.catalog || [];
+    lpAlias = data.lp_alias || {};
     currentFab = (data.current || {}).fab || '';
     currentPrefix = (data.current || {}).prefix || '';
     rebuildFabSelect();
     rebuildLayoutSelect();
-    rebuildLpTableSelect(); // 테이블 목록 (FAB·레이아웃마다 규칙대로)
+    rebuildLpTableSelect(); // 테이블 목록 (FAB·레이아웃마다 서버가 준 운영 이름)
     syncLogpressoTable();   // 초기 FAB에 맞는 테이블 고르기
     initLpProfile();        // 조회 형태 — 열 때마다 상세부터
     lpInitTimes();          // 시작·끝이 비어 있으면 최근 10분

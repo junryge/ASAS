@@ -3,7 +3,11 @@
 """
 logpresso_query.py — 로그프레소 OHT 조회 (시간 구간 → CSV DataFrame)
 
-쿼리 형식: 'remote icamcslogdt01 [ ... ]' 로 감싸 원격 노드에서 조회.
+★2026-10-02 QA → 운영
+  · 테이블 이름이 바뀌었다 — m14 · m14b · m16a · m16b · m16hub (QA 때 oht_data_m14a …)
+  · 테이블마다 서버가 다르다 — 아래 SERVERS. 조회할 때 테이블 이름으로 서버를 고른다.
+  · 쿼리를 remote 로 감싸지 않는다 — 테이블이 있는 서버에 바로 친다.
+  · QA 때 이름(oht_data_…)으로 들어와도 운영 이름으로 바꿔 친다 (관제 링크 · 북마크).
 
 쿼리가 **두 벌**이다 (QUERY_PROFILES). 지금 쓰는 것은 PROFILE 이 가리킨다.
   · "raw"   (기본) — 예전 쿼리. 원본 그대로 다 가져온다. 화면의 [상세].
@@ -35,31 +39,70 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ───────────────────────────────────────────────────────────
-# 접속 설정 — 운영/개발 둘 중 하나만 활성화
+# 접속 설정 — [운영] 2026-10-02 (QA → 운영)
+#   ★테이블마다 서버가 다르다. 조회할 때 테이블 이름으로 서버를 고른다.
+#   ★키는 두 서버가 같다 — API_KEY 한 칸.
 # ───────────────────────────────────────────────────────────
-
-# [운영]
-#HOST    = "10.40.42.27"
-#PORT    = 8888
-#API_KEY = ""
-
-# [개발]  http://10.125.173.63/
-HOST    = "10.125.173.63"
-PORT    = 8888
-API_KEY = ""          # ★키를 여기에 적으세요
+SERVERS = {
+    "10.40.42.167:8888": ("m16hub", "m16a", "m16b"),
+    "10.40.42.27:8888":  ("m14", "m14b"),
+}
+API_KEY = ""          # ★키를 여기에 적으세요 (두 서버 같은 키)
 
 # ★저장소에 올릴 때는 반드시 다시 비우세요.
 #   전에 운영·개발 키가 이 자리에 박힌 채로 올라갔고, 관제의 보안 시험
 #   (tests/test_secrets.py)이 잡았습니다. 한 번 올라간 키는 파일에서 지워도
 #   이력에 남습니다 — 그때는 키를 새로 발급받는 것이 진짜 조치입니다.
 
-# 원격 노드명. 비우면 remote 감싸지 않음.
-REMOTE_NODE = "icamcslogdt01"
+# 맵(FAB · 레이아웃) → 운영 테이블. 화면의 테이블 목록이 이것으로 만들어진다.
+#   ★예전 이름 규칙(oht_data_m번호레이아웃)은 운영에서 없어졌다 (m14 · m16hub).
+LAYOUT_TABLE = {
+    ("M14A", "A"):  "m14",
+    ("M14B", "A"):  "m14b",
+    ("M16A", "A"):  "m16a",
+    ("M16A", "BR"): "m16hub",      # 허브룸 — M16A 폴더의 BR 레이아웃
+    ("M16B", "B"):  "m16b",
+}
+# QA 때 이름 → 운영 이름. 관제에서 넘어오는 링크 · 북마크에 옛 이름이 남아 있어도 돈다.
+TABLE_ALIAS = {
+    "oht_data_m14a":  "m14",
+    "oht_data_m14b":  "m14b",
+    "oht_data_m16a":  "m16a",
+    "oht_data_m16b":  "m16b",
+    "oht_data_m16br": "m16hub",
+}
 
 
-# 위를 비워 두면 아래 순서로 찾는다 (그냥 두고 써도 되게).
-#   ① 환경변수 LP_API_KEY / LP_HOST / LP_PORT
-#   ② 관제(real_time_amhs)의 config.json · api_key.txt — 같은 로그프레소다
+def table_name(name) -> str:
+    """조회할 테이블 이름 — 소문자, QA 때 이름은 운영 이름으로."""
+    t = str(name or "").strip().lower()
+    return TABLE_ALIAS.get(t, t)
+
+
+def table_for_layout(fab, prefix) -> str:
+    """맵(FAB · 레이아웃) → 운영 테이블. 모르는 맵이면 "" (예: M16A/E — 운영 테이블이 없다)."""
+    return LAYOUT_TABLE.get((str(fab or "").strip().upper(), str(prefix or "").strip().upper()), "")
+
+
+def server_for(table) -> tuple:
+    """테이블 → (host, port). 모르는 테이블이면 ValueError — 엉뚱한 서버에 치지 않는다.
+
+    환경변수 LP_HOST / LP_PORT 가 있으면 **모든 테이블**을 그리로 보낸다 (시험용).
+    """
+    t = table_name(table)
+    hp = next((k for k, tables in SERVERS.items() if t in tables), "")
+    env_h = os.environ.get("LP_HOST", "").strip()
+    env_p = os.environ.get("LP_PORT", "").strip()
+    if not hp and not env_h:
+        known = " · ".join(x for tables in SERVERS.values() for x in tables)
+        raise ValueError(f"모르는 테이블 {t!r} — 운영 테이블은 {known}")
+    host, _, port = hp.partition(":")
+    return env_h or host, int(env_p or port or 8888)
+
+
+# 키를 비워 두면 아래 순서로 찾는다 (그냥 두고 써도 되게).
+#   ① 환경변수 LP_API_KEY
+#   ② 관제(real_time_amhs)의 config.json · api_key.txt — 같은 키다
 def _borrow(name, key):
     import json as _json
     v = os.environ.get(name)
@@ -96,23 +139,8 @@ KEY_FROM = "파일"
 if not API_KEY:
     API_KEY = _borrow("LP_API_KEY", "api_key")
     KEY_FROM = "환경변수/관제 설정"
-    # ★키를 관제에서 빌려 왔으면 **주소도 같은 곳에서** 빌린다.
-    #   키만 빌리고 주소는 이 파일에 박힌 값(개발 10.125.173.63)을 쓰면,
-    #   다른 서버 키를 개발 서버에 보내게 되어 **401** 이 난다. 실제로 났다 —
-    #   관제 config.json 의 logpresso_base 는 10.40.42.167 인데 여기는 .63 이었다.
-    #   _borrow 에 host/port 를 읽는 가지가 있었는데 아무도 안 부르고 있었다.
-    _h = _borrow("LP_HOST", "host")
-    _p = _borrow("LP_PORT", "port")
-    if _h:
-        HOST = _h
-    if _p:
-        try:
-            PORT = int(_p)
-        except ValueError:
-            pass
-# 환경변수는 언제나 이긴다 (키를 파일에 박아 두고 주소만 바꿔 쓸 수 있게)
-HOST = os.environ.get("LP_HOST", "").strip() or HOST
-PORT = int(os.environ.get("LP_PORT", "").strip() or PORT)
+    # ★예전(서버 하나)에는 키를 관제에서 빌리면 주소도 관제 것(logpresso_base)을 빌렸다.
+    #   운영은 테이블마다 서버가 달라 주소는 SERVERS 가 정한다 — 키는 두 서버가 같다.
 
 FMT = "%Y%m%d%H%M%S"
 MAX_BYTES = 30 * 1024 * 1024   # 30MB
@@ -178,10 +206,7 @@ def _build_query(from_dt: str, to_dt: str, table: str, profile: str = None) -> s
     fn = QUERY_PROFILES.get(name)
     if fn is None:
         raise ValueError(f"모르는 쿼리 프로필 {name!r} (가능: {sorted(QUERY_PROFILES)})")
-    inner = fn(from_dt, to_dt, table)
-    if REMOTE_NODE:
-        return f'remote {REMOTE_NODE} [ {inner} ]'
-    return inner
+    return fn(from_dt, to_dt, table)     # ★운영은 remote 로 감싸지 않는다 — 테이블이 있는 서버에 바로
 
 
 def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
@@ -191,9 +216,10 @@ def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
             "  · 환경변수 LP_API_KEY\n"
             "  · 이 폴더의 logpresso.json  {\"api_key\": \"…\"}\n"
             "  · 관제(real_time_amhs)의 config.json 또는 api_key.txt")
+    host, port = server_for(table)
     q = _build_query(from_dt, to_dt, table, profile)
     encoded = urllib.parse.quote(q, safe="")
-    url = f"http://{HOST}:{PORT}/logpresso/httpexport/query.csv?_apikey={API_KEY}&_q={encoded}"
+    url = f"http://{host}:{port}/logpresso/httpexport/query.csv?_apikey={API_KEY}&_q={encoded}"
 
     print(f"  [Q] {q}")
 
@@ -205,12 +231,12 @@ def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
         hint = ""
         if resp.status_code == 401:
             hint = (f"\n  ▶ 401 = 인증 실패. 쿼리는 돌지도 않았다.\n"
-                    f"     지금 주소 {HOST}:{PORT} · 키 출처 {KEY_FROM} "
+                    f"     지금 주소 {host}:{port} ({table}) · 키 출처 {KEY_FROM} "
                     f"(끝 4자 …{API_KEY[-4:] if len(API_KEY) >= 4 else '?'})\n"
-                    f"     이 주소용 키가 맞는지 보라. 주소를 바꾸려면 "
-                    f"LP_HOST/LP_PORT, 키는 LP_API_KEY.")
+                    f"     이 주소용 키가 맞는지 보라. 테이블별 주소는 SERVERS, "
+                    f"키는 LP_API_KEY.")
         raise RuntimeError(
-            f"HTTP {resp.status_code} from {HOST}:{PORT}{hint}\n"
+            f"HTTP {resp.status_code} from {host}:{port}{hint}\n"
             f"  실패 쿼리: {q}\n"
             f"  응답(앞 500자): {body}"
         )
@@ -222,7 +248,7 @@ def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
 
 
 def query_oht_chunked(from_dt: str, to_dt: str,
-                      table: str = "oht_data_m16br",
+                      table: str = "m16hub",
                       chunk_minutes: int = 10,
                       profile: str = None,
                       should_cancel=None) -> pd.DataFrame:
@@ -235,11 +261,13 @@ def query_oht_chunked(from_dt: str, to_dt: str,
     start = datetime.strptime(from_dt, FMT)
     end   = datetime.strptime(to_dt, FMT)
     step  = timedelta(minutes=chunk_minutes)
+    table = table_name(table)                # QA 때 이름이 와도 운영 이름으로
+    host, port = server_for(table)           # 모르는 테이블이면 조회 전에 멈춘다
 
     used = (profile or PROFILE or "agg30").strip()
     print(f"[쿼리] 프로필 {used}  (raw 로 되돌리려면 LP_QUERY_PROFILE=raw)")
     # ★어느 서버에 어느 키로 치는지 남긴다 — 401 이 나면 여기부터 본다
-    print(f"[접속] {HOST}:{PORT}  remote={REMOTE_NODE or '(없음)'}  "
+    print(f"[접속] {table} → {host}:{port}  "
           f"키 출처 {KEY_FROM} (끝 4자 …{API_KEY[-4:] if len(API_KEY) >= 4 else '?'})")
 
     frames = []
@@ -280,11 +308,11 @@ def query_oht_chunked(from_dt: str, to_dt: str,
 
 
 if __name__ == "__main__":
-    print(f"[설정] HOST={HOST}:{PORT}  REMOTE={REMOTE_NODE}")
+    print(f"[설정] 서버 {SERVERS}")
     df = query_oht_chunked(
         from_dt       = "20260621000000",
         to_dt         = "20260621010101",
-        table         = "oht_data_m16br",
+        table         = "m16hub",
         chunk_minutes = 10,
     )
     print(df)
