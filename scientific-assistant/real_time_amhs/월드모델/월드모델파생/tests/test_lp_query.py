@@ -45,7 +45,7 @@ def _load(env=None):
     return ns
 
 
-F, T, TBL = "20260917050000", "20260917051000", "m16a"      # 운영 이름 (2026-10-02)
+F, T, TBL = "20260917050000", "20260917051000", "oht_data_m16a"
 
 
 class 쿼리두벌(unittest.TestCase):
@@ -115,8 +115,8 @@ class 쿼리두벌(unittest.TestCase):
             self.q("없는거")
 
     def test_테이블_이름을_그대로_넣는다(self):
-        self.assertIn(" m16a | search", self.q("agg30"))
-        self.assertNotIn("oht_data_", self.q("agg30"))
+        self.assertIn("oht_data_m16a", self.q("agg30"))
+        self.assertNotIn("oht_data_m16A", self.q("agg30"))
 
 
 class 배선(unittest.TestCase):
@@ -156,12 +156,10 @@ class 배선(unittest.TestCase):
 
 
 class 운영_서버(unittest.TestCase):
-    """★2026-10-02 QA → 운영. 테이블 이름이 바뀌고 테이블마다 서버가 다르다 (고객이 준 표 그대로).
+    """★2026-10-02 QA → 운영. 테이블은 그대로(oht_data_…), 테이블마다 서버가 다르다.
 
-        10.40.42.167:8888 → m16hub · m16a · m16b
-        10.40.42.27:8888  → m14 · m14b
-        oht_data_m14a → m14 · oht_data_m14b → m14b · oht_data_m16a → m16a
-        oht_data_m16b → m16b · oht_data_m16br → m16hub
+        10.40.42.167:8888 → oht_data_m16br(M16HUB) · oht_data_m16a(M16A) · oht_data_m16b(M16B)
+        10.40.42.27:8888  → oht_data_m14a(M14) · oht_data_m14b(M14B)
     키는 두 서버가 같다 (고객: "API_KEY 걱정하지마 동일하니까").
     """
 
@@ -197,37 +195,29 @@ class 운영_서버(unittest.TestCase):
     def test_테이블마다_서버(self):
         with self._ns() as ns:
             sv = ns["server_for"]
-            for t in ("m14", "m14b"):
+            for t in ("oht_data_m14a", "oht_data_m14b"):
                 self.assertEqual(sv(t), ("10.40.42.27", 8888), t)
-            for t in ("m16a", "m16b", "m16hub"):
+            for t in ("oht_data_m16br", "oht_data_m16a", "oht_data_m16b"):
                 self.assertEqual(sv(t), ("10.40.42.167", 8888), t)
+            self.assertEqual(sv(" OHT_DATA_M16BR "), ("10.40.42.167", 8888), "대소문자 · 공백")
 
-    def test_QA_때_이름도_운영_이름으로(self):
-        """관제 링크 · 북마크에 옛 이름이 남아 있어도 돈다."""
+    def test_표에_없는_테이블은_FAB_번호로(self):
+        """화면 목록은 규칙(oht_data_m번호레이아웃)으로 만든다 — oht_data_m16e 같은 것도 나온다."""
         with self._ns() as ns:
-            tn = ns["table_name"]
-            self.assertEqual([tn(x) for x in ("oht_data_m14a", "oht_data_m14b", "oht_data_m16a",
-                                              "oht_data_m16b", "OHT_DATA_M16BR", " M16HUB ")],
-                             ["m14", "m14b", "m16a", "m16b", "m16hub", "m16hub"])
-            self.assertEqual(ns["server_for"]("oht_data_m16br"), ("10.40.42.167", 8888))
-            self.assertEqual(ns["server_for"]("oht_data_m14a"), ("10.40.42.27", 8888))
+            self.assertEqual(ns["server_for"]("oht_data_m16e"), ("10.40.42.167", 8888))
+            self.assertEqual(ns["server_for"]("oht_data_m14x"), ("10.40.42.27", 8888))
 
-    def test_모르는_테이블은_조회_전에_막는다(self):
-        """엉뚱한 서버에 쳐서 빈 결과를 보는 것보다 이름이 틀렸다고 바로 알리는 게 낫다."""
+    def test_어느_서버인지_모르면_조회_전에_막는다(self):
         with self._ns() as ns:
             with self.assertRaises(ValueError) as cm:
-                ns["server_for"]("oht_data_m16e")
+                ns["server_for"]("abc")
             self.assertIn("운영 테이블은", str(cm.exception))
 
-    def test_맵에서_테이블(self):
-        with self._ns() as ns:
-            tl = ns["table_for_layout"]
-            self.assertEqual(tl("M14A", "A"), "m14")
-            self.assertEqual(tl("M14B", "A"), "m14b", "예전 규칙은 M14B 를 oht_data_m14a 로 잘못 만들었다")
-            self.assertEqual(tl("M16A", "A"), "m16a")
-            self.assertEqual(tl("m16a", "br"), "m16hub")
-            self.assertEqual(tl("M16B", "B"), "m16b")
-            self.assertEqual(tl("M16A", "E"), "", "운영 테이블이 없는 맵")
+    def test_테이블_이름은_그대로_친다(self):
+        """서버만 고른다 — 쿼리에 들어가는 이름은 손대지 않는다."""
+        s = _read("logpresso_query.py")
+        self.assertNotIn("TABLE_ALIAS", s)
+        self.assertIn('table: str = "oht_data_m16br",', s)
 
     # ★값을 'sample-' 로 시작하게 둔다 — 관제의 보안 스캐너(tests/test_secrets.py)가
     #   진짜 키로 오해하지 않게. 시험용 가짜다.
@@ -236,16 +226,16 @@ class 운영_서버(unittest.TestCase):
 
     def test_키를_관제에서_빌려도_주소는_테이블이_정한다(self):
         """★예전(서버 하나)엔 키를 빌리면 주소도 관제 것을 빌렸다. 운영은 테이블마다
-        서버가 달라, 그대로 두면 m14 조회까지 관제 서버(.167)로 간다."""
+        서버가 달라, 그대로 두면 M14 조회까지 관제 서버(.167)로 간다."""
         with self._ns(self.CFG) as ns:
             self.assertEqual(ns["API_KEY"], "sample-key-abcd1234")
             self.assertEqual(ns["KEY_FROM"], "환경변수/관제 설정")
-            self.assertEqual(ns["server_for"]("m14"), ("10.40.42.27", 8888))
+            self.assertEqual(ns["server_for"]("oht_data_m14a"), ("10.40.42.27", 8888))
 
     def test_환경변수_LP_HOST_는_전부를_돌린다(self):
         with self._ns(env={"LP_HOST": "10.1.2.3", "LP_PORT": "9999"}) as ns:
-            self.assertEqual(ns["server_for"]("m14"), ("10.1.2.3", 9999))
-            self.assertEqual(ns["server_for"]("m16hub"), ("10.1.2.3", 9999))
+            self.assertEqual(ns["server_for"]("oht_data_m14a"), ("10.1.2.3", 9999))
+            self.assertEqual(ns["server_for"]("oht_data_m16br"), ("10.1.2.3", 9999))
 
     def test_설정이_없으면_키는_빈칸(self):
         with self._ns(None) as ns:
@@ -261,20 +251,10 @@ class 운영_서버(unittest.TestCase):
     def test_접속_정보를_로그에_남긴다(self):
         self.assertIn('print(f"[접속] {table} → {host}:{port}', _read("logpresso_query.py"))
 
-    def test_조회_전에_이름을_맞추고_서버를_고른다(self):
+    def test_조회할_때_테이블로_서버를_고른다(self):
         s = _read("logpresso_query.py")
-        m = re.search(r"def query_oht_chunked\([\s\S]*?\n    frames = \[\]", s)
-        blk = m.group(0)
-        self.assertIn("table = table_name(table)", blk)
-        self.assertIn("host, port = server_for(table)", blk)
         self.assertIn("host, port = server_for(table)", s[s.index("def _fetch("):s.index("def query_oht_chunked(")])
-
-    def test_API_와_화면도_운영_이름(self):
-        m = _read("main.py")
-        i = m.index("table = table_name(table)")
-        self.assertLess(i, m.index("query_oht_chunked(from_dt, to_dt, table=table,"))
-        self.assertIn('"table": table_for_layout(e["fab"], e["prefix"]),', m)
-        self.assertIn('"lp_alias": TABLE_ALIAS,', m)
+        self.assertIn('url = f"http://{host}:{port}/logpresso/httpexport/query.csv?', s)
 
     def test_키_전체는_찍지_않는다(self):
         """★로그·오류 글에 키가 통째로 찍히면 화면 캡처 한 장으로 새어 나간다.
@@ -423,17 +403,9 @@ class 테이블은_고른다(unittest.TestCase):
         self.assertIn('<select id="lp-table" onchange="onLpTableChange()"', self.h)
         self.assertNotIn('<input type="text" id="lp-table"', self.h)
 
-    def test_테이블_이름은_서버가_준다(self):
-        """★2026-10-02 운영 — 이름 규칙(oht_data_m번호레이아웃)이 없어져 서버 표를 쓴다."""
-        self.assertIn("const e = fabCatalog.find(x => x.fab === fab && x.prefix === prefix);", self.h)
-        self.assertIn("return (e && e.table) || '';", self.h)
+    def test_이름_규칙은_그대로(self):
+        self.assertIn("return `oht_data_m${num}${(prefix || '').toLowerCase()}`;", self.h)
         self.assertIn("const t = _logpressoTableFor(e.fab, e.prefix);", self.h)
-        self.assertNotIn("return `oht_data_m${num}", self.h)
-
-    def test_QA_때_이름이_와도_운영_이름으로(self):
-        self.assertIn("lpAlias = data.lp_alias || {};", self.h)
-        self.assertIn("t = lpAlias[t] || t;", self.h)
-        self.assertIn("const tbl  = lpAlias[raw] || raw;", self.h, "관제 링크로 넘어온 이름")
 
     def test_FAB_별로_묶는다(self):
         self.assertIn("document.createElement('optgroup')", self.h)

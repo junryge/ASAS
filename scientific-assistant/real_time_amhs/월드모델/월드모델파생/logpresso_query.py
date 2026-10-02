@@ -4,10 +4,9 @@
 logpresso_query.py — 로그프레소 OHT 조회 (시간 구간 → CSV DataFrame)
 
 ★2026-10-02 QA → 운영
-  · 테이블 이름이 바뀌었다 — m14 · m14b · m16a · m16b · m16hub (QA 때 oht_data_m14a …)
+  · 테이블은 그대로다 (oht_data_m14a · oht_data_m14b · oht_data_m16a · oht_data_m16b · oht_data_m16br).
   · 테이블마다 서버가 다르다 — 아래 SERVERS. 조회할 때 테이블 이름으로 서버를 고른다.
   · 쿼리를 remote 로 감싸지 않는다 — 테이블이 있는 서버에 바로 친다.
-  · QA 때 이름(oht_data_…)으로 들어와도 운영 이름으로 바꿔 친다 (관제 링크 · 북마크).
 
 쿼리가 **두 벌**이다 (QUERY_PROFILES). 지금 쓰는 것은 PROFILE 이 가리킨다.
   · "raw"   (기본) — 예전 쿼리. 원본 그대로 다 가져온다. 화면의 [상세].
@@ -44,8 +43,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 #   ★키는 두 서버가 같다 — API_KEY 한 칸.
 # ───────────────────────────────────────────────────────────
 SERVERS = {
-    "10.40.42.167:8888": ("m16hub", "m16a", "m16b"),
-    "10.40.42.27:8888":  ("m14", "m14b"),
+    "10.40.42.167:8888": ("oht_data_m16br", "oht_data_m16a", "oht_data_m16b"),   # M16HUB · M16A · M16B
+    "10.40.42.27:8888":  ("oht_data_m14a", "oht_data_m14b"),                     # M14 · M14B
 }
 API_KEY = ""          # ★키를 여기에 적으세요 (두 서버 같은 키)
 
@@ -54,48 +53,26 @@ API_KEY = ""          # ★키를 여기에 적으세요 (두 서버 같은 키)
 #   (tests/test_secrets.py)이 잡았습니다. 한 번 올라간 키는 파일에서 지워도
 #   이력에 남습니다 — 그때는 키를 새로 발급받는 것이 진짜 조치입니다.
 
-# 맵(FAB · 레이아웃) → 운영 테이블. 화면의 테이블 목록이 이것으로 만들어진다.
-#   ★예전 이름 규칙(oht_data_m번호레이아웃)은 운영에서 없어졌다 (m14 · m16hub).
-LAYOUT_TABLE = {
-    ("M14A", "A"):  "m14",
-    ("M14B", "A"):  "m14b",
-    ("M16A", "A"):  "m16a",
-    ("M16A", "BR"): "m16hub",      # 허브룸 — M16A 폴더의 BR 레이아웃
-    ("M16B", "B"):  "m16b",
-}
-# QA 때 이름 → 운영 이름. 관제에서 넘어오는 링크 · 북마크에 옛 이름이 남아 있어도 돈다.
-TABLE_ALIAS = {
-    "oht_data_m14a":  "m14",
-    "oht_data_m14b":  "m14b",
-    "oht_data_m16a":  "m16a",
-    "oht_data_m16b":  "m16b",
-    "oht_data_m16br": "m16hub",
-}
-
-
-def table_name(name) -> str:
-    """조회할 테이블 이름 — 소문자, QA 때 이름은 운영 이름으로."""
-    t = str(name or "").strip().lower()
-    return TABLE_ALIAS.get(t, t)
-
-
-def table_for_layout(fab, prefix) -> str:
-    """맵(FAB · 레이아웃) → 운영 테이블. 모르는 맵이면 "" (예: M16A/E — 운영 테이블이 없다)."""
-    return LAYOUT_TABLE.get((str(fab or "").strip().upper(), str(prefix or "").strip().upper()), "")
-
 
 def server_for(table) -> tuple:
-    """테이블 → (host, port). 모르는 테이블이면 ValueError — 엉뚱한 서버에 치지 않는다.
+    """테이블 → (host, port).
 
+    위 SERVERS 에 없는 테이블은 이름의 FAB 번호로 고른다 — m14 는 M14 서버, m16 은 M16 서버
+    (화면 목록의 oht_data_m16e 같은 것). 그것도 없으면 ValueError — 엉뚱한 서버에 치지 않는다.
     환경변수 LP_HOST / LP_PORT 가 있으면 **모든 테이블**을 그리로 보낸다 (시험용).
     """
-    t = table_name(table)
+    t = str(table or "").strip().lower()
     hp = next((k for k, tables in SERVERS.items() if t in tables), "")
+    if not hp:
+        for num in ("m16", "m14"):
+            if f"_{num}" in t:
+                hp = next((k for k, tables in SERVERS.items() if any(f"_{num}" in x for x in tables)), "")
+                break
     env_h = os.environ.get("LP_HOST", "").strip()
     env_p = os.environ.get("LP_PORT", "").strip()
     if not hp and not env_h:
         known = " · ".join(x for tables in SERVERS.values() for x in tables)
-        raise ValueError(f"모르는 테이블 {t!r} — 운영 테이블은 {known}")
+        raise ValueError(f"어느 서버 테이블인지 모릅니다: {table!r} — 운영 테이블은 {known}")
     host, _, port = hp.partition(":")
     return env_h or host, int(env_p or port or 8888)
 
@@ -248,7 +225,7 @@ def _fetch(from_dt: str, to_dt: str, table: str, profile: str = None):
 
 
 def query_oht_chunked(from_dt: str, to_dt: str,
-                      table: str = "m16hub",
+                      table: str = "oht_data_m16br",
                       chunk_minutes: int = 10,
                       profile: str = None,
                       should_cancel=None) -> pd.DataFrame:
@@ -261,8 +238,7 @@ def query_oht_chunked(from_dt: str, to_dt: str,
     start = datetime.strptime(from_dt, FMT)
     end   = datetime.strptime(to_dt, FMT)
     step  = timedelta(minutes=chunk_minutes)
-    table = table_name(table)                # QA 때 이름이 와도 운영 이름으로
-    host, port = server_for(table)           # 모르는 테이블이면 조회 전에 멈춘다
+    host, port = server_for(table)           # 어느 서버인지 모르면 조회 전에 멈춘다
 
     used = (profile or PROFILE or "agg30").strip()
     print(f"[쿼리] 프로필 {used}  (raw 로 되돌리려면 LP_QUERY_PROFILE=raw)")
@@ -312,7 +288,7 @@ if __name__ == "__main__":
     df = query_oht_chunked(
         from_dt       = "20260621000000",
         to_dt         = "20260621010101",
-        table         = "m16hub",
+        table         = "oht_data_m16br",
         chunk_minutes = 10,
     )
     print(df)

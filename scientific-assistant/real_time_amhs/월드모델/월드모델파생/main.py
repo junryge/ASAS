@@ -332,12 +332,6 @@ async def get_dates(request: Request):
 async def get_fabs(request: Request):
     """FAB/prefix 카탈로그 + **그 사람이** 고른 값. 데이터 폴더 매칭 포함."""
     s = sess(request)
-    # ★로그프레소 테이블 이름 — 운영(2026-10-02)은 이름 규칙이 없어 logpresso_query 의 표를 쓴다.
-    #   requests/pandas 가 없어 못 읽으면 목록만 비고 맵은 그대로 뜬다.
-    try:
-        from logpresso_query import table_for_layout, TABLE_ALIAS
-    except Exception:
-        table_for_layout, TABLE_ALIAS = (lambda fab, prefix: ""), {}
     fabs = []
     for e in FAB_CATALOG:
         dates_map = get_dates_for_fab(e["fab"], e["prefix"])
@@ -346,12 +340,10 @@ async def get_fabs(request: Request):
             "prefix": e["prefix"],
             "has_data": bool(dates_map),
             "dates": sorted(dates_map.keys()),
-            "table": table_for_layout(e["fab"], e["prefix"]),
         })
     return {
         "catalog": fabs,
         "current": {"fab": s.fab, "prefix": s.prefix},
-        "lp_alias": TABLE_ALIAS,         # QA 때 이름 → 운영 이름 (관제 링크에 옛 이름이 와도)
     }
 
 
@@ -449,7 +441,7 @@ async def logpresso_load(request: Request):
       {
         "from_dt": "20260621000000",
         "to_dt"  : "20260621010000",
-        "table"  : "m16hub",           (QA 때 이름 oht_data_m16br 도 받는다 — 운영 이름으로 바꿔 친다)
+        "table"  : "oht_data_m16br",
         "chunk_minutes": 10,           (선택, 기본 10)
         "profile": "agg30" | "raw"     (선택 — 안 보내면 logpresso_query.PROFILE)
       }
@@ -474,12 +466,11 @@ async def logpresso_load(request: Request):
             {"error": "from_dt/to_dt 는 yyyyMMddHHmmss (14자리)"}, status_code=400)
 
     try:
-        from logpresso_query import query_oht_chunked, table_name
+        from logpresso_query import query_oht_chunked
     except ImportError as e:
         return JSONResponse(
             {"error": f"logpresso_query 모듈 임포트 실패 (requests/pandas 필요): {e}"},
             status_code=500)
-    table = table_name(table)          # ★QA 때 이름(oht_data_…)이 와도 운영 이름으로 (2026-10-02)
 
     print(f"[로그프레소] {s.sid[:8]}… 조회 시작: {table}  {from_dt}~{to_dt}  chunk={chunk_minutes}분"
           + (f"  profile={profile}" if profile else ""))
