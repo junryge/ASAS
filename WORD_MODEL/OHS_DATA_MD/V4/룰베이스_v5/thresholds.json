@@ -55,5 +55,21 @@
   "_comment_area_weight": "영역별 점수 가중 — unified_risk_score 합산에만 적용. hot_area/affected_areas/단계는 무영향. 미기재 영역은 1.0. M16B 0.5 가중은 취소되어 1.0 으로 명시함 — 코드 기본값이 예전(0.5)인 서버에서도 이 값이 덮어써서 확실히 꺼진다. 비워두면(=키 없음) 코드 기본값이 그대로 살아나므로 비우지 말 것",
   "AREA_WEIGHT": {
     "M16B": 1.0
+  },
+
+  "_comment_oht": "OHT 가감점 (2026-10) — 오탐 줄이기. 입력 CSV 의 {FAB}_OHT_report/_missing/_JAM/_HT_STOP 을 본다. OHT_ADJ_ENABLED false 면 예전 점수 그대로. OHT_ADJ_FABS 에 넣은 FAB 만 적용 (지금 M16HUB 만). ALL = unified_risk_score 에 가감 (0~100 안에서, 등급·사건도 가감된 점수로), FAB = {FAB}_score_raw 에 가감. 미보고·JAM 은 둘 다 기준을 같이 넘어야(+) / 둘 다 기준 이하여야(−) 한다 — 정확히 경계값이면 + 우선. HT_STOP 이 ht_min 이상이면 ht_score 를 더하고 0 이면 그대로. 보고(report) 가 비었거나 0 인 FAB 은 가감하지 않는다. ALL 은 FAB 여러 개일 때 하나라도 + 면 +, 모두 − 면 −. FAB 별로 다르게 주려면 OHT_ADJ_FAB 안에 \"M16A\": {\"plus_score\": 20} 처럼 FAB 이름 키로 덮어쓴다. 수정 후 predictor 재시작",
+  "OHT_ADJ_ENABLED": true,
+  "OHT_ADJ_FABS": ["M16HUB"],
+  "OHT_ADJ_ALL": {
+    "enabled": true,
+    "plus_missing": 5,  "plus_jam": 10,  "plus_score": 15,
+    "minus_missing": 5, "minus_jam": 10, "minus_score": -10,
+    "ht_min": 1,        "ht_score": 10
+  },
+  "OHT_ADJ_FAB": {
+    "enabled": true,
+    "plus_missing": 5,  "plus_jam": 10,  "plus_score": 15,
+    "minus_missing": 5, "minus_jam": 10, "minus_score": -10,
+    "ht_min": 1,        "ht_score": 10
   }
 }
