@@ -85,6 +85,10 @@ def _hid_only(st):
     new = {a: z for a, z in zo.items() if z in keep}
     st.zone_of = new
     st._hid_only_src = new
+    if isinstance(info, dict):                       # 문제맵 구역(선 · 이름)도 HID 구역만
+        st.info = {z: v for z, v in info.items() if vmax(z) > 0}
+    if getattr(st, "pm", None):                      # 이미 만든 맵 자료가 있으면 다시 만들게
+        st.pm = None
     HID.log.info(f"  {getattr(st, 'fab', '')}: HID 구역 {len(keep)}개만 사용 (Vehicle_Max > 0)"
                  + (f" · {len(drop)}개 제외 ({', '.join(map(str, drop[:4]))}{' …' if len(drop) > 4 else ''})"
                     if drop else ""))
