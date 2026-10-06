@@ -451,7 +451,10 @@
     /* ★'알람' 칸(100px)이 늘면서 최소 폭을 1300px 로 올렸다. 대신 시각·CASE·
      발동 룰·AMOS 둘·HI_FAB 를 조금씩 깎아(합 −60px) 1366px 노트북에서
      가로 스크롤이 안 생기는 성질은 그대로 지켰다. */
-  table.cases{width:100%;min-width:1300px;border-collapse:collapse;table-layout:fixed}
+  /* ★HID_JAM · RET(레포트) 두 칸(80 + 94px, 머리글 글자 폭 + 여백 20px)을 '실제지표'
+     옆에 더하며(2026-10-06 고객 요청) 최소 폭도 그만큼 올렸다 — 안 올리면 좁은 창에서
+     '실제지표' 칸이 0 으로 눌려 글자가 겹친다. 대신 1366px 노트북에서는 가로 스크롤이 생긴다. */
+  table.cases{width:100%;min-width:1474px;border-collapse:collapse;table-layout:fixed}
   /* ★머리글 고정 — 하루치 1440행을 내리다 보면 지금 보는 숫자가 M14 인지
      M16B 인지 알 수 없어진다. 머리글이 상단 바 바로 아래에 붙어 멈춘다.
      · sticky 는 thead 가 아니라 **th** 에 건다. border-collapse:collapse 인
@@ -1288,10 +1291,12 @@
         <th class="acol" style="width:150px">알람</th>
         <th class="rhcol" style="width:170px">발동 룰</th>
         <th class="mcol">실제지표</th>
+        <th class="hjcol" style="width:80px" title="OHT_MAP 의 HID_ZONE">HID_JAM</th>
+        <th class="rtcol" style="width:94px" title="PROBLEM_MAP 레포트 (html) — '링크' 를 누르면 내려받습니다">RET(레포트)</th>
         <th class="amhd" style="width:118px">AMOS HID 구역</th>
         <th class="amhd" style="width:130px">AMOS QUEUE 지표</th>
       </tr></thead>
-      <tbody id="cases"><tr><td colspan="8" class="empty">불러오는 중…</td></tr></tbody>
+      <tbody id="cases"><tr><td colspan="10" class="empty">불러오는 중…</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1363,10 +1368,12 @@
         <th class="acol" style="width:150px">알람</th>
         <th class="rhcol" style="width:170px">발동 룰</th>
         <th class="mcol">실제지표</th>
+        <th class="hjcol" style="width:80px" title="OHT_MAP 의 HID_ZONE">HID_JAM</th>
+        <th class="rtcol" style="width:94px" title="PROBLEM_MAP 레포트 (html) — '링크' 를 누르면 내려받습니다">RET(레포트)</th>
         <th class="amhd" style="width:118px">AMOS HID 구역</th>
         <th class="amhd" style="width:130px">AMOS QUEUE 지표</th>
       </tr></thead>
-      <tbody id="pcases"><tr><td colspan="8" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
+      <tbody id="pcases"><tr><td colspan="10" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -4480,6 +4487,35 @@ function metricCell(ms){
     + '</div>';
 }
 
+/* ── HID_JAM · RET(레포트) — 주피터 OHT_MAP_{day}.csv ─────────────────
+   서버(/api/feed)가 그 분의 OHT_MAP 줄을 r.hid 로 준다 (없으면 안 싣는다).
+   ★고객: "RET 데이터 있으면 링크 없으면 아무것도 안 쓰는 쪽으로, HID_JAM 데이터 없으면
+     아무것도 쓰지 말고 있으면 기입" — 빈 칸에는 '–' 도 안 찍는다.
+   HID_JAM 은 HID_ZONE 값, RET 은 PROBLEM_MAP html 내려받기 '링크'. 나머지 값은 말풍선에. */
+function hidTip(h){
+  return [h.f, h.lv && (h.lv + (h.en ? ` (${h.en})` : '')),
+          h.z && `HID_ZONE ${h.z}`, h.s && `HID_section ${h.s}`,
+          h.rep && `OHT_report ${h.rep}`, h.miss && `OHT_missing ${h.miss}`,
+          h.jam && `OHT_JAM ${h.jam}`, h.stop && `ZONE_STOP ${h.stop}`]
+    .filter(Boolean).join(' · ');
+}
+function hidCell(r){
+  const hs = (r.hid || []).filter(h => h.z);
+  if(!hs.length) return '<td></td>';
+  return '<td><div class="mono">'
+    + hs.map(h => `<div title="${esc(hidTip(h))}">${esc(h.z)}</div>`).join('') + '</div></td>';
+}
+function retHref(h){
+  return `/api/oht_map/report?day=${encodeURIComponent(h.d)}&name=${encodeURIComponent(h.file)}`;
+}
+function retCell(r){
+  const hs = (r.hid || []).filter(h => h.file);
+  if(!hs.length) return '<td></td>';
+  return '<td>' + hs.map(h =>
+    `<div><a class="act" href="${retHref(h)}" download="${esc(h.file)}" title="${esc(h.file)}">링크</a></div>`)
+    .join('') + '</td>';
+}
+
 /* ── FAB 컬럼 ───────────────────────────────────────────────────────
    머리글을 HTML 에 박아 두지 않고 서버가 준 fabs 로 만든다. 코드를 박아
    두면 config.source.jupyter.fabs 를 바꿨을 때 머리글만 옛 이름으로 남는다. */
@@ -4665,8 +4701,8 @@ function almCell(r){
 }
 
 function rowsHtml(list, byId, newAt, cap){
-  // 기본 8칸(시각·CASE·스코어·알람·발동 룰·실제지표·AMOS 둘) + (HI_FAB 1 + FAB 다섯)
-  const ncol = 8 + (FABS.length ? FABS.length + 1 : 0);
+  // 기본 10칸(시각·CASE·스코어·알람·발동 룰·실제지표·HID_JAM·RET·AMOS 둘) + (HI_FAB 1 + FAB 다섯)
+  const ncol = 10 + (FABS.length ? FABS.length + 1 : 0);
   if(!list.length) return `<tr><td colspan="${ncol}" class="empty">해당 등급 데이터 없음</td></tr>`;
   // 최신이 위다 — 상한을 걸어도 방금 들어온 행은 항상 보인다
   const rest = (cap && list.length > cap) ? list.length - cap : 0;
@@ -4691,6 +4727,7 @@ function rowsHtml(list, byId, newAt, cap){
       ${almCell(r)}${hiCell(r)}${fabCells(r)}
       ${reasonCell(r)}
       <td>${metricCell(r.metrics)}</td>
+      ${hidCell(r)}${retCell(r)}
       <td>${dirCell(r.bott_down, r.bott_up)}</td>
       <td>${dirCell(r.queue_down, r.queue_up, true)}</td>
     </tr>`;}).join('') + more;
@@ -5222,7 +5259,7 @@ async function loadPast(day, opt){
   if(PBUSY) return;
   PDAY = day;
   pastBusy(true);
-  $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">불러오는 중…</td></tr>';
+  $('#pcases').innerHTML = '<tr><td colspan="10" class="empty">불러오는 중…</td></tr>';
   try{
     if(opt.force && !await fetchDay(day)) return;    // '다시 확보'
     let fd = await api(`/api/feed?day=${encodeURIComponent(day)}&limit=5000`);
@@ -5255,7 +5292,7 @@ async function loadPast(day, opt){
   }catch(e){
     console.error('과거 조회 실패', e);
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">조회 실패</span>';
-    $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">조회 실패</td></tr>';
+    $('#pcases').innerHTML = '<tr><td colspan="10" class="empty">조회 실패</td></tr>';
   }finally{ pastBusy(false); }
 }
 
@@ -5291,7 +5328,7 @@ function saveText(name, text){
    말하던 것(등급·원문 reason)은 글자 컬럼으로 풀어 준다. */
 function viewCsv(list){
   const head = ['시간', 'CASE', '등급', '종합점수', '알람', '알람근거', 'HI_FAB', ...FABS,
-                'reason', 'reason 원문', '실제지표',
+                'reason', 'reason 원문', '실제지표', 'HID_JAM', 'RET(레포트)',
                 'AMOS HID구역', 'AMOS QUEUE지표'];
   const dirs = (d, u) => [...(d || []).map(x => '▼' + x),
                           ...(u || []).map(x => '▲' + x)].join(' ');
@@ -5302,6 +5339,7 @@ function viewCsv(list){
     ...FABS.map(f => { const v = (r.fab || {})[f]; return v == null ? '' : v; }),
     r.reason || '', r.reason_raw || '',
     (r.metrics || []).map(m => m.raw).join(' '),
+    (r.hid || []).map(h => h.z).join(' '), (r.hid || []).map(h => h.file).filter(Boolean).join(' '),
     dirs(r.bott_down, r.bott_up), dirs(r.queue_down, r.queue_up),
   ]);
   return csvText(head, rows);
@@ -5365,19 +5403,19 @@ async function fetchDay(day){
   const jup = SRC === 'jupyter';
   $('#pinfo').innerHTML = `${esc(fmtDay(day))} 서버에서 가져오는 중… `
     + `<span class="dim">${jup ? '주피터 CSV 를 받습니다' : '로그프레소 하루치는 몇 분 걸릴 수 있습니다'}</span>`;
-  $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">서버 조회 중…</td></tr>';
+  $('#pcases').innerHTML = '<tr><td colspan="10" class="empty">서버 조회 중…</td></tr>';
   try{
     const r = await post('/api/collect', {date: day});
     if(!r.ok){
       $('#pinfo').innerHTML = `<span style="color:var(--crit)">${esc(fmtDay(day))} 확보 실패 — ${esc(r.error||'')}</span>`;
-      $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">확보 실패</td></tr>';
+      $('#pcases').innerHTML = '<tr><td colspan="10" class="empty">확보 실패</td></tr>';
       return false;
     }
     await loadPastDays(day);
     return true;
   }catch(e){
     $('#pinfo').innerHTML = '<span style="color:var(--crit)">확보 실패 — 서버 응답 없음</span>';
-    $('#pcases').innerHTML = '<tr><td colspan="8" class="empty">확보 실패</td></tr>';
+    $('#pcases').innerHTML = '<tr><td colspan="10" class="empty">확보 실패</td></tr>';
     return false;
   }
 }

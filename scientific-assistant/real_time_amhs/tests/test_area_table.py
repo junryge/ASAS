@@ -831,6 +831,9 @@ class 칸이_겹치지_않는다(unittest.TestCase):
     """
 
     OLD_SUM = 1206      # 겹치던 시절의 고정 폭 합 (이 위로 올리면 안 된다)
+    # ★2026-10-06 고객 요청으로 '실제지표' 옆에 두 칸을 더했다 — HID_JAM(80) · RET(레포트)(94).
+    #   이 두 칸 몫만 예산에 더한다 (다른 칸이 넓어지면 여전히 잡힌다).
+    NEW_COLS = 80 + 94
     FABS5 = ["M14", "M14B", "M16A", "M16B", "M16HUB"]
 
     @classmethod
@@ -877,8 +880,9 @@ class 칸이_겹치지_않는다(unittest.TestCase):
         static = [int(x) for x in re.findall(r'width:(\d+)px', self.heads[0])]
         hcol = int(re.search(r'<th class="hcol" style="width:(\d+)px">', self.h).group(1))
         total = sum(static) + hcol + sum(fw(f) for f in self.FABS5)
-        self.assertLessEqual(total, self.OLD_SUM,
-                             "고정 폭 합 %d — 겹치던 시절(%d)보다 넓어졌다" % (total, self.OLD_SUM))
+        self.assertLessEqual(total, self.OLD_SUM + self.NEW_COLS,
+                             "고정 폭 합 %d — 겹치던 시절(%d) + 새 두 칸(%d)보다 넓어졌다"
+                             % (total, self.OLD_SUM, self.NEW_COLS))
 
     def test_두_표의_폭이_같다(self):
         """과거 데이터 탭도 같은 표다 — 한쪽만 고치면 탭을 옮길 때 칸이 흔들린다."""

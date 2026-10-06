@@ -20,7 +20,8 @@ SESS = set()
 # 매번 통째로 받으면 오후엔 1.5MB 를 받아 새 줄 하나를 얻는다. 꼬리만 받는
 # 길(Range)을 시험하려면 가짜 서버도 진짜처럼 굴어야 한다.
 LOCK = threading.Lock()
-STATE = {"csv": CSV, "range": True, "hits": []}   # hits: 요청마다 받은 Range
+STATE = {"csv": CSV, "range": True, "hits": [], "om": [], "om_rev": 0}
+# hits: 요청마다 받은 Range · om: OHT_MAP 요청 · om_rev: 허브룸 잡이 파일을 다시 쓴 횟수
 
 
 def _rng(hdr: str, n: int):
@@ -59,6 +60,24 @@ def fab_csv(day: str, fab: str) -> bytes:
         for i, (sc, lv) in enumerate(scores)
     ]
     return ("\n".join([head] + rows) + "\n").encode("utf-8")
+
+
+def oht_map_csv(day: str) -> bytes:
+    """허브룸 잡의 OHT_MAP_{day}.csv — 실물 머리줄 그대로. 20:14 에 FAB 둘, 20:15 는 레포트 없음."""
+    d = f"{day[:4]}-{day[4:6]}-{day[6:8]}"
+    root = "/project/pjt_shared_pool/job/vhl_ohl/HID_BOTTLENECK/PROBLEM_MAP"
+    rows = [
+        "날짜,시간,FAB,ALARM_KR,ALARM_EN,HID_ZONE,HID_section,OHT_report,OHT_missing,OHT_JAM,"
+        "ZONE_STOP,FILE_NAME,FILE_PATH",
+        f"{d},20:14,M16HUB,경계,WARNING,1,B01,259,11,8,10,PROBLEM_MAP_M16HUB_{day}_2014_WARNING.html,"
+        f"{root}/M16HUB_{day}/PROBLEM_MAP_M16HUB_{day}_2014_WARNING.html",
+        f"{d},20:14,M16A,위험,DANGER,3,A07,301,20,15,12,PROBLEM_MAP_M16A_{day}_2014_DANGER.html,"
+        f"{root}/M16A_{day}/PROBLEM_MAP_M16A_{day}_2014_DANGER.html",
+        f"{d},20:15,M16HUB,경계,WARNING,2,B02,255,9,6,4,,",
+    ]
+    if STATE["om_rev"]:                    # 잡이 그 날 파일을 다시 썼다 — 줄이 하나 늘었다
+        rows.append(f"{d},20:16,M16HUB,위험,DANGER,4,B03,250,30,12,9,,")
+    return ("\n".join(rows) + "\n").encode("utf-8")
 
 
 class Srv(ThreadingMixIn, HTTPServer):
@@ -100,6 +119,13 @@ class H(BaseHTTPRequestHandler):
             if self._cookies().get("session_id") not in SESS:
                 return self._send(403, "<html>Forbidden</html>")
             name = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+            # 허브룸 잡 — …/oht_map/OHT_MAP_20261003.csv · …/PROBLEM_MAP/…/PROBLEM_MAP_….html
+            if name.startswith("OHT_MAP_") and name.endswith(".csv") and "/oht_map/" in path:
+                STATE["om"].append(name)
+                return self._send(200, oht_map_csv(name[8:16]), "text/csv")
+            if name.startswith("PROBLEM_MAP_") and name.endswith(".html") and "/PROBLEM_MAP/" in path:
+                STATE["om"].append(name)
+                return self._send(200, f"<html><body><h1>{name}</h1></body></html>")
             if not name[:8].isdigit() or name[:4] != "2026":
                 return self._send(404, "<html>Not Found</html>")
             # FAB 별 파일 — …/fab분리/20260814_발동이벤트_M14.csv
@@ -142,13 +168,16 @@ class H(BaseHTTPRequestHandler):
                     # 절대 못 잡는 경우다 (수집이 여기서 조용히 틀릴 뻔했다)
                     STATE["csv"] = b"X" + STATE["csv"][1:]
                 elif path == "/mock/reset":
-                    STATE.update(csv=CSV, range=True, hits=[])
+                    STATE.update(csv=CSV, range=True, hits=[], om_rev=0)
                 elif path == "/mock/norange":
                     STATE["range"] = False
+                elif path == "/mock/om_bump":
+                    STATE["om_rev"] += 1
                 elif path == "/mock/truncate":
                     STATE["csv"] = STATE["csv"][:len(STATE["csv"]) // 2]
                 out = json.dumps({"size": len(STATE["csv"]),
-                                  "hits": STATE["hits"][-6:]})
+                                  "hits": STATE["hits"][-6:], "om": STATE["om"][-20:]},
+                                 ensure_ascii=False)
             return self._send(200, out, "application/json")
         return self._send(404, "<html>Not Found</html>")
 

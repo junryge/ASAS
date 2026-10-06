@@ -2172,6 +2172,18 @@ def api_feed():
     if not rows and not asked:
         rows = C["state"].get("last_rows") or []
 
+    # ── OHT_MAP (HID_JAM · RET 레포트) — 주피터의 날짜별 OHT_MAP CSV ──────────
+    # ★오늘은 뒤에서 받는다(3초 폴링을 주피터 왕복만큼 세우지 않는다). 지난 날은
+    #   그 자리에서 받는다 — 과거 탭은 조회할 때 한 번만 묻는다.
+    # ★전역 CFG 로 받는다 — FAB 화면마다 같은 파일을 따로 받지 않게 (주피터 설정은 같다).
+    _om_sig = ""
+    try:
+        import oht_map
+        oht_map.ensure(shown_day, CFG)
+        _om_sig = oht_map.sig(shown_day)
+    except Exception as e:                                  # noqa: BLE001
+        print(f"[FEED] ⚠️ OHT_MAP — HID_JAM · RET 칸을 비웁니다: {e}")
+
     # ★원본이 그대로면 지난 응답을 그대로 준다 (아래 out 생성이 비싸다)
     try:
         import fab_score as _fab_score
@@ -2180,6 +2192,8 @@ def api_feed():
         _st = os.stat(_p)
         _sig = (_st.st_mtime_ns, _st.st_size, len(C["store"].cases),
                 request.args.get("limit"), C["sys"], shown_day,
+                # ★OHT_MAP 도 따로 떨어지는 파일이다 — 새로 받으면 HID_JAM · RET 칸을 다시 만든다
+                _om_sig,
                 # ★등급 컷이 빠져 있었다. 정책 탭에서 컷을 바꾸면 메모리
                 #   CFG 는 바로 바뀌는데 원본 파일은 그대로라 이 키가 같고,
                 #   그래서 **옛 컷으로 계산한 응답**이 캐시에서 그대로 나갔다.
@@ -2219,6 +2233,12 @@ def api_feed():
         except Exception as e:                              # noqa: BLE001
             # FAB 점수가 없어도 목록 자체는 떠야 한다 (컬럼만 빈다)
             print(f"[FEED] ⚠️ FAB 점수 계산 실패 — 컬럼을 비웁니다: {e}")
+
+        # 그 분의 OHT_MAP 줄 — FAB 화면이면 그 FAB 것만 ('HH:MM' → 줄 목록)
+        try:
+            _hid = oht_map.by_time(shown_day, C["sys"]) if _om_sig else {}
+        except Exception:                                   # noqa: BLE001
+            _hid = {}
 
         out = []
         for r in rows:
@@ -2281,6 +2301,11 @@ def api_feed():
                 "case_id": cid,
                 **fx,
             })
+            # '실제지표' 옆 HID_JAM · RET(레포트) — 그 분에 OHT_MAP 줄이 있을 때만 싣는다
+            if _hid and dt.strftime("%Y%m%d") == shown_day:
+                _h = _hid.get(dt.strftime("%H:%M"))
+                if _h:
+                    out[-1]["hid"] = _h
 
         # ── 등급 카운터 — 최근 N분에 경계·위험·초위험이 몇 번 떴나 ──────────
         # ★**정렬 전**에 센다. out 은 아래에서 최신순으로 뒤집히는데, 창을 굴리려면
@@ -2358,6 +2383,30 @@ def api_feed():
         return payload
 
     return _cached_json(FEED_CACHE, C["sys"], _sig, _build)
+
+
+@app.route("/api/oht_map/report")
+def api_oht_map_report():
+    """RET(레포트) — 그 분의 PROBLEM_MAP html 을 주피터에서 받아 내려준다.
+
+    ?day=20261003&name=PROBLEM_MAP_M16HUB_20261003_2014_WARNING.html
+    ★그 날 OHT_MAP CSV 에 적힌 파일만 내준다 (oht_map.report) — 화면이 준 경로로
+      주피터에서 아무 파일이나 끌어오지 않는다.
+    """
+    import urllib.parse
+    import oht_map
+    rctx()
+    day = "".join(ch for ch in (request.args.get("day") or "") if ch.isdigit())[:8]
+    name = (request.args.get("name") or "").strip()
+    raw, err = oht_map.report(day, name, CFG)
+    if err:
+        return jsonify({"ok": False, "error": err}), 404
+    resp = Response(raw, mimetype="text/html")
+    ascii_name = name.encode("ascii", "replace").decode().replace('"', "")
+    resp.headers["Content-Disposition"] = (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{urllib.parse.quote(name)}")
+    return resp
 
 
 @app.route("/api/collect", methods=["POST"])

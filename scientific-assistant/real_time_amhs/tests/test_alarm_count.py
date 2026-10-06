@@ -486,15 +486,16 @@ class 화면배선(unittest.TestCase):
 
     def test_칸_수가_여덟로_늘었다(self):
         # ★머리글·빈 표·'더 보기' 줄이 다 같이 움직여야 한다
-        self.assertIn("const ncol = 8 + (FABS.length ? FABS.length + 1 : 0);", self.src)
+        # ★2026-10-06 — '실제지표' 옆 HID_JAM · RET(레포트) 두 칸이 더해져 기본 열 칸이다
+        self.assertIn("const ncol = 10 + (FABS.length ? FABS.length + 1 : 0);", self.src)
         self.assertEqual(self.src.count('<th class="acol"'), 2,
                          "실시간·과거 두 표 다 머리글이 있어야 한다")
-        for t in ('<tbody id="cases"><tr><td colspan="8"',
-                  '<tbody id="pcases"><tr><td colspan="8"'):
+        for t in ('<tbody id="cases"><tr><td colspan="10"',
+                  '<tbody id="pcases"><tr><td colspan="10"'):
             self.assertIn(t, self.src, t)
         self.assertEqual(
-            self.src.count("""$('#pcases').innerHTML = '<tr><td colspan="8" class="empty">"""), 5,
-            "과거 탭의 안내 줄 다섯 개가 다 여덟 칸이어야 한다")
+            self.src.count("""$('#pcases').innerHTML = '<tr><td colspan="10" class="empty">"""), 5,
+            "과거 탭의 안내 줄 다섯 개가 다 열 칸이어야 한다")
 
     def test_FAB_칸은_알람_뒤에_끼운다(self):
         # 스코어 뒤에 끼우면 HI_FAB 이 종합점수와 알람 사이로 파고든다
@@ -502,7 +503,8 @@ class 화면배선(unittest.TestCase):
 
     def test_표_최소폭도_같이_올렸다(self):
         # 칸이 하나 늘었는데 min-width 가 그대로면 마지막 칸이 0으로 눌린다
-        self.assertIn("min-width:1300px", self.src)
+        # ★2026-10-06 — HID_JAM(80) · RET(레포트)(94) 두 칸만큼 더 올렸다
+        self.assertIn("min-width:1474px", self.src)
 
     def test_내려받기에도_들어간다(self):
         m = re.search(r"function viewCsv\(list\)\{[\s\S]*?\n\}", self.src)
