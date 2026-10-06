@@ -529,8 +529,9 @@
      지우는 셈이다. */
   table.cases td.fcol.hifab b{font-weight:800}
   /* reason — 발동 룰을 한 줄에 하나씩. 칸이 좁아져서 한 줄로 흘리면
-     룰 이름 가운데가 갈라진다 ('리프터 정 / 체'). */
-  table.cases td.rcol{font-size:13.5px;line-height:1.5;color:var(--txb)}
+     룰 이름 가운데가 갈라진다 ('리프터 정 / 체').
+     ★2026-10-06 고객: "발동 룰도 10PX 로 하자" — 실제지표와 같이 13.5 → 10px */
+  table.cases td.rcol{font-size:10px;line-height:1.5;color:var(--txb)}
   /* ★word-break:keep-all — 한글은 기본이 '어디서나 줄바꿈' 이라 칸이 좁아지면
      룰 이름 가운데가 갈라졌다 ('역방향 증 / 가 4개'). 띄어쓰기에서만 접는다. */
   table.cases td.rcol .rln{white-space:normal;word-break:keep-all;text-wrap:pretty}
@@ -540,8 +541,8 @@
   table.cases td .mcell.many, table.cases td .mcell.many .dim{color:var(--many)}
   /* 실제지표 — 시안 mono --txb. 크기를 metricCell 인라인에서 여기로 옮겼다
      (10.5px 는 raw 컬럼명이 길어 줄이던 값인데, 시안 행 높이 54px 면 12.5px 가 들어간다)
-     ★2026-10-06 고객: "실제지표 글자 크기 줄이자" — 12.5 → 11px (머리글과 같은 크기) */
-  table.cases td .mcell{font-size:11px;line-height:1.45;color:var(--txb)}
+     ★2026-10-06 고객: "실제지표 글자 크기 줄이자" → "10PX 로" — 12.5 → 10px */
+  table.cases td .mcell{font-size:10px;line-height:1.45;color:var(--txb)}
   table.cases td .mcell .dim{font-size:10px}
   /* ★raw 컬럼명(M16HUB.QUE.TIME.AVGTOTALTIME1MIN)은 띄어쓰기가 없어 줄바꿈 지점이
      없다. 예전엔 한 줄로 자르고 전문은 title(호버)에만 뒀는데, 이 칸은 판단 근거라
@@ -1219,6 +1220,7 @@
     <div class="ohtbar" id="ohtbar">
       <span class="note">그 1분 OHT 재생</span>
       <span class="ohtbtns" id="ohtbtns"></span>
+      <span class="note" id="ohthid"></span>
       <span class="note" id="ohtnote"></span>
     </div>
     <div id="gbody" class="gbody"><div class="empty">불러오는 중…</div></div>
@@ -4520,6 +4522,17 @@ function retCell(r){
 /* ── FAB 컬럼 ───────────────────────────────────────────────────────
    머리글을 HTML 에 박아 두지 않고 서버가 준 fabs 로 만든다. 코드를 박아
    두면 config.source.jupyter.fabs 를 바꿨을 때 머리글만 옛 이름으로 남는다. */
+/* ★표에 세우는 FAB 칸 — ALL 은 다섯 다, **FAB 화면은 그 FAB 하나만**
+   (고객 2026-10-06: "ALL 빼고 나머지는 각 해당하는 FAB 만 보면 안되나 —
+   HI_FAB 옆에 컬럼 전부 다 나와 있는데"). 머리글·행·빈 줄 colspan·CSV 가
+   전부 이것 하나를 따른다 — 하나라도 FABS 를 쓰면 칸이 어긋난다.
+   다른 FAB 점수를 버리는 것은 아니다: HI_FAB 이름·툴팁, 추이 겹쳐보기,
+   구간 그래프에는 그대로 있다. 목록에 없는 시스템이면 예전처럼 다 세운다
+   (0칸이면 HI_FAB 만 덩그러니 남는다). */
+function fabCols(){
+  const me = FABS.find(f => String(f).toUpperCase() === String(SYS || '').toUpperCase());
+  return (SYS === 'ALL' || !me) ? FABS : [me];
+}
 function syncFabCols(){
   document.querySelectorAll('table.cases thead tr').forEach(tr=>{
     tr.querySelectorAll('th.fcol,th.hcol').forEach(th=>th.remove());
@@ -4548,7 +4561,7 @@ function syncFabCols(){
            가로 스크롤이 안 생기는 성질을 그대로 지킨다. */
     const fcolW = f => Math.max(46, String(f).length * 9 + 10);
     add('<th class="hcol" style="width:76px">HI_FAB</th>');
-    FABS.forEach(f => add(`<th class="fcol" style="width:${fcolW(f)}px">${esc(f)}</th>`));
+    fabCols().forEach(f => add(`<th class="fcol" style="width:${fcolW(f)}px">${esc(f)}</th>`));
   });
 }
 
@@ -4572,7 +4585,7 @@ function setFabs(fd){
 function fabCells(r){
   if(!FABS.length) return '';
   const sc = r.fab || {};
-  return FABS.map(f=>{
+  return fabCols().map(f=>{
     const v = sc[f];
     /* ★클래스 이름은 'top' 이 아니다 — 상단 바(.top)와 이름이 겹쳐서
        칸에 display:flex 와 배경(--panel)이 그대로 걸렸다. 그래서 숫자마다
@@ -4702,8 +4715,8 @@ function almCell(r){
 }
 
 function rowsHtml(list, byId, newAt, cap){
-  // 기본 10칸(시각·CASE·스코어·알람·발동 룰·실제지표·HID_JAM·RET·AMOS 둘) + (HI_FAB 1 + FAB 다섯)
-  const ncol = 10 + (FABS.length ? FABS.length + 1 : 0);
+  // 기본 10칸(시각·CASE·스코어·알람·발동 룰·실제지표·HID_JAM·RET·AMOS 둘) + (HI_FAB 1 + FAB 칸 — ALL 다섯 · FAB 화면 하나)
+  const ncol = 10 + (FABS.length ? fabCols().length + 1 : 0);
   if(!list.length) return `<tr><td colspan="${ncol}" class="empty">해당 등급 데이터 없음</td></tr>`;
   // 최신이 위다 — 상한을 걸어도 방금 들어온 행은 항상 보인다
   const rest = (cap && list.length > cap) ? list.length - cap : 0;
@@ -5328,7 +5341,7 @@ function saveText(name, text){
 /* 화면의 표 → CSV. 컬럼 순서를 표와 똑같이 두고, 표에서 색·모양으로만
    말하던 것(등급·원문 reason)은 글자 컬럼으로 풀어 준다. */
 function viewCsv(list){
-  const head = ['시간', 'CASE', '등급', '종합점수', '알람', '알람근거', 'HI_FAB', ...FABS,
+  const head = ['시간', 'CASE', '등급', '종합점수', '알람', '알람근거', 'HI_FAB', ...fabCols(),
                 'reason', 'reason 원문', '실제지표', 'HID_JAM', 'RET(레포트)',
                 'AMOS HID구역', 'AMOS QUEUE지표'];
   const dirs = (d, u) => [...(d || []).map(x => '▼' + x),
@@ -5337,7 +5350,7 @@ function viewCsv(list){
     r.datetime || '', r.case_id || '', r.level || '', Math.round(r.score),
     (r.alm || {}).lv || '', (r.alm || {}).why || '',
     r.hi_fab || '',
-    ...FABS.map(f => { const v = (r.fab || {})[f]; return v == null ? '' : v; }),
+    ...fabCols().map(f => { const v = (r.fab || {})[f]; return v == null ? '' : v; }),
     r.reason || '', r.reason_raw || '',
     (r.metrics || []).map(m => m.raw).join(' '),
     (r.hid || []).map(h => h.z).join(' '), (r.hid || []).map(h => h.file).filter(Boolean).join(' '),
@@ -5515,7 +5528,9 @@ async function fillOht(at, label){
   try{
     const d = await api(`/api/world?at=${encodeURIComponent(at)}`
                       + `&label=${encodeURIComponent(label || '')}`);
-    if(!d.enabled){ bar.classList.add('hidden'); return; }
+    // ★HID_JAM · RET 이 있으면 월드모델 연결을 꺼 둔 곳에서도 이 줄은 보인다
+    //   ('불러오는 중…' 은 지운다 — 안 지우면 그 글자가 HID 옆에 그대로 남는다)
+    if(!d.enabled){ note.textContent = ''; bar.classList.toggle('hidden', !$('#ohthid').innerHTML); return; }
     bar.classList.remove('hidden');
     const up = (d.server || {}).ok;
     box.innerHTML = (d.links || []).map(x =>
@@ -5543,6 +5558,20 @@ async function fillOht(at, label){
   }
 }
 
+/* 그 분의 HID_JAM · RET(레포트) — 그래프 창 'OHT 재생' 줄, FAB 단추 옆.
+   ★고객: "더블 클릭하면 그래프 나오는 거기서 HID_JAM, RET(레포트) 데이터 나오게 —
+     OHT 맵 클릭하는 데 집어넣으면 되겠네". 표와 같이 없으면 아무것도 안 쓴다. */
+function fillHid(r){
+  const el = $('#ohthid');
+  if(!el) return;
+  const hs = (r && r.hid) || [];
+  const z = hs.filter(h => h.z), f = hs.filter(h => h.file);
+  el.innerHTML = (z.length ? `HID_JAM <b class="mono">${z.map(h => esc(h.z)).join(' · ')}</b>` : '')
+    + (f.length ? `${z.length ? ' · ' : ''}RET(레포트) ` + f.map(h =>
+        `<a class="act" href="${retHref(h)}" download="${esc(h.file)}" title="${esc(h.file)}">링크</a>`).join(' ')
+      : '');
+}
+
 async function openGraph(at){
   GAT = at;
   document.querySelector('.gbox').classList.remove('wide');
@@ -5553,6 +5582,7 @@ async function openGraph(at){
     : '구간 그래프';
   $('#gtitle').textContent = title;
   $('#gmask').classList.remove('hidden');
+  fillHid(r);
   // ★제목 그대로를 증거 라벨로 넘긴다 — 팝업에 어느 건인지 찍힌다
   fillOht(r ? (r.datetime || at) : at, title);
   await drawGraph();

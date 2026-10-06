@@ -19,6 +19,8 @@ const parts = [
   grab(/const fabTx\s+=[^\n]*\n/, 'fabTx'),
   grab(/const fabBold =[^\n]*\n/, 'fabBold'),
   grab(/const fabLv = [\s\S]*?';\n/, 'fabLv'),
+  /* fabCells 가 칸 목록을 fabCols() 로 고른다 (FAB 화면은 그 FAB 하나) */
+  grab(/function fabCols\(\)\{[\s\S]*?\n\}/, 'fabCols'),
   grab(/function fabCells\(r\)\{[\s\S]*?\n\}/, 'fabCells'),
   grab(/function hiCell\(r\)\{[\s\S]*?\n\}/, 'hiCell'),
   grab(/function cutSig\(\)\{[\s\S]*?\n\}/, 'cutSig'),
@@ -30,6 +32,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c =>
 
 const M = new Function('esc', `
   let FABS = ['M14'], FCUTS = {}, CUTS = {warn:60, danger:71, critical:85};
+  let SYS = 'ALL';
   let ALARM = {enabled:true, window_min:10, warn:3, danger:1, critical:1};
   let ALARM_FAB = {};   /* ALL 화면의 FAB 카운터 정책 — 서명에 같이 묶인다 */
   ${parts.join('\n')}

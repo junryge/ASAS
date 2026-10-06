@@ -487,7 +487,8 @@ class 화면배선(unittest.TestCase):
     def test_칸_수가_여덟로_늘었다(self):
         # ★머리글·빈 표·'더 보기' 줄이 다 같이 움직여야 한다
         # ★2026-10-06 — '실제지표' 옆 HID_JAM · RET(레포트) 두 칸이 더해져 기본 열 칸이다
-        self.assertIn("const ncol = 10 + (FABS.length ? FABS.length + 1 : 0);", self.src)
+        # ★같은 날 — FAB 칸 수는 fabCols() 가 정한다 (ALL 다섯 · FAB 화면 하나)
+        self.assertIn("const ncol = 10 + (FABS.length ? fabCols().length + 1 : 0);", self.src)
         self.assertEqual(self.src.count('<th class="acol"'), 2,
                          "실시간·과거 두 표 다 머리글이 있어야 한다")
         for t in ('<tbody id="cases"><tr><td colspan="10"',
@@ -515,8 +516,10 @@ class 화면배선(unittest.TestCase):
         self.assertIn("(r.alm || {}).why", blk)
         head = re.search(r"const head = \[([\s\S]*?)\];", blk).group(1)
         body = re.search(r"const rows = list\.map\(r => \[([\s\S]*?)\]\);", blk).group(1)
-        self.assertEqual(head.count("...FABS"), body.count("...FABS.map"),
-                         "머리글과 행의 FAB 자리가 어긋났다")
+        # ★FAB 칸은 표와 같은 fabCols() — FAB 화면이면 그 FAB 하나만 나간다
+        self.assertEqual(head.count("...fabCols()"), 1, "머리글의 FAB 자리")
+        self.assertEqual(body.count("...fabCols().map"), 1, "행의 FAB 자리")
+        self.assertNotIn("...FABS", blk, "표는 fabCols 인데 CSV 만 다섯이면 칸이 어긋난다")
 
     def test_정책_탭에_카드가_있다(self):
         for need in ('id="almrow"', 'id="alm-save"', 'id="alm-now"', 'id="almnote"'):

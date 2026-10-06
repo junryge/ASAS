@@ -218,7 +218,11 @@ class DashboardFabCols(unittest.TestCase):
     def test_FAB_머리글은_서버가_준_목록으로_만든다(self):
         """코드를 HTML 에 박아 두면 config 의 fabs 를 바꿨을 때 머리글만
         옛 이름으로 남는다."""
-        self.assertIn("FABS.forEach(f => add(", self.h)
+        # ★칸 목록은 fabCols() — 그것도 서버 목록(FABS)에서 고른다
+        self.assertIn("fabCols().forEach(f => add(", self.h)
+        m = re.search(r"function fabCols\(\)\{.*?\n\}", self.h, re.S)
+        self.assertIsNotNone(m, "fabCols 가 없다")
+        self.assertIn("FABS.find(", m.group(0))
 
     def test_정상은_흰색이다(self):
         """다섯 FAB 은 늘 떠 있는 컬럼이라 정상까지 칠하면 색이 정보를 잃는다."""
@@ -261,12 +265,58 @@ class DashboardFabCols(unittest.TestCase):
                          self.h, re.S)
         self.assertIsNotNone(head, "실시간 표 머리글을 못 찾았다")
         nth = len(re.findall(r"<th[ >]", head.group(1)))
-        self.assertIn(f"const ncol = {nth} + (FABS.length ? FABS.length + 1 : 0);", m,
+        self.assertIn(f"const ncol = {nth} + (FABS.length ? fabCols().length + 1 : 0);", m,
                       f"머리글은 {nth}칸인데 ncol 이 다르다 — 빈 표·'더 보기' 줄이 어긋난다")
         # 빈 표 안내 줄도 같은 수여야 한다
         for tb in ('cases', 'pcases'):
             self.assertIn(f'<tbody id="{tb}"><tr><td colspan="{nth}"', self.h,
                           f"{tb} 의 빈 줄 colspan 이 머리글과 다르다")
+
+    def test_FAB_화면은_그_FAB_칸만(self):
+        """고객 2026-10-06: "ALL 빼고 나머지는 각 해당하는 FAB 만 보면 안되나 —
+        HI_FAB 옆에 컬럼 전부 다 나와 있는데". 머리글·행·colspan 이 같이 줄어야
+        한다 — 하나만 줄면 칸이 밀린다. node 로 실제로 돌린다."""
+        import json
+        import subprocess
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node 가 없다")
+        grab = lambda pat: re.search(pat, self.h, re.S).group(0)
+        js = "\n".join([
+            "const esc = s => String(s);",
+            "let FABS = ['M14','M14B','M16A','M16B','M16HUB'], FCUTS = {}, SYS = 'ALL';",
+            grab(r"const lvTx = .*?;\n"), grab(r"const fabTx\s+=[^\n]*\n"),
+            grab(r"const fabBold =[^\n]*\n"), grab(r"const fabLv = .*?';\n"),
+            grab(r"function fabCols\(\)\{.*?\n\}"), grab(r"function fabCells\(r\)\{.*?\n\}"),
+            """
+const r = {fab: {M14: 10, M14B: 20, M16A: 30, M16B: 40, M16HUB: 77}, hi_fab: 'M16HUB'};
+const out = {};
+for (const s of ['ALL', 'M16HUB', 'm14b', 'M10']) {
+  SYS = s;
+  out[s] = {cols: fabCols(), tds: (fabCells(r).match(/<td /g) || []).length, html: fabCells(r)};
+}
+console.log(JSON.stringify(out));
+"""])
+        r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertEqual(got["ALL"]["cols"], ["M14", "M14B", "M16A", "M16B", "M16HUB"], "ALL 은 다섯 다")
+        self.assertEqual(got["ALL"]["tds"], 5)
+        self.assertEqual(got["M16HUB"]["cols"], ["M16HUB"], "FAB 화면은 그 FAB 하나")
+        self.assertEqual(got["M16HUB"]["tds"], 1)
+        self.assertIn(">77</b>", got["M16HUB"]["html"], "그 FAB 의 점수")
+        self.assertEqual(got["m14b"]["cols"], ["M14B"], "대소문자가 달라도 같은 FAB")
+        self.assertEqual(got["M10"]["cols"], got["ALL"]["cols"],
+                         "목록에 없는 시스템이면 예전처럼 다 — HI_FAB 만 남기지 않는다")
+        # 머리글 · 빈 줄 colspan · CSV 도 같은 목록을 쓴다 (FABS 를 직접 쓰면 칸이 어긋난다)
+        self.assertIn("fabCols().forEach(f => add(", self.h)
+        self.assertIn("const ncol = 10 + (FABS.length ? fabCols().length + 1 : 0);", self.h)
+        self.assertNotIn("FABS.forEach(f => add(", self.h)
+
+    def test_발동_룰_글자_10px(self):
+        """고객 2026-10-06: "발동 룰도 10PX 로 하자" (실제지표와 같이)."""
+        self.assertIn("table.cases td.rcol{font-size:10px;", self.h)
+        self.assertIn("table.cases td .mcell{font-size:10px;", self.h)
 
     # ── 추이 그래프에 FAB 겹쳐보기 ──────────────────────────────────
     def test_겹쳐보기_체크박스가_실시간과_과거_모두_있다(self):
@@ -626,7 +676,7 @@ class Download(unittest.TestCase):
         for col in ("시간", "CASE", "종합점수", "HI_FAB", "reason",
                     "실제지표", "AMOS HID구역", "AMOS QUEUE지표"):
             self.assertIn("'%s'" % col, self.v, col)
-        self.assertIn("...FABS", self.v, "FAB 다섯이 서버 목록을 안 따라간다")
+        self.assertIn("...fabCols()", self.v, "FAB 칸이 표(fabCols)를 안 따라간다")
 
     def test_색으로만_말하던_것을_글자로_푼다(self):
         """표에서는 등급이 칩 색이고 reason 원문은 툴팁이다 — 파일에는 안 남는다."""

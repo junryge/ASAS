@@ -261,10 +261,43 @@ class 화면(unittest.TestCase):
 
     def test_행도_같은_자리(self):
         self.assertIn("<td>${metricCell(r.metrics)}</td>\n      ${hidCell(r)}${retCell(r)}", self.h)
-        self.assertIn("const ncol = 10 + (FABS.length ? FABS.length + 1 : 0);", self.h)
+        self.assertIn("const ncol = 10 + (FABS.length ? fabCols().length + 1 : 0);", self.h)
 
     def test_내보내기도_같은_순서(self):
         self.assertIn("'실제지표', 'HID_JAM', 'RET(레포트)',", self.h)
+
+    def test_그래프_창_OHT_재생_줄에도(self):
+        """고객: "더블 클릭하면 그래프 나오는 거기서 HID_JAM, RET(레포트) — OHT 맵 클릭하는 데"."""
+        self.assertIn('<span class="ohtbtns" id="ohtbtns"></span>\n      <span class="note" id="ohthid"></span>',
+                      self.h, "FAB 단추 바로 옆")
+        i = self.h.index("async function openGraph(at){")
+        self.assertIn("fillHid(r);", self.h[i:i + 900])
+        self.assertIn("bar.classList.toggle('hidden', !$('#ohthid').innerHTML)", self.h,
+                      "월드모델 연결이 꺼져 있어도 HID 가 있으면 줄은 보인다")
+        self.assertIn("if(!d.enabled){ note.textContent = '';", self.h,
+                      "꺼져 있으면 '불러오는 중…' 이 HID 옆에 남는다")
+        node = shutil.which("node")
+        if not node:
+            return
+        k = self.h.index("const esc = ")
+        js = (self.h[k:self.h.index("\n", k) + 1]
+              + self.h[self.h.index("function retHref(h)"):self.h.index("function retCell(r)")]
+              + self.h[self.h.index("function fillHid(r){"):self.h.index("async function openGraph(at){")]
+              + """
+const el = {innerHTML: ''}; const $ = () => el;
+const out = [];
+fillHid({hid: [{d:'20261003', f:'M16HUB', z:'1', file:'PROBLEM_MAP_M16HUB_20261003_2014_WARNING.html'}]}); out.push(el.innerHTML);
+fillHid({hid: [{d:'20261003', f:'M16HUB', z:'2', file:''}]}); out.push(el.innerHTML);
+fillHid({}); out.push(el.innerHTML);
+console.log(JSON.stringify(out));
+""")
+        r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        a, b, c = json.loads(r.stdout)
+        self.assertIn('HID_JAM <b class="mono">1</b>', a)
+        self.assertIn("RET(레포트) <a class=\"act\" href=\"/api/oht_map/report?day=20261003&name=", a)
+        self.assertEqual(b, 'HID_JAM <b class="mono">2</b>', "레포트가 없으면 RET 은 안 쓴다")
+        self.assertEqual(c, "", "없으면 아무것도 안 쓴다")
 
     def test_칸_그리기(self):
         """hidCell · retCell 을 node 로 실제로 돌린다 (node 없으면 건너뜀)."""
