@@ -56,7 +56,7 @@ python hubroom_predictor.py AWS_IDC_DATA_HIS_202605.CSV -o ./predict_tobe
 | 조건 (FAB 하나) | ALL 점수 `unified_risk_score` | FAB 점수 `{FAB}_score_raw` |
 |---|---|---|
 | 미보고 ≥5 **와** JAM ≥10 같이 | +15 | +15 |
-| 미보고 ≤5 **와** JAM ≤10 같이 | −10 | −15 |
+| 미보고 ≤5 **와** JAM ≤10 같이 | −10 | −10 |
 | HT_STOP ≥1 | +10 | +10 |
 | HT_STOP 0 | 그대로 | 그대로 |
 
