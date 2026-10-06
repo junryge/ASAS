@@ -77,6 +77,17 @@
     btnStop.onclick = function () { setMode('stop'); };
   }
 
+  // 큰 시계 앞에 'OHT' — 이 시계는 OHT 시각(로그프레소 데이터)이다. 스코어 시각(관제)은 칩에 따로
+  var tdisp = $id('time-display');
+  if (tdisp && tdisp.parentNode) {
+    var cap = document.createElement('span');
+    cap.className = 'tb-cap';
+    cap.textContent = 'OHT';
+    cap.title = 'OHT 시각 — 로그프레소에서 받은 OHT 데이터의 시각 (화면은 몇 초 늦춰 부드럽게 보입니다)';
+    tdisp.parentNode.insertBefore(cap, tdisp);
+    tdisp.title = cap.title;
+  }
+
   // 상태줄 — 구간 조회 칸 자리에
   var chip = document.createElement('div');
   chip.className = 'tb-group';
@@ -96,6 +107,7 @@
   var MODE = 'stop';          // 'play' | 'pause' | 'stop'
   var INIT = true;            // 첫 스냅샷 — 서버 피드가 이미 PLAY 중이면 따라간다
   var LAST = null, LAST_AT = 0, LIVE = null;
+  var SHOW = 0;               // 화면 시계(ms) — ★절대 뒤로 안 간다 (고객: "늘었다 다시 과거로 가면 안 돼")
 
   function badge() {
     var b = $id('status-badge');
@@ -123,13 +135,13 @@
       dot.textContent = '■ 정지';
       t.innerHTML = '<b style="color:var(--fg)">' + esc(L.table) + '</b> · [▶ 실시간 PLAY] 를 누르면 '
         + '지금 데이터를 받습니다 (지금 보는 FAB 하나만 묻습니다)'
-        + (L.shown_time ? ' · 마지막 화면 ' + hms(L.shown_time) : '');
+        + (L.shown_time ? ' · 마지막 OHT ' + hms(L.shown_time) : '');
       return;
     }
     var p = ['<b style="color:var(--fg)">' + esc(L.table) + '</b>'];
     if (MODE === 'pause') p.push('<b style="color:var(--time)">일시정지</b> — 조회는 계속됩니다');
     if (L.shown_time) {
-      p.push('화면 <b style="color:var(--time)">' + hms(L.shown_time) + '</b>'
+      p.push('OHT <b style="color:var(--time)">' + hms(L.shown_time) + '</b>'
         + (L.lag_sec != null ? ' (지금보다 ' + L.lag_sec + '초 늦음)' : ''));
     } else {
       p.push(L.polls ? '아직 받은 줄이 없습니다' : '처음 받는 중…');
@@ -170,20 +182,28 @@
         //   잡으면 시계가 그 초에 붙어 안 흐른다
         if (!LAST || LAST.time !== d.time) LAST_AT = Date.now();
         LAST = d;
+        tickClock();          // ★화면 함수가 방금 시계를 장면 시각으로 되돌려 놓았다 — 같은 차례에 다시 쓴다
       }
       badge();
       try { paint(L); } catch (e) { /* 상태줄 실패로 화면을 멈추지 않는다 */ }
     };
   }
-  // PLAY 중에는 시계가 초 단위로 흐른다 — 2초 칸 사이를 벽시계로 메운다 (칸 하나 넘게는 안 간다)
-  setInterval(function () {
+  // PLAY 중에는 시계가 초 단위로 흐른다 — 2초 칸 사이를 벽시계로 메운다 (칸 하나 넘게는 안 간다).
+  // ★절대 뒤로 안 간다. 다음 장면이 시계보다 앞이면(칸 시각은 그 칸의 마지막 보고 시각이라 1초
+  //   어긋날 수 있다) 따라올 때까지 그 자리에서 기다린다. 앞으로 크게 뛰는 것은 정지했다 다시
+  //   PLAY 해서 '지금' 으로 건너뛸 때뿐이다.
+  function tickClock() {
     var el = $id('time-display');
     if (!el || MODE !== 'play' || !LAST || !LAST.time) return;
-    var b = new Date(LAST.time.replace(' ', 'T'));
+    var b = Date.parse(LAST.time.replace(' ', 'T'));
     if (isNaN(b)) return;
-    var t = new Date(b.getTime() + Math.min(Date.now() - LAST_AT, 2000));
-    el.textContent = pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds());
-  }, 250);
+    var t = b + Math.min(Date.now() - LAST_AT, 2000);
+    if (t < SHOW) t = SHOW;
+    SHOW = t;
+    var d = new Date(t);
+    el.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  setInterval(tickClock, 250);
   // 서버가 아예 응답이 없을 때
   setInterval(function () {
     if (window.__liveErr && (!window.__liveOk || Date.now() - window.__liveOk > 5000)) {
@@ -299,6 +319,8 @@
   if (typeof window.applyFab === 'function') {
     var origApply = window.applyFab;
     window.applyFab = function (f, p) {
+      SHOW = 0;               // 다른 FAB 의 시계 — 앞 FAB 시각에 붙어 기다리지 않게 새로
+      LAST = null;
       return Promise.resolve(origApply(f, p)).then(function (x) { scoreLoad(); return x; });
     };
   }
@@ -319,8 +341,10 @@
     el.style.display = '';
     el.style.background = el.style.color = '';
     el.className = 'risk risk-' + gradeOf(r.level).cls;
-    el.textContent = SCORE.sys + ' ' + Math.round(+r.score || 0) + ' · ' + (r.level || '') + (almText(r.alm) ? ' · ' + almText(r.alm) : '');
-    el.title = '관제 스코어 ' + (r.datetime || '') + ' 기준 (1분마다) — 누르면 오른쪽 스코어 탭';
+    el.textContent = '스코어 ' + (r.time || '') + ' · ' + SCORE.sys + ' ' + Math.round(+r.score || 0) + ' · '
+      + (r.level || '') + (almText(r.alm) ? ' · ' + almText(r.alm) : '');
+    el.title = '스코어 시각 ' + (r.datetime || '') + ' — 관제가 1분마다 매긴 이 FAB 의 점수 (OHT 시각과 따로 간다)'
+      + ' · 누르면 오른쪽 스코어 탭';
   }
 
   function minsAgo(dt) {
@@ -341,7 +365,7 @@
     }
     var rows = S.rows || [], r = rows[0];
     var ago = r ? minsAgo(r.datetime) : null;
-    sum.innerHTML = '관제 <b>' + esc(S.sys) + '</b> 스코어 · 1분마다'
+    sum.innerHTML = '관제 <b>' + esc(S.sys) + '</b> 스코어 <b>' + esc(r ? r.time || '' : '') + '</b> · 1분마다'
       + (S.fallback ? ' · <b style="color:#f59e0b">오늘 수집이 없어 ' + esc(S.day) + ' 자료</b>' : '')
       + (ago != null && ago > 5 && !S.fallback ? ' · <b style="color:#f59e0b">마지막 ' + esc((r.datetime || '').slice(11, 16)) + ' (' + ago + '분 전)</b>' : '');
     if (!r) {

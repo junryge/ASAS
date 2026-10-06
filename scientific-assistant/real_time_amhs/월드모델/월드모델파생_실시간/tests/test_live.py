@@ -160,6 +160,42 @@ class 피드(unittest.TestCase):
         self.assertEqual(s, cur - timedelta(seconds=LE.OVERLAP_SEC))
         self.assertLessEqual((e - s).total_seconds(), LE.STEP_Q_SEC + LE.OVERLAP_SEC, "한 번에 5분을 묻지 않는다")
 
+    def test_오래_쉬었으면_지금으로_건너뛰고_구멍은_거꾸로(self):
+        """정지했다 다시 PLAY — 1분씩 따라잡으면 화면 시각이 여러 번 크게 뛴다
+        (고객: "갑자기 늘었다 다시 과거로 가고 그러면 안 돼"). 한 번에 지금으로."""
+        self.warm()
+        old_cursor = self.f.cursor
+        shown0, _ = self.f.current()
+        self.now[0] += timedelta(seconds=LE.JUMP_SEC + 60)        # 정지해 있던 동안
+        self.wall[0] += LE.JUMP_SEC + 60
+        n0 = len(self.calls)
+        self.f.poll_once()
+        edge = self.now[0] - timedelta(seconds=LE.EDGE_SEC)
+        _, s, e = self.calls[n0]
+        self.assertEqual(e, edge, "지금까지 묻는다 (밀린 1분부터가 아니라)")
+        self.assertEqual(s, edge - timedelta(seconds=self.f.step))
+        self.assertTrue(self.f.status["jumped"])
+        _, bs, be = self.calls[n0 + 1]
+        self.assertEqual(be, s, "구멍은 거꾸로 채운다 — 건너뛴 시작에서 뒤로")
+        for _ in range(6):
+            self.step(5)
+        self.assertLessEqual(self.f.back_to, old_cursor, "건너뛴 구멍을 다 채웠다")
+        t, _ = self.f.current()
+        self.assertGreater(t, shown0)
+        seen = [t]
+        for _ in range(6):                                          # 그 뒤로는 차례로, 뒤로 안 간다
+            self.wall[0] += 1
+            seen.append(self.f.current()[0])
+        self.assertEqual(seen, sorted(seen))
+
+    def test_적재가_늦은_것은_건너뛰지_않는다(self):
+        """계속 묻고 있는데 로그프레소 적재만 늦으면(데이터 시각이 뒤처짐) 건너뛰지 않는다 —
+        건너뛰면 아직 안 들어온 '지금' 만 묻다가 화면이 멈춘다."""
+        self.warm()
+        self.now[0] += timedelta(seconds=LE.JUMP_SEC + 60)        # 데이터만 밀림 (벽시계는 그대로)
+        self.f.poll_once()
+        self.assertFalse(self.f.status["jumped"])
+
     def test_늦게_온_옛_줄은_버린다(self):
         self.warm()
         before = dict(self.f.state["V09000"])
@@ -580,6 +616,16 @@ setImmediate(() => setImmediate(() => setImmediate(() => setImmediate(() => {
             self.assertIn(need, self.js)
         self.assertIn("if (!LAST || LAST.time !== d.time) LAST_AT = Date.now();", self.js,
                       "시계 기준은 장면이 바뀔 때만 — 아니면 시계가 그 초에 붙는다")
+        # ★시계는 절대 뒤로 안 간다 (고객: "늘었다 다시 과거로 가면 안 돼")
+        self.assertIn("if (t < SHOW) t = SHOW;", self.js)
+        i = self.js.index("origUpdate(d);")
+        self.assertIn("tickClock();", self.js[i:i + 400],
+                      "화면 함수가 시계를 장면 시각으로 되돌린 직후 같은 차례에 다시 쓴다 (깜빡이며 뒤로 가던 것)")
+        self.assertIn("SHOW = 0;", self.js, "FAB 을 바꾸면 시계를 새로")
+        # OHT 시각 · 스코어 시각을 이름을 붙여 따로
+        self.assertIn("cap.textContent = 'OHT';", self.js)
+        self.assertIn("p.push('OHT <b", self.js)
+        self.assertIn("el.textContent = '스코어 ' + (r.time || '')", self.js)
         for gone in ("slider-container", "frame-display", "#topbar .speed-btn", "#topbar .tb-query"):
             self.assertIn(gone, self.js, gone + " 를 숨긴다")
 

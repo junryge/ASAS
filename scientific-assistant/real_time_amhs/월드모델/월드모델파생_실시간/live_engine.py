@@ -28,6 +28,8 @@ live_engine.py — 월드모델파생_실시간: 로그프레소 '지금' 데이
       그다음      POLL_SEC(5초)마다 [마지막 시각 − OVERLAP_SEC, 지금] (밀렸으면 STEP_SEC 씩 따라잡기)
       거꾸로 채움 묻을 때마다 STEP_SEC 씩 WARM_SEC(5분)까지 — 멈춰 있어 보고가 드문 차까지
     끊긴 응답은 **받은 데까지 쓴다** (시간순이라 앞부분은 온전하다) — 다음엔 거기서부터 묻는다.
+    JUMP_SEC(60초) 넘게 못 물었으면(정지했다 다시 PLAY · 실패가 이어짐) 1분씩 따라잡지 않고
+    지금으로 건너뛴다 — 그 사이 구멍은 거꾸로 채운다. (따라잡으면 화면 시각이 크게 여러 번 뛴다)
     실패하면 묻는 폭을 반으로 (최소 10초), 되면 다시 넓힌다.
     '지금' 의 끝 EDGE_SEC(3초)는 묻지 않는다 — 적재 중인 끝이다.
   · 겹쳐 묻는 OVERLAP 은 로그프레소에 **늦게 들어온 줄**을 받으려는 것이다. 같은 줄을
@@ -95,6 +97,7 @@ MAX_GAP_SEC = _env("LIVE_MAX_GAP_SEC", 600, int)   # 이보다 오래 끊겼으�
 BUFFER_SEC = _env("LIVE_BUFFER_SEC", POLL_SEC + 3)  # 부드럽게 — 이만큼 늦춰 2초 칸을 차례로
 STEP_Q_SEC = _env("LIVE_STEP_SEC", 60, int)      # 한 번에 묻는 최대 폭 (초) — 크게 물으면 응답이 끊긴다
 EDGE_SEC = _env("LIVE_EDGE_SEC", 3, int)           # '지금' 의 끝 몇 초는 묻지 않는다 (적재 중)
+JUMP_SEC = _env("LIVE_JUMP_SEC", 60, int)          # 이만큼 못 물었으면(정지 · 실패) 따라잡지 않고 '지금' 으로
 TIMEOUT_SEC = _env("LIVE_TIMEOUT_SEC", 60, int)    # 로그프레소 한 번 묻는 데 기다리는 한도
 STEP_SEC = 2                                       # 프레임 간격 — 재생 엔진(snapshot_interval)과 같다
 KEEP_SEC = 180                                     # 들고 있는 프레임 (최근 3분)
@@ -303,6 +306,7 @@ class LiveFeed:
         self.playing = False                        # [▶ 실시간 PLAY] 를 눌러야 True
         self.last_view = self.wall()
         self.step = STEP_Q_SEC                      # 지금 묻는 폭 — 실패하면 줄이고 되면 넓힌다
+        self._ok_wall = None                        # 마지막으로 물어서 된 벽시계 — 오래 쉬었나
         self.status = {"polls": 0, "rows_last": 0, "rows_total": 0, "error": None,
                        "error_at": None, "last_poll": None, "poll_ms": None, "fails": 0,
                        "cuts": 0, "cut_at": None}
@@ -333,7 +337,14 @@ class LiveFeed:
         live_end = now - timedelta(seconds=EDGE_SEC)
         gap = (now - self.cursor).total_seconds() if self.cursor else None
         first = self.cursor is None or gap > MAX_GAP_SEC
-        if first:
+        # ★오래 못 물었으면(정지했다 다시 PLAY · 실패가 이어짐) 밀린 것을 1분씩 따라잡지 않고 **지금으로
+        #   건너뛴다** — 따라잡으면 화면 시각이 몇 번에 걸쳐 크게 뛴다 (고객: "갑자기 늘었다 다시 과거로
+        #   가고 그러면 안 돼"). 그 사이 구멍은 거꾸로 채우기로 메운다 (멈춰 있던 차의 마지막 보고).
+        #   ★벽시계로 잰다 — 데이터 시각으로 재면 로그프레소 적재가 늦을 때마다 건너뛴다.
+        idle = (self.wall() - self._ok_wall) if self._ok_wall else 0.0
+        jump = not first and idle > JUMP_SEC
+        old_cursor = self.cursor
+        if first or jump:
             start = live_end - timedelta(seconds=self.step)
             end = live_end
         else:
@@ -352,10 +363,17 @@ class LiveFeed:
             n = self._ingest(rows)
             if first and rows:
                 self.back_to, self.warm_until = start, live_end - timedelta(seconds=WARM_SEC)
+            elif jump:
+                print(f"[실시간] {self.fab}/{self.prefix} {int(idle)}초 쉬었다가 다시 — 지금으로 건너뛰고 "
+                      f"그 사이는 거꾸로 채웁니다")
+                self.back_to = start
+                self.warm_until = max(old_cursor - timedelta(seconds=OVERLAP_SEC),
+                                      live_end - timedelta(seconds=WARM_SEC))
             st = self.status
             st.update(polls=st["polls"] + 1, rows_last=len(rows), rows_total=st["rows_total"] + len(rows),
                       error=None, last_poll=now.strftime("%H:%M:%S"), fails=0,
-                      poll_ms=int((time.perf_counter() - t0) * 1000), warm=first)
+                      poll_ms=int((time.perf_counter() - t0) * 1000), warm=first, jumped=jump)
+            self._ok_wall = self.wall()
             self._note_cut(rows, now)
         if not getattr(rows, "cut", False):
             self.step = min(STEP_Q_SEC, int(self.step * 1.5) + 1)
