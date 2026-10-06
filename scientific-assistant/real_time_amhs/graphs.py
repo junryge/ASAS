@@ -5,13 +5,14 @@ AMHS Sentinel_M16BR — 구간 그래프 (독립 SVG 렌더러)
 발동이벤트_요약 / report_graphs 와 같은 형식으로 그린다:
 
   ┌ 스코어 패널 ─ unified_risk_score, 등급 밴드(60/71/85), 사건 표시
-  ├ 지표 패널 1 ─ M16HUB 반송시간 (분)
-  │               M16HUB.QUE.TIME.AVGTOTALTIME1MIN   ← 실제 raw 컬럼
-  │               범위 3.82~19.32분
-  ├ 지표 패널 2 ─ …
-  └ X축 (시각)
+  ├ 실제지표 ──── 실시간 표 '실제지표' 칸의 원본 컬럼 전부 (2026-10-06)
+  │   칸 ┌ M16HUB.QUE.TIME.AVGTOTALTIME1MIN   ← 윗줄: 실제 컬럼 이름
+  │      ├ ▲1.2배  M16HUB 반송시간           ← 아랫줄: 배수 · 한글 이름
+  │      └ 10.41분 최고 @21:08 … 임계 9분 + 추이
+  ├ 신규 지표 ─── 우리가 계산해 만든 컬럼 (rb_diff30 · rev_count · PIO 점수 …)
+  └ 값이 안 온 컬럼 한 줄
 
-지표는 최고점 reason 에서 뽑는다. 각 패널은 자기 축을 가진다.
+지표 목록은 metric_sets() 하나가 정한다 — 기여도 추정(contrib.py)도 같은 것을 쓴다.
 데모스를 import 하지 않고 외부 라이브러리도 쓰지 않는다(순수 SVG).
 """
 from __future__ import annotations
@@ -193,7 +194,10 @@ def parse_reason_metrics(reason: str, fab: str = "") -> list[dict]:
             add(f"{area}_ra", _RA.get(area, f"{area}.QUE.TIME.AVGTOTALTIME1MIN"),
                 f"{area} 반송시간", "분")
         if only and re.search(r"(?<![A-Za-z0-9])R-?B", inner):
-            # FAB 화면만 — 상세도 2절: R-B 는 {FAB} 대기물량의 30분·10분 증가량
+            # FAB 화면만 — 상세도 2절: R-B 는 {FAB} 대기물량의 30분·10분 증가량.
+            # 우리가 계산해 만든 컬럼이라 '신규 지표' 묶음에 선다 (metric_sets).
+            # ★ALL 은 예전 그대로 안 세운다 — ALL 실시간 표 '실제지표' 칸에도 R-B 는
+            #   없다(report_graphs: 대응하는 단일 원본 컬럼이 없다).
             add(f"{area}_rb_diff30", f"{area}_rb_diff30", f"{area} Queue 증감(30분)", "건")
             if "R-B_fast" in inner or "RB_fast" in inner:
                 add(f"{area}_rb_diff10", f"{area}_rb_diff10", f"{area} Queue 증감(10분)", "건")
@@ -527,7 +531,13 @@ def _fab_real_cells(metrics: list[dict], pts, fab: str) -> list[dict]:
             # CSV 이름으로 적는다 — 현장이 그 이름으로 원 데이터를 찾아간다.
             raw = col if (col.endswith(derived) or any(x in amos for x in "{…/÷ ")
                           or not amos) else amos
-            metrics.append({"col": col, "raw": raw, "label": f"{f} {it.get('label') or col}",
+            lb = str(it.get("label") or col)
+            if lb.startswith("같은 "):
+                # R-B_fast 는 상세도 표에 '같은 대기 10분 증가' 로 적혀 있다 — 칸 이름만
+                # 보면 무엇과 같은지 모른다. R-B 이름에서 '30분' 만 '10분' 으로 바꿔 쓴다.
+                rb = str(((F.WATCH.get(f) or {}).get("RB") or [{}])[0].get("label") or "")
+                lb = re.sub(r"\d+분(\s*증가)$", r"10분\1", rb) if rb else lb
+            metrics.append({"col": col, "raw": raw, "label": f"{f} {lb}",
                             "unit": it.get("unit") or ""})
             have.add(col)
     if not any(m.get("pio_stack") for m in metrics):
@@ -538,6 +548,267 @@ def _fab_real_cells(metrics: list[dict], pts, fab: str) -> list[dict]:
                             "label": _pio_label([x["name"] for x in cols], f), "unit": "개",
                             "bar": True, "cols": cols, "pio_stack": True})
     return metrics
+
+
+# ══ 실제지표 · 신규 지표 ═══════════════════════════════════════════════
+# 고객(2026-10-06): "실시간 보면 실제지표 컬럼들을 그래프로 보여주라 기여도도
+#   마찬가지 실제지표로" · "우리가 만든 rb… 지표는 신규 지표라고 해서 따로 …
+#   실제지표로 따로 신규지표로 따로".
+#   실제지표 = 실시간 표 '실제지표' 칸에 뜨는 **원본 컬럼**(AMOS 이름)과 PIO 경로
+#             개수. CSV 가 원본 값을 다른 이름으로 옮겨 싣는 것(M16HUB_ra ←
+#             AVGTOTALTIME1MIN)도 값은 원본 그대로라 여기다 — 칸 제목은 원본 이름.
+#   신규 지표 = 원본에서 **새로 계산해 만든** CSV 컬럼 — 증가량(rb_diff)·편중·
+#             역증가 호기 수·추세·PIO 점수/가중합/10분 합. AMOS 에는 없는 이름이다.
+# ★더블클릭 그래프와 기여도 추정(contrib.py)이 **같은 목록**을 쓴다. 따로 고르면
+#   그래프에는 있는데 기여도에는 없는 지표가 생겨 "왜 그건 안 따지냐" 가 된다.
+_NEW_SUF = ("_rb_diff30", "_rb_diff10", "_cnv_skew", "_rev_count", "_rc_trend",
+            "_ra_count", "_PIO_SCORE", "_PIO_WSUM10", "_PIO_WSUM1")
+_NEW_COLS = frozenset(("pio_10min_cnt", "pio_score", "area_pio_score",
+                       "area_pio_wsum10", "area_pio_wsum1", "area_score_raw"))
+# 비교가 되는 부호 — diff10(누적 건수의 10분 증가)·ratio30 같은 것은 컬럼 값을
+# 그대로 임계와 견주는 룰이 아니다. 누적값을 임계로 나누면 배수가 거짓이 된다.
+_CMP_OPS = (">=", ">", "<=", "<")
+
+
+def is_new_metric(col: str) -> bool:
+    """우리가 계산해 만든 CSV 컬럼인가 (= 신규 지표)."""
+    c = str(col or "")
+    return c in _NEW_COLS or c.endswith(_NEW_SUF)
+
+
+def _amos_name(s: str) -> bool:
+    """AMOS 원본 컬럼 이름처럼 생겼나 — 'M16HUB.QUE.TIME.AVGTOTALTIME1MIN'.
+
+    자리표('{6ABL6011…}')·계산식('÷', ' / ')·PIO 자리 이름('PIO.DEPOSIT.…')은
+    아니다 — 그런 이름으로는 CSV 에서 값을 찾을 수 없다.
+    """
+    s = str(s or "")
+    return "." in s and not s.startswith("PIO.") and not any(x in s for x in "{}…/÷ ()")
+
+
+def _watch_raw() -> tuple[dict, dict, dict, set]:
+    """fab_score.WATCH 에서 원본 컬럼 기준 표 넷을 읽는다.
+
+      label {AMOS: 'M16B 10F→HUB 대기'}    — 칸 아랫줄 한글 이름
+      copy  {AMOS: 'M16B_ra'}              — 원본 값을 그대로 옮긴 CSV 컬럼
+      thr   {AMOS: (임계, 부등호, 단위)}   — **원본 값을 그대로** 견주는 룰만
+      cumul {컬럼, …}                      — 누적 건수 (룰은 10분 증가를 본다)
+    ★R-B 의 원본(대기 물량)에 R-B 임계(30분 증가 100건)를 그으면 안 된다 — 임계는
+      증가량에 거는 값이다. CSV 가 계산 컬럼(rb_diff30)인 룰은 thr 에서 뺀다.
+    """
+    try:
+        import fab_score as F
+    except Exception:                                   # noqa: BLE001
+        return {}, {}, {}, set()
+    order = {r["code"]: i for i, r in enumerate(F.RULES)}
+    label, copy, thr, cumul = {}, {}, {}, set()
+    for f, rules in (F.WATCH or {}).items():
+        for code, specs in sorted((rules or {}).items(), key=lambda kv: order.get(kv[0], 99)):
+            for sp in specs or []:
+                amos, csv = str(sp.get("amos") or ""), str(sp.get("csv") or "")
+                if (sp.get("op") or "") == "diff10":
+                    cumul.update(c for c in (amos, csv) if c)
+                if not _amos_name(amos):
+                    continue
+                derived = bool(csv) and is_new_metric(csv)
+                lb = str(sp.get("label") or "")
+                if derived:
+                    # 'M14→M16 대기 30분 증가' → 'M14→M16 대기' (원본은 대기 물량이다)
+                    lb = re.sub(r"\s*\d+분\s*증가$", "", lb)
+                if lb and not lb.startswith("같은 "):
+                    label.setdefault(amos, (f"{f} {lb}", sp.get("unit") or ""))
+                if csv and not derived:
+                    copy.setdefault(amos, csv)
+                if (not derived and not sp.get("record_only") and sp.get("thr") is not None
+                        and (sp.get("op") or ">=") in _CMP_OPS):
+                    thr.setdefault(amos, (sp["thr"], sp.get("op") or ">=", sp.get("unit") or ""))
+    return label, copy, thr, cumul
+
+
+_PIO_NAME = "{경로}" + "_PIOERROR_DEPOSITED"
+
+
+def metric_value(m: dict, r) -> float | None:
+    """그 지표의 그 분 값. PIO 쌓기 칸은 경로 합, 나머지는 src 순서대로 첫 값.
+
+    ★src 는 [CSV 컬럼, 원본 컬럼] 순이다 — CSV 가 옮겨 실은 값이 원칙이고, 그
+      컬럼이 없는 파일(원본 이름으로만 싣는 곳)에서는 원본 이름으로 읽는다.
+    """
+    r = r or {}
+    if m.get("pio_stack"):
+        # ★경로 묶음은 _pio_val 로 읽는다 — 1분 컬럼이 창 내내 0 이면 _pio_fill 이
+        #   reason 에서 읽는 칸으로 바꿔 끼우는데, CSV 만 보면 그 칸이 통째로 0 이 된다.
+        got = [v for v in (_pio_val(r, x) for x in m.get("cols") or []) if v is not None]
+        return sum(got) if got else None
+    for c in m.get("src") or [m.get("col")]:
+        v = _f(r.get(c)) if c else None
+        if v is not None:
+            return v
+    return None
+
+
+def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list]:
+    """구간 그래프 · 기여도 추정이 같이 쓰는 지표 목록 → (실제지표, 신규 지표, 값 없음).
+
+    모으는 곳 (앞에 온 것의 이름표가 남는다 — 늘 보던 칸 이름이 안 바뀐다):
+      ① 고른 분 reason 의 지표 (parse_reason_metrics · PIO 채우기 · FAB 실제지표 칸)
+      ② 실시간 표 '실제지표' 칸 — 서버 /api/feed 와 **같은 함수**
+         (FAB 분리 행이면 sentinel.fab_metrics, ALL 이면 reason_metrics).
+         고른 분 것만이 아니라 **창 안 모든 분** 것을 모은다 — 바로 앞 분에 떴던
+         지표가 그래프에서 사라지면 "방금 그거 어디 갔냐" 가 된다.
+      ③ FAB 화면 — 그 FAB 룰의 원본 컬럼이 CSV 에 실려 오면 늘 세운다.
+    ①②의 고른 분 지표는 fired=True 다 (기여도 추정이 가중을 준다).
+
+    반환 항목 {col, name, label, unit, src, kind('real'|'new'), fired, …}
+      name = 칸 윗줄에 적는 **컬럼 이름** — 실제지표는 원본 AMOS 이름,
+             신규 지표는 CSV 컬럼 이름 (현장이 그 이름으로 원 데이터를 찾아간다).
+    값 없음 = [(name, label), …] — 두 점이 안 되는 것 (칸을 안 세우고 한 줄로 밝힌다).
+    """
+    fabc = _fab_ok(fab)
+    sel_row = sel_row or {}
+    lab, copy, _thr, cumul = _watch_raw()
+    real, new, paths = {}, {}, []
+    stack = None
+
+    def put(m, fired, split):
+        nonlocal stack
+        col, raw = str(m.get("col") or ""), str(m.get("raw") or "")
+        if m.get("pio_stack"):
+            if stack is None:
+                stack = dict(m, kind="real", fired=fired)
+            elif fired:
+                stack["fired"] = True
+            return
+        if col.endswith(_PIO_SUF):
+            name = col[:-len(_PIO_SUF)]
+            if name not in paths:
+                paths.append(name)
+            if fired:
+                paths_fired.add(name)
+            return
+        if m.get("pio_score") or is_new_metric(col):
+            got = new.get(col)
+            if got is None:
+                new[col] = dict(m, kind="new", name=col, src=[col], fired=fired)
+            elif fired:
+                got["fired"] = True
+            # ★실시간 표의 R-B 는 col=rb_diff30 · raw=대기 물량(AMOS) 으로 온다.
+            #   증가량은 신규 지표로, 그 증가량을 낸 원본(대기 물량)은 실제지표로
+            #   가른다 — 한 칸에 두면 '증가량' 선 위에 '대기 물량' 이름이 붙는다.
+            if not (split and _amos_name(raw) and raw != col):
+                return
+            # ★원본 쪽은 '발동' 이 아니다 — 룰이 본 것은 증가량이지 물량 자체가
+            #   아니다. 발동으로 두면 기여도에 '상시 · 하루 내내' 로 떠서 "물량이
+            #   하루 내내 높았다" 는 없는 말을 한다.
+            lb, un = lab.get(raw, (re.sub(r"\s*\d+분\s*증가$", "", str(m.get("label") or raw)),
+                                   m.get("unit") or ""))
+            m = {"col": raw, "raw": raw, "label": lb, "unit": un}
+            col = raw
+            fired = False
+        name = raw if _amos_name(raw) else col
+        src = [c for c in (col, copy.get(name), raw) if c]
+        got = real.get(name)
+        if got is None:
+            real[name] = dict(m, kind="real", name=name,
+                              src=list(dict.fromkeys(src)), fired=fired)
+        else:
+            got["src"] = list(dict.fromkeys(got["src"] + src))
+            got["fired"] = got["fired"] or fired
+
+    paths_fired: set = set()
+    # ① 고른 분 reason — 지금까지 그래프가 세우던 칸 (이름표·순서가 그대로 남는다)
+    # ★reason 은 그 10분에 **가장 많이 실패한 한 경로**만 적어 온다. 데이터로
+    #   나머지를 채우는 _pio_fill 을 **버리기 전에** 부른다 — 뒤에 부르면
+    #   판단 근거(pio_10min_cnt)가 이미 버려져 칸이 통째로 사라진다.
+    mine = parse_reason_metrics(sel_row.get("reason") or "", fabc)
+    fired_cols = {m.get("col") for m in mine}
+    mets = _pio_fill(mine, pts, fabc)
+    mets = _pio_score_cell(mets, pts, fabc)
+    mets = _fab_real_cells(mets, pts, fabc)     # FAB 화면 — 실제지표 칸을 늘 세운다
+    for m in mets:
+        put(m, m.get("col") in fired_cols or bool(m.get("pio_stack") and fired_cols
+                                                  & {"pio_10min_cnt", "area_pio_wsum10"}),
+            split=False)
+
+    # ② 실시간 표 '실제지표' — 고른 분 먼저(발동), 나머지 분은 시간 순
+    try:
+        import sentinel as S
+    except Exception:                                   # noqa: BLE001
+        S = None
+    if S is not None:
+        def table(r):
+            reason = (r.get("reason") or "").strip()
+            if not reason and not fabc:
+                return []
+            try:
+                if fabc:
+                    return S.fab_metrics(reason, fabc, r)
+                return S.reason_metrics(reason, (r.get("hot_area") or "").strip() or "UNKNOWN", r)
+            except Exception:                           # noqa: BLE001
+                return []
+        rows = [sel_row] + [r for _t, r in pts if r is not sel_row]
+        for k, r in enumerate(rows):
+            for m in table(r):
+                put(m, k == 0, split=True)
+
+    # ③ FAB 화면 — 그 FAB 룰의 원본 컬럼이 실려 오면 늘 세운다
+    if fabc:
+        try:
+            import fab_score as F
+            watch = F.WATCH.get(fabc) or {}
+        except Exception:                               # noqa: BLE001
+            watch = {}
+        for code in ("RA", "RB", "RC", "RD", "SLA", "SORT", "MAXCAPA"):
+            for it in watch.get(code) or []:
+                amos = str(it.get("amos") or "")
+                if (not _amos_name(amos) or it.get("record_only")
+                        or (it.get("op") or ">=") == "diff10" or amos in real):
+                    continue
+                if not any(_f((r or {}).get(amos)) is not None for _t, r in pts):
+                    continue
+                lb, un = lab.get(amos, (f"{fabc} {it.get('label') or amos}", it.get("unit") or ""))
+                put({"col": amos, "raw": amos, "label": lb, "unit": un}, False, split=False)
+
+    # PIO 경로 — 한 칸에 쌓는다. ①이 이미 세웠으면 그것을, 아니면 창 데이터로 세운다
+    if stack is None and paths:
+        got = _pio_fill([{"col": "pio_10min_cnt"}], pts, fabc)
+        stack = next((dict(m, kind="real", fired=bool(paths_fired))
+                      for m in got if m.get("pio_stack")), None)
+    if stack is not None:
+        names = [x["name"] for x in stack.get("cols") or []]
+        if any(x.get("from_reason") for x in stack.get("cols") or []):
+            # ★값을 reason 에서 읽은 칸이다 — CSV 컬럼 이름을 적으면 현장에서
+            #   찾아가도 그 컬럼에는 0 만 있다. 실제로 읽은 곳을 적는다.
+            stack["name"] = stack.get("raw") or "PIO.DEPOSIT.{경로} (reason)"
+        else:
+            stack["name"] = (names[0] + _PIO_SUF) if len(names) == 1 else _PIO_NAME
+        stack["src"] = [x["col"] for x in stack.get("cols") or []]
+    # 쌓기에 못 들어간 경로 — 값이 **아예 안 온** 것만 밝힌다. 0 이라도 왔으면
+    # 온 것이고, 값은 왔는데 쌓기 상한(_PIO_STACK_MAX)에 걸린 것은 '안 온' 게 아니다.
+    in_stack = {x["name"] for x in (stack or {}).get("cols") or []}
+    empty = [(p + _PIO_SUF, f"PIO 반송실패 {p}") for p in paths
+             if p not in in_stack
+             and not any(_f((r or {}).get(p + _PIO_SUF)) is not None for _t, r in pts)]
+
+    # ★누적 건수(4분 초과 건수 등) — 하루 동안 계속 커지는 값이라 선 높이는
+    #   '지금 심하다' 가 아니다. 룰은 10분 증가를 본다. 이름에 적어 두고, 기여도
+    #   추정은 10분 증가로 잰다 (contrib.py).
+    for m in real.values():
+        if any(c in cumul for c in m.get("src") or []):
+            m["cumul"] = True
+            if "누적" not in str(m.get("label") or ""):
+                m["label"] = f"{m.get('label') or m['name']} (누적)"
+    out_r = list(real.values()) + ([stack] if stack is not None else [])
+    out_n = list(new.values())
+    keep_r, keep_n = [], []
+    for src, dst in ((out_r, keep_r), (out_n, keep_n)):
+        for m in src:
+            n = sum(1 for _t, r in pts if metric_value(m, r) is not None)
+            if n < 2:
+                empty.append((m.get("name") or m.get("col"), m.get("label") or ""))
+            else:
+                dst.append(m)
+    return keep_r, keep_n, empty
 
 
 def _f(v):
@@ -712,14 +983,7 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
     col, thr, op = m["col"], m.get("thr"), m.get("op", ">=")
     _PATH_COLORS = P["path"]
     unit = m.get("unit") or ""
-    stk = m.get("cols") if m.get("pio_stack") else None
-    cols = m.get("sumcols") or [col]
-    def _v(r):
-        got = ([_pio_val(r, x) for x in stk] if stk
-               else [_f(r.get(c)) for c in cols])
-        got = [g for g in got if g is not None]
-        return sum(got) if got else None
-    vals = [(t, _v(r)) for t, r in pts]
+    vals = [(t, metric_value(m, r)) for t, r in pts]
     vals = [(t, v) for t, v in vals if v is not None]
     if not vals:
         return
@@ -745,16 +1009,45 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
     if over:
         o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="3" height="{h:.1f}" '
                  f'rx="1.5" fill="{color}"/>')
+    # ── 칸 제목 두 줄 ──────────────────────────────────────────────────
+    # ★고객(2026-10-06): "M16HUB 리프터 정체 하고 밑에 실제 컬럼이 있는데 반대로
+    #   해라 — 실제지표를 하고 밑에 M16HUB 리프터 정체". 윗줄(굵게)은 **컬럼
+    #   이름** — 실시간 표 '실제지표' 칸에 뜨는 그 이름이다. 아랫줄이 한글 이름.
+    # ★컬럼 이름이 윗줄을 **혼자 다 쓴다**. 배수 배지를 앞에 두면 3열 칸에서
+    #   'M16B.SORTER.ABN.SORTERWAITCOUNTOVER' 가 '…6B.SORTER…' 로 잘려 어느 FAB
+    #   인지가 사라졌다. 배지는 아랫줄 한글 이름 앞으로 내린다.
+    # ★그래도 넘치면 컬럼 이름의 **앞**을 자른다 — 뒤(무엇을 재는지)가 남아야
+    #   현장이 원 지표를 찾아간다.
+    # ★<title> 은 **잘렸을 때만** 붙인다. 늘 붙이면 안 잘린 칸에도 말풍선이
+    #   하나 더 생겨, 글자를 찾는 쪽(시험·검색)이 본문 대신 말풍선을 집는다.
+    # ★긴 이름(M16HUB.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT)은 글자를 10px 까지
+    #   줄여서라도 **다** 보여 준다 — 자르면 'M1' 이 날아가 어느 FAB 인지가 흐려진다.
+    # ★폭은 5% 넉넉히 잰다 — 브라우저에서 재 보니 고정폭 굵은 글자가 _text_w 보다
+    #   4% 넓었다 (가장 긴 이름이 칸 끝에 딱 붙었다).
+    name = str(m.get("name") or m.get("raw") or col)
+    fs = 11.5
+    while fs > 10 and _text_w(name, fs) * 1.05 > w - 24:
+        fs -= 0.5
+    shown = name
+    while shown and _text_w(shown, fs) * 1.05 > w - 24:
+        shown = shown[1:]
+    if shown != name:
+        shown = "…" + shown[1:]
+    tip = f'<title>{_e(name)}</title>' if shown != name else ""
+    # class="mname" — 칸을 컬럼 이름으로 찾는 쪽(시험·화면 검색)이 이걸로 집는다
+    o.append(f'<text class="mname" x="{x + 12:.1f}" y="{y + 20.5:.1f}" font-size="{fs:g}" '
+             f'font-weight="700" fill="{P["tx"] if over else P["tx2"]}" '
+             f'font-family="Consolas,monospace">{_e(shown)}{tip}</text>')
     if band:
         bw = _text_w(band, 9) + 12
-        o.append(f'<rect x="{x + 12:.1f}" y="{y + 11:.1f}" width="{bw:.1f}" '
+        o.append(f'<rect x="{x + 12:.1f}" y="{y + 26:.1f}" width="{bw:.1f}" '
                  f'height="15" rx="7.5" fill="{color}" '
                  f'opacity="{0.20 if over else 0.13}"/>')
-        o.append(f'<text x="{x + 12 + bw / 2:.1f}" y="{y + 22:.1f}" font-size="9" '
+        o.append(f'<text x="{x + 12 + bw / 2:.1f}" y="{y + 37:.1f}" font-size="9" '
                  f'text-anchor="middle" font-weight="700" fill="{color}">'
                  f'{_e(band)}</text>')
     else:
-        bw = _badge(o, x + 12, y + 11, ratio, color, P["tx3"]) or 0
+        bw = _badge(o, x + 12, y + 25, ratio, color, P["tx3"]) or 0
     lb = str(m.get("label") or "")
     stk0 = m.get("cols") if m.get("pio_stack") else None
     if stk0:
@@ -762,34 +1055,17 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
         # ★split(" (")[0] 로 자르면 뒤에 붙은 '· 10분 누적' 까지 날아간다.
         #   그건 단위 표시라 없으면 1분 개수로 읽혀 열 배로 잘못 본다.
         lb = re.sub(r"\s*\([^)]*\)", "", lb)
-    lbx = x + 12 + bw + 8
+    lbx = x + 12 + (bw + 7 if bw else 0)
     full = lb
     # ★범례 자리를 미리 빼 두면 경로가 넷일 때 이름표가 통째로 잘린다.
     #   이름표를 먼저 온전히 두고, 범례가 들어갈 만큼만 들어가게 한다
     #   (아래 범례 루프가 이름표를 만나면 멈춘다).
-    room = (x + w - 12) - lbx
-    while lb and _text_w(lb, 11.5) > room:
+    while lb and _text_w(lb, 10.5) * 1.08 > (x + w - 12) - lbx:
         lb = lb[:-1]
-    # ★<title> 은 **잘렸을 때만** 붙인다. 늘 붙이면 안 잘린 칸에도 말풍선이
-    #   하나 더 생겨, 글자를 찾는 쪽(시험·검색)이 본문 대신 말풍선을 집는다.
-    tip = f'<title>{_e(m.get("label") or "")}</title>' if lb != full else ""
-    o.append(f'<text x="{lbx:.1f}" y="{y + 23.5:.1f}" font-size="11.5" '
-             f'font-weight="700" fill="{P["tx"] if over else P["tx2"]}">'
-             f'{_e(lb)}{tip}</text>')
-    # ★실제 AMOS 컬럼명 — 현장에서 이걸 보고 원 지표를 찾아간다. 이름표만
-    #   있으면 "그게 어느 컬럼이냐" 를 다시 물어야 한다. 칸이 좁으면 앞을
-    #   자르고 뒤(컬럼 이름)를 남긴다 — 뒤쪽이 무엇을 재는지를 말한다.
-    raw = str(m.get("raw") or "")
-    if raw:
-        avail = w - 24
-        shown = raw
-        while shown and _text_w(shown, 9) > avail:
-            shown = shown[1:]
-        if shown != raw:
-            shown = "…" + shown[1:]
-        o.append(f'<text x="{x + 12:.1f}" y="{y + 37:.1f}" font-size="9" '
-                 f'fill="{P["tx3"]}" font-family="Consolas,monospace">'
-                 f'{_e(shown)}{"<title>" + _e(raw) + "</title>" if shown != raw else ""}</text>')
+    ltip = f'<title>{_e(full)}</title>' if lb != full else ""
+    # class="mlbl" — 칸을 한글 이름으로 찾는 쪽(시험·화면 검색)이 이걸로 집는다
+    o.append(f'<text class="mlbl" x="{lbx:.1f}" y="{y + 37.5:.1f}" '
+             f'font-size="10.5" fill="{P["tx2"]}">{_e(lb)}{ltip}</text>')
     o.append(f'<text x="{x + 12:.1f}" y="{y + 56:.1f}" font-size="14" '
              f'font-weight="800" fill="{color if over else P["tx2"]}" '
              f'font-family="Consolas,monospace">{_e(_fmt(cur))}{_e(unit)}</text>')
@@ -821,8 +1097,11 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
                     for k, x in enumerate(stack)}
             # 범례 글자는 꾸민 이름(×2/×1)이 있으면 그걸 쓴다
             lmap = {x["name"]: (x.get("legend") or x["name"]) for x in stack}
+            rowof = {t: r for t, r in pts}
             for i, (t, _tot) in enumerate(vals):
-                r = pts[i][1] if i < len(pts) else {}
+                # ★vals 는 값이 있는 분만 남긴 목록이라 pts 와 번호가 어긋난다 —
+                #   시각으로 그 분의 행을 찾는다
+                r = rowof.get(t) or {}
                 base = pb
                 for sp in stack:          # ★x 로 쓰면 칸 좌표를 덮는다
                     # CSV 가 원칙, reason 은 대체 — _pio_val 이 그 규칙이다
@@ -834,18 +1113,23 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
                              f'width="{bwd:.1f}" height="{hh:.1f}" '
                              f'fill="{cmap[sp["name"]]}" opacity="0.95"/>')
                     base -= hh
-            # 색만으로 경로를 구분하게 두지 않는다 — 이름을 같이 적는다
+            # 색만으로 경로를 구분하게 두지 않는다 — 이름을 같이 적는다.
+            # ★한글 이름 줄(아랫줄) 오른쪽에 둔다. 윗줄은 컬럼 이름이 길어서
+            #   범례가 들어갈 자리가 없다.
             lx = x + w - 12
-            for name, cc in reversed(list(cmap.items())):
-                name = lmap.get(name, name)
-                tw = _text_w(name, 8.5) + 13
-                if lx - tw < lbx + _text_w(lb, 11.5) + 8:
+            for nm, cc in reversed(list(cmap.items())):
+                nm = lmap.get(nm, nm)
+                # ★굵은 대문자(M16HUB<-M14A)는 _text_w 의 라틴 평균보다 넓다 —
+                #   그대로 재면 범례가 칸 오른쪽 밖으로 삐져나갔다. 브라우저에서 재 보니
+                #   1.27배였다 (2026-10-06, 눈으로 보고 잰 값)
+                tw = _text_w(nm, 8.5) * 1.3 + 13
+                if lx - tw < lbx + _text_w(lb, 10.5) * 1.08 + 8:
                     break               # 이름표를 침범하느니 범례를 줄인다
                 lx -= tw
-                o.append(f'<rect x="{lx:.1f}" y="{y + 16:.1f}" width="7" height="7" '
+                o.append(f'<rect x="{lx:.1f}" y="{y + 30.5:.1f}" width="7" height="7" '
                          f'rx="1.5" fill="{cc}"/>')
-                o.append(f'<text x="{lx + 10:.1f}" y="{y + 22.5:.1f}" font-size="8.5" '
-                         f'fill="{cc}" font-weight="700">{_e(name)}</text>')
+                o.append(f'<text x="{lx + 10:.1f}" y="{y + 37.5:.1f}" font-size="8.5" '
+                         f'fill="{cc}" font-weight="700">{_e(nm)}</text>')
                 lx -= 4
         else:
             for i, (_t, v) in enumerate(vals):
@@ -982,82 +1266,46 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
                 f'이 구간에 자료가 없습니다</div>')
 
     # ── 지표 모으기 + 배수 재기 ───────────────────────────────────────
-    TH = thresholds()
     sel = min(pts, key=lambda tr: abs((tr[0] - center).total_seconds()))
-    seen, metrics, empty = set(), [], []
-    # ★reason 은 그 10분에 **가장 많이 실패한 한 경로**만 적어 온다. 데이터로
-    #   나머지를 채우는 _pio_fill 을 **버리기 전에** 부른다 — 뒤에 부르면
-    #   판단 근거(pio_10min_cnt)가 이미 버려져 칸이 통째로 사라진다.
     # ★어느 FAB 화면인지는 **행에서** 읽는다 (서명을 못 바꾼다 — row_fab 주석).
-    #   ALL 이면 "" 이고, 그때는 지금까지와 한 글자도 다르지 않게 돈다.
+    # ★실시간 표 '실제지표' 칸에 뜨는 컬럼을 **전부** 세우고, 우리가 계산해 만든
+    #   컬럼(rb_diff 등)은 '신규 지표' 로 따로 깐다 — metric_sets 주석.
+    # ★값이 하나도 없거나 딱 한 점뿐이면 칸을 안 만든다. 빈 칸을 그리면
+    #   높이만 먹고 아무 말도 안 한다. 대신 **왜 안 보이는지**는 아래에
+    #   한 줄로 남긴다 — 그냥 지우기만 하면 "왜 안 뜨나" 에 답이 없다.
     fabc = row_fab(sel[1])
-    mets = _pio_fill(parse_reason_metrics(sel[1].get("reason") or "", fabc),
-                     pts, fabc)
-    mets = _pio_score_cell(mets, pts, fabc)
-    mets = _fab_real_cells(mets, pts, fabc)     # FAB 화면 — 실제지표 칸을 늘 세운다
-    for m in mets:
-        c = m["col"]
-        if c in seen:
-            continue
-        seen.add(c)
-        # ★PIO 주 경로는 raw 가 'PIO.DEPOSIT.{경로}' 라는 자리표다. 현장에서
-        #   찾아갈 수 없는 이름이라 실제 컬럼명으로 바꿔 적고, 값도 그 컬럼들의
-        #   합으로 잰다 (첫 경로만 그리면 나머지가 화면에서 사라진다).
-        sub = [x["col"] for x in (m.get("cols") or [])] if m.get("pio_stack") else None
-        if sub:
-            # ★raw 는 **실제로 읽은 곳**이어야 한다. reason 에서 읽은 칸에
-            #   CSV 컬럼명을 적으면 현장에서 찾아가도 그 컬럼이 없다.
-            from_reason = any(x.get("from_reason") for x in (m.get("cols") or []))
-            m = dict(m, sumcols=sub,
-                     raw=m.get("raw") if from_reason else " + ".join(sub))
-            c = sub[0]
-        cs = m.get("sumcols") or [c]
-        vs = []
-        for _t, r in pts:
-            # ★경로 묶음은 _pio_val 로 읽는다 — 1분 컬럼이 창 내내 0 이면
-            #   _pio_fill 이 reason 에서 읽는 칸으로 바꿔 끼우는데,
-            #   CSV 만 보면 그 칸이 통째로 0 이 되어 버려진다.
-            got = ([_pio_val(r, x) for x in m["cols"]] if sub
-                   else [_f(r.get(k)) for k in cs])
-            got = [x for x in got if x is not None]
-            if got:
-                vs.append(sum(got))
-        # ★값이 하나도 없거나 딱 한 점뿐이면 칸을 안 만든다. 빈 칸을 그리면
-        #   높이만 먹고 아무 말도 안 한다. 대신 **왜 안 보이는지**는 아래에
-        #   한 줄로 남긴다 — 그냥 지우기만 하면 "왜 안 뜨나" 에 답이 없다.
-        if len(vs) < 2:
-            empty.append(m.get("label") or c)
-            continue
-        thr, op, _lb, _un = TH.get(c, (None, ">=", None, None))
-        m = dict(m, thr=thr, op=op)
-        # ★배수는 **구간 최악값**으로 잰다. 마지막 값으로 재면 이미 지나간
-        #   급증이 회색으로 죽어서, 방금 무슨 일이 있었는지가 안 보인다.
-        worst = max(vs) if op in (">=", ">") else min(vs)
-        m["ratio"] = _ratio(worst, thr, op)
-        m["worst"] = worst
-        if m.get("pio_score"):
-            # ★임계가 없으니 배수도 없다. 그대로 두면 정렬에서 맨 뒤로 밀려
-            #   '10점(상위 1%)' 인데 화면 맨 아래에 처박힌다. 명세가 준 여섯
-            #   칸을 자리값으로 쓴다 — 8점부터 걸린 지표들 사이로 올라온다.
-            m["sort"] = _pio_band(worst)[1] / 5.0 * 1.5
-        metrics.append(m)
-    metrics.sort(key=lambda m: -(m["sort"] if m.get("sort") is not None
-                                 else (m["ratio"] or 0)))
+    real, new, empty = metric_sets(pts, sel[1], fabc)
+    TH, THR = thresholds(), _watch_raw()[2]
+    sections = []
+    for title, sub, ms in (
+            ("실제지표", "원본 컬럼", real),
+            ("신규 지표", "원본에서 계산해 만든 컬럼", new)):
+        ms = [_measure(m, pts, TH, THR) for m in ms]
+        ms.sort(key=lambda m: -(m["sort"] if m.get("sort") is not None
+                                else (m["ratio"] or 0)))
+        sections.append((title, sub, ms))
+    # ★실제지표는 늘 첫 줄에 선다 — 비었어도 "없다" 를 말해야 한다.
+    #   신규 지표는 칸이 있을 때만 (ALL 화면은 대개 없다).
+    sections = [s for k, s in enumerate(sections) if k == 0 or s[2]]
 
     # ── 자리 잡기 ─────────────────────────────────────────────────────
     incs = _incidents(pts, floor=grade_cuts(cfg)[1])
     # ★지표가 한둘인데 3열로 깔면 오른쪽 3분의 2 가 빈 자리로 남는다.
-    #   열 수를 지표 수에 맞춰 줄여 칸을 넓게 쓴다.
-    ncol = max(1, min(COLS, len(metrics) or 1))
-    rowsn = (len(metrics) + ncol - 1) // ncol
+    #   열 수를 지표 수에 맞춰 줄여 칸을 넓게 쓴다. 두 묶음이 **같은 열 수**를
+    #   쓴다 — 위아래 칸 폭이 다르면 같은 자로 잰 그래프로 안 읽힌다.
+    ncol = max(1, min(COLS, max((len(s[2]) for s in sections), default=1) or 1))
     cw = (width - PAD * 2 - GAP * (ncol - 1)) / ncol
     chip_h = 17 if incs else 0
     y_slbl = HEAD_H + LBL_H
     top_s = y_slbl + 6 + chip_h
     y_axis = top_s + SCORE_H + AXIS_H
-    y_mlbl = y_axis + 22
-    y_grid = y_mlbl + 10
-    height = y_grid + rowsn * (CELL_H + GAP) - (GAP if rowsn else 0) + PAD
+    lay, y = [], y_axis + 22
+    for title, sub, ms in sections:
+        rowsn = (len(ms) + ncol - 1) // ncol
+        lay.append((y, y + 10, title, sub, ms))
+        # 칸이 없으면 '없다' 한 줄 자리만 (30px)
+        y = y + 10 + (rowsn * (CELL_H + GAP) - GAP if rowsn else 30) + 22
+    height = y - 22 + PAD + (14 if empty else 0)
 
     o = [f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
          f'style="display:block" role="img" xmlns="http://www.w3.org/2000/svg">',
@@ -1220,14 +1468,23 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
     if sc is not None:
         o.append(f'<circle cx="{X(si):.1f}" cy="{SY(sc):.1f}" r="5" fill="{P["bg"]}" '
                  f'stroke="{P["sel"]}" stroke-width="2.4"/>')
-    o.append(f'<text x="{L}" y="{y_axis:.1f}" font-size="9.5" fill="{P["tx3"]}" '
-             f'font-family="Consolas,monospace">{_e(pts[0][0].strftime("%H:%M"))}</text>')
-    o.append(f'<text x="{X(si):.1f}" y="{y_axis:.1f}" font-size="9.5" '
-             f'text-anchor="middle" fill="{P["sel"]}" font-weight="700" '
+    # ★고른 분이 창 **끝**이면(실시간 화면은 늘 마지막 분이다) 고른 시각과 끝 시각이
+    #   한자리에 겹쳐 '23:2344' 로 읽혔다. 가까우면 양끝 글자를 빼고, 고른 시각은
+    #   칸 밖으로 안 나가게 그쪽 끝에 맞춘다.
+    sx = X(si)
+    near_l, near_r = sx - L < 44, R - sx < 44
+    if not near_l:
+        o.append(f'<text x="{L}" y="{y_axis:.1f}" font-size="9.5" fill="{P["tx3"]}" '
+                 f'font-family="Consolas,monospace">{_e(pts[0][0].strftime("%H:%M"))}</text>')
+    anchor, ax = (("start", L) if sx - L < 16 else ("end", R) if R - sx < 16
+                  else ("middle", sx))
+    o.append(f'<text x="{ax:.1f}" y="{y_axis:.1f}" font-size="9.5" '
+             f'text-anchor="{anchor}" fill="{P["sel"]}" font-weight="700" '
              f'font-family="Consolas,monospace">{_e(sel[0].strftime("%H:%M"))}</text>')
-    o.append(f'<text x="{R}" y="{y_axis:.1f}" font-size="9.5" text-anchor="end" '
-             f'fill="{P["tx3"]}" font-family="Consolas,monospace">'
-             f'{_e(pts[-1][0].strftime("%H:%M"))}</text>')
+    if not near_r:
+        o.append(f'<text x="{R}" y="{y_axis:.1f}" font-size="9.5" text-anchor="end" '
+                 f'fill="{P["tx3"]}" font-family="Consolas,monospace">'
+                 f'{_e(pts[-1][0].strftime("%H:%M"))}</text>')
 
     # FAB 범례 — 색만으로 구분하게 두지 않는다
     if fab_lines:
@@ -1246,23 +1503,75 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
         o.append(f'<text x="{lx + 2:.1f}" y="{ly:.1f}" font-size="9" '
                  f'fill="{P["tx3"]}" font-family="Consolas,monospace">area_score</text>')
 
-    # ── 지표 격자 ─────────────────────────────────────────────────────
-    nover = sum(1 for m in metrics if (m["ratio"] or 0) >= 1)
-    # ★FAB 화면은 룰이 안 걸린 실제지표까지 늘 세운다(_fab_real_cells) — '발동 지표' 라
-    #   부르면 안 걸린 칸이 왜 있냐가 된다. 고객 말 그대로 '실제지표' 다.
-    o.append(f'<text x="{PAD}" y="{y_mlbl:.1f}" font-size="10.5" font-weight="700" '
-             f'fill="{P["tx2"]}">{"실제지표" if fabc else "발동 지표"} '
-             f'<tspan fill="{P["tx3"]}" font-weight="400">— 임계 넘은 것부터 · '
-             f'{nover}/{len(metrics)}개 넘음</tspan></text>')
-    if not metrics:
-        o.append(f'<text x="{PAD}" y="{y_grid + 22:.1f}" font-size="12" '
-                 f'fill="{P["tx3"]}">이 분에 발동한 지표가 없습니다</text>')
-    for k, m in enumerate(metrics):
-        cx = PAD + (k % ncol) * (cw + GAP)
-        cy = y_grid + (k // ncol) * (CELL_H + GAP)
-        _cell(o, cx, cy, cw, CELL_H, m, pts, P, X)
+    # ── 지표 격자 — 실제지표 / 신규 지표 ─────────────────────────────
+    # ★고객(2026-10-06): "실제지표로 따로 신규지표로 따로". 같은 열 수 · 같은 칸
+    #   모양으로 두 묶음을 위아래로 깐다. 묶음마다 '임계 넘은 것부터'.
+    # ★예전 ALL 화면은 '발동 지표' 라고 불렀다. 이제 ALL 도 실시간 표 '실제지표'
+    #   칸의 컬럼을 그대로 세우므로 이름도 같다.
+    for y_lbl, y_grid, title, sub, ms in lay:
+        nover = sum(1 for m in ms if (m["ratio"] or 0) >= 1)
+        o.append(f'<text x="{PAD}" y="{y_lbl:.1f}" font-size="10.5" font-weight="700" '
+                 f'fill="{P["tx2"]}">{title} '
+                 f'<tspan fill="{P["tx3"]}" font-weight="400">— {sub} · 임계 넘은 것부터 · '
+                 f'{nover}/{len(ms)}개 넘음</tspan></text>')
+        if not ms:
+            o.append(f'<text x="{PAD}" y="{y_grid + 20:.1f}" font-size="12" '
+                     f'fill="{P["tx3"]}">이 구간에 그릴 {title}가 없습니다</text>')
+        for k, m in enumerate(ms):
+            cx = PAD + (k % ncol) * (cw + GAP)
+            cy = y_grid + (k // ncol) * (CELL_H + GAP)
+            _cell(o, cx, cy, cw, CELL_H, m, pts, P, X)
     if empty:
-        o.append(f'<text x="{PAD}" y="{height - 6:.1f}" font-size="9.5" '
-                 f'fill="{P["tx3"]}">값이 안 온 컬럼 — {_e(" · ".join(empty))}</text>')
+        # ★컬럼 이름으로 적는다 — 칸 윗줄과 같은 이름이라야 "그 칸이 왜 없나" 가
+        #   바로 이어진다. 한글 이름은 괄호로. 한 줄을 넘으면 '외 N개' 로 접고,
+        #   접었을 때만 말풍선에 전부 싣는다.
+        items = [f"{n} ({lb})" if lb and lb != n else str(n) for n, lb in empty]
+        head = "값이 안 온 컬럼 — "
+        room = width - PAD * 2 - _text_w(head, 9.5) - _text_w(" 외 99개", 9.5)
+        shown, used = [], 0.0
+        for it in items:
+            w = _text_w(it + " · ", 9.5)
+            if shown and used + w > room:
+                break
+            shown.append(it)
+            used += w
+        more = len(items) - len(shown)
+        tip = f'<title>{_e(" · ".join(items))}</title>' if more else ""
+        o.append(f'<text x="{PAD}" y="{height - 8:.1f}" font-size="9.5" '
+                 f'fill="{P["tx3"]}">{_e(head + " · ".join(shown))}'
+                 f'{_e(f" 외 {more}개") if more else ""}{tip}</text>')
     o.append("</svg>")
     return "".join(o)
+
+
+def _measure(m: dict, pts, TH: dict, THR: dict) -> dict:
+    """칸 하나 — 임계·부등호·구간 최악값·배수를 잰다.
+
+    ★임계는 CSV 컬럼(thresholds) → 원본 컬럼(_watch_raw) 순서로 찾는다. 실시간
+      표가 원본 이름으로만 싣는 컬럼(MLUD 잡·MAXCAPA 등)도 임계선이 서야 한다.
+    ★diff10(누적 건수의 10분 증가) 같은 룰의 임계는 긋지 않는다 — 누적값을
+      그 임계로 나누면 배수가 거짓이 된다.
+    """
+    thr, op = None, ">="
+    for c in m.get("src") or [m.get("col")]:
+        if c in TH:
+            thr, op = TH[c][0], TH[c][1] or ">="
+            break
+        if c in THR:
+            thr, op = THR[c][0], THR[c][1]
+            break
+    if op not in _CMP_OPS:
+        thr, op = None, ">="
+    vs = [v for v in (metric_value(m, r) for _t, r in pts) if v is not None]
+    m = dict(m, thr=thr, op=op)
+    # ★배수는 **구간 최악값**으로 잰다. 마지막 값으로 재면 이미 지나간
+    #   급증이 회색으로 죽어서, 방금 무슨 일이 있었는지가 안 보인다.
+    worst = (max(vs) if op in (">=", ">") else min(vs)) if vs else None
+    m["ratio"] = _ratio(worst, thr, op)
+    m["worst"] = worst
+    if m.get("pio_score") and worst is not None:
+        # ★임계가 없으니 배수도 없다. 그대로 두면 정렬에서 맨 뒤로 밀려
+        #   '10점(상위 1%)' 인데 화면 맨 아래에 처박힌다. 명세가 준 여섯
+        #   칸을 자리값으로 쓴다 — 8점부터 걸린 지표들 사이로 올라온다.
+        m["sort"] = _pio_band(worst)[1] / 5.0 * 1.5
+    return m

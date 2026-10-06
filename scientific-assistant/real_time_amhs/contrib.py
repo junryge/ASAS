@@ -23,6 +23,16 @@ real_time_amhs/contrib.py — 스코어 기여도 분해 ('왜 이 점수인가'
 
     z 가 작은 것(|z| < min_z)은 '평소 범위' 로 보고 뺀다. 다 빼면 기여도를
     지어내지 않고 '평소와 다른 지표 없음' 이라고 말한다.
+
+무엇을 따지나 (2026-10-06)
+    고객: "기여도 추정에는 실제지표 기여도를 추정을 보여주고" · "실제지표로
+    따로 신규지표로 따로". 예전엔 화면 '추이 그래프' 지표 목록(ui.metric_groups —
+    점수 컬럼까지 섞인 스무 개)을 따졌다. 이제 **바로 위 구간 그래프와 같은
+    목록**(graphs.metric_sets — 실시간 표 '실제지표' 칸의 컬럼 + 우리가 계산해 만든
+    신규 지표)을 따진다. 그래프에 있는 지표가 기여도에서 빠지거나, 그래프에
+    없는 지표가 기여도에 뜨면 둘을 같이 읽을 수가 없다.
+    실제지표 · 신규 지표를 **따로 100% 로** 나눈다 (real · new). items 는 둘을
+    합쳐 100% 로 나눈 예전 모양 그대로다 — ml_why 가 그걸 읽는다.
 """
 from __future__ import annotations
 
@@ -38,14 +48,6 @@ def _cfg(cfg: dict) -> dict:
     c = dict(DEFAULTS)
     c.update((cfg or {}).get("contrib") or {})
     return c
-
-
-def _num(v):
-    try:
-        s = str(v).strip()
-        return float(s) if s not in ("", "-", "None", "nan", "NaN") else None
-    except (TypeError, ValueError):
-        return None
 
 
 def _median(xs: list[float]) -> float:
@@ -81,36 +83,23 @@ def _scale(vals: list[float], med: float) -> float | None:
     return None            # 하루 종일 완전히 같은 값 — 눈금을 만들 수 없다
 
 
-def _metrics(cfg: dict) -> list[dict]:
-    """비교할 지표 — 화면 '추이 그래프' 목록과 같은 것을 쓴다."""
-    ui = (cfg or {}).get("ui") or {}
-    out = []
-    for g in (ui.get("metric_groups") or []):
-        for m in (g.get("metrics") or []):
-            if isinstance(m, dict) and m.get("key") and m["key"] != "unified_risk_score":
-                out.append(m)
-    if not out:
-        out = [m for m in (ui.get("strip_metrics") or [])
-               if isinstance(m, dict) and m.get("key")
-               and m["key"] != "unified_risk_score"]
-    seen, uniq = set(), []
-    for m in out:
-        if m["key"] not in seen:
-            seen.add(m["key"])
-            uniq.append(m)
-    return uniq
-
-
-def explain(rows: list[dict], at, cfg: dict | None = None) -> dict:
+def explain(rows: list[dict], at, cfg: dict | None = None, minutes: int = 60) -> dict:
     """그 1분의 점수를 지표별 추정 기여도로 쪼갠다.
 
-    rows  : 그날(또는 앞뒤 포함) 분단위 행
-    at    : datetime — 설명할 시각
-    반환  : {ok, at, score, level, emoji, floor, baseline_n, items[], note, error}
-            items = [{key,label,raw,unit,value,base,z,dir,fired,pct}]
+    rows    : 그날(또는 앞뒤 포함) 분단위 행
+    at      : datetime — 설명할 시각
+    minutes : 지표를 모으는 창 (구간 그래프 기본과 같은 60분 = 앞뒤 30분)
+    반환    : {ok, at, score, level, emoji, floor, baseline_n, items[], real[], new[],
+               note, error}
+              항목 = {key,name,label,raw,unit,value,base,z,dir,fired,chronic,kind,pct}
+              items = 실제+신규를 합쳐 100% (예전 모양 — ml_why 가 읽는다)
+              real / new = 각각 따로 100%
     """
+    from datetime import timedelta
+
+    from graphs import metric_sets, metric_value, row_fab, window_rows
     from lp_client import load_config
-    from sentinel import _row_dt, _score, alarm_floor, grade, reason_metrics
+    from sentinel import _row_dt, _score, alarm_floor, grade
     cfg = cfg or load_config()
     c = _cfg(cfg)
     floor = alarm_floor(cfg)
@@ -138,16 +127,34 @@ def explain(rows: list[dict], at, cfg: dict | None = None) -> dict:
     base_note = (f"정상 구간({floor}점 미만) 기준" if len(quiet) >= 20
                  else "정상 구간이 적어 하루 전체 기준")
 
-    fired_raw = {m["raw"] for m in
-                 reason_metrics(str(r0.get("reason") or ""),
-                                (r0.get("hot_area") or "").strip(), r0)}
+    # ★따질 지표 = 바로 위 구간 그래프와 **같은 목록**. fired = 그 분 실시간 표
+    #   '실제지표' 칸(= 발동한 룰이 실제로 본 컬럼)에 있는 것.
+    pts = window_rows(rows, dt, minutes, cfg)
+    if not any(r is r0 for _t, r in pts):
+        pts = sorted(pts + [(dt, r0)], key=lambda x: x[0])
+    real, new, _empty = metric_sets(pts, r0, row_fab(r0))
+
+    # ★누적 건수(4분 초과 건수 등)는 하루 내내 커지는 값이다. 그대로 '평소' 와
+    #   견주면 저녁마다 '평소보다 높다' 가 된다 — 시각을 잰 셈이다. 룰이 보는
+    #   것과 같은 **10분 증가**로 잰다.
+    by_t = {d: r for d, r in seq}
+    base_dt = ([(d, r) for d, r in seq if _score(r) < floor] if len(quiet) >= 20
+               else list(seq))
+
+    def value(m, d, r):
+        v = metric_value(m, r)
+        if v is None or not m.get("cumul"):
+            return v
+        p = by_t.get(d - timedelta(minutes=10))
+        pv = metric_value(m, p) if p is not None else None
+        return (v - pv) if pv is not None else None
 
     items = []
-    for m in _metrics(cfg):
-        v = _num(r0.get(m["key"]))
+    for m in real + new:
+        v = value(m, dt, r0)
         if v is None:
             continue
-        vals = [x for x in (_num(b.get(m["key"])) for b in base_rows) if x is not None]
+        vals = [x for x in (value(m, d, b) for d, b in base_dt) if x is not None]
         if len(vals) < 10:
             continue
         med = _median(vals)
@@ -158,9 +165,13 @@ def explain(rows: list[dict], at, cfg: dict | None = None) -> dict:
             z = (v - med) / sd
         # 눈금이 아무리 작아도 한 지표가 화면을 다 먹지 않게 상한을 둔다
         z = max(-float(c["z_cap"]), min(float(c["z_cap"]), z))
-        raw = m.get("raw") or m["key"]
-        fired = raw in fired_raw
+        fired = bool(m.get("fired"))
         if abs(z) < float(c["min_z"]) and not fired:
+            continue
+        if abs(z) < float(c["min_z"]) and abs(v) < 1e-9:
+            # ★0 은 '하루 내내 높다' 가 될 수 없다. PIO 는 reason 이 10분 창으로 적어
+            #   발동인데 이 분 실패 개수는 0 인 때가 많다 — 그대로 두면 '0개 · 평소 0개 ·
+            #   하루 내내 · 50%' 가 떴다 (월드모델파생 실시간 화면에서 눈으로 봤다).
             continue
         # ★룰이 떴는데 편차는 거의 없는 경우 — 오늘 하루 내내 높았다는 뜻이다.
         #   (예: STB 저장율이 아침부터 98%면 '평소 대비 상승' 은 0 이지만
@@ -168,33 +179,61 @@ def explain(rows: list[dict], at, cfg: dict | None = None) -> dict:
         #    최소 무게를 주고 '상시' 로 표시해 스파이크와 구분한다.
         chronic = fired and abs(z) < float(c["min_z"])
         w = max(abs(z), float(c["min_z"]) if fired else 0.0)
+        name = str(m.get("name") or m.get("col") or "")
+        label = str(m.get("label") or name)
+        if m.get("cumul"):
+            label = label.replace(" (누적)", "") + " · 10분 증가"
         items.append({
-            "key": m["key"], "label": m.get("label") or m["key"], "raw": raw,
+            "key": m.get("col") or name, "name": name,
+            "label": label,
+            # ★raw 는 값이 아니라 **컬럼 이름**이다 — 칸 윗줄과 같은 이름
+            #   (ml_why 가 col 로 읽는다)
+            "raw": name,
             "unit": m.get("unit") or "", "value": round(v, 2), "base": round(med, 2),
             "z": round(z, 2), "dir": "상승" if z >= 0 else "하락", "fired": fired,
-            "chronic": chronic,
+            "chronic": chronic, "kind": m.get("kind") or "real",
             "w": w * (float(c["fired_boost"]) if fired else 1.0),
         })
 
+    head = {"ok": True, "at": dt.strftime("%Y-%m-%d %H:%M"), "score": round(sc, 1),
+            "level": g["level"], "emoji": g["emoji"], "floor": floor,
+            "baseline_n": len(base_rows)}
+    if not real and not new:
+        return dict(head, items=[], real=[], new=[],
+                    note=f"{base_note} — 이 구간에 실제지표가 없습니다 (발동한 룰이 없음)")
     total = sum(i["w"] for i in items)
     if not items or total <= 0:
-        return {"ok": True, "at": dt.strftime("%Y-%m-%d %H:%M"), "score": round(sc, 1),
-                "level": g["level"], "emoji": g["emoji"], "floor": floor,
-                "baseline_n": len(base_rows), "items": [],
-                "note": f"{base_note} — 평소와 뚜렷이 다른 지표가 없습니다"}
+        return dict(head, items=[], real=[], new=[],
+                    note=f"{base_note} — 평소와 뚜렷이 다른 지표가 없습니다")
 
+    def share(group):
+        """그 묶음 안에서 100% 로 나눈 사본 — 원본(items)의 pct 는 안 건드린다."""
+        tot = sum(i["w"] for i in group)
+        out = []
+        for i in group:
+            d = {k: v for k, v in i.items() if k != "w"}
+            d["pct"] = round(100.0 * i["w"] / tot) if tot > 0 else 0
+            out.append(d)
+        out.sort(key=lambda d: (-d["pct"], -abs(d["z"])))
+        return out[:int(c["top"])]
+
+    real_i = share([i for i in items if i["kind"] == "real"])
+    new_i = share([i for i in items if i["kind"] == "new"])
     for i in items:
         i["pct"] = round(100.0 * i["w"] / total)
         i.pop("w")
     items.sort(key=lambda d: (-d["pct"], -abs(d["z"])))
-    return {"ok": True, "at": dt.strftime("%Y-%m-%d %H:%M"), "score": round(sc, 1),
-            "level": g["level"], "emoji": g["emoji"], "floor": floor,
-            "baseline_n": len(base_rows), "items": items[:int(c["top"])],
-            "note": base_note}
+    return dict(head, items=items[:int(c["top"])], real=real_i, new=new_i,
+                note=base_note)
 
 
 def explain_html(rows: list[dict], at, cfg: dict | None = None) -> str:
-    """구간 그래프 모달에 그대로 붙일 HTML 조각."""
+    """구간 그래프 모달에 그대로 붙일 HTML 조각.
+
+    ★실제지표 · 신규 지표를 **따로** 보여 준다 (고객: "실제지표로 따로 신규지표로
+      따로"). 줄마다 윗줄이 컬럼 이름, 아랫줄이 한글 이름 — 바로 위 그래프 칸과
+      같은 순서다.
+    """
     def esc(s):
         return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
@@ -207,30 +246,46 @@ def explain_html(rows: list[dict], at, cfg: dict | None = None) -> str:
             f'{d["score"]:.0f}점 · {esc(d["note"])} ({d["baseline_n"]}분)</span></div>'
             f'<div class="note" style="margin:2px 0 8px;color:var(--major)">'
             f'※ 점수식을 푼 값이 아닙니다. 평소 대비 얼마나 벗어났는지로 낸 '
-            f'<b>추정</b>이며, reason 이 실제로 지목한 지표에 가중치를 줬습니다.</div>')
+            f'<b>추정</b>이며, reason 이 실제로 지목한 지표에 가중치를 줬습니다. '
+            f'실제지표 · 신규 지표를 <b>각각 100%</b>로 나눴습니다.</div>')
     if not d["items"]:
-        return head + '<div class="empty">평소와 뚜렷이 다른 지표가 없습니다</div>'
+        return head + f'<div class="empty">{esc(d["note"].split(" — ")[-1])}</div>'
 
-    bars = []
-    for i in d["items"]:
-        col = "var(--crit)" if i["fired"] else "var(--tx3)"
-        tag = ('<span class="chip lv위험" style="font-size:9.5px">발동</span>'
-               if i["fired"] else "")
-        if i.get("chronic"):
-            tag += ('<span class="chip" style="font-size:9.5px">상시</span>')
-        bars.append(
-            f'<div style="display:grid;grid-template-columns:190px 1fr 78px;'
-            f'gap:8px;align-items:center;margin:3px 0">'
-            f'<div style="font-size:12px"><b style="color:var(--tx)">{esc(i["label"])}</b> {tag}'
-            f'<div class="mono" style="font-size:10px;color:var(--tx3)">{esc(i["raw"])}</div></div>'
-            f'<div style="background:var(--line);border-radius:5px;height:15px;overflow:hidden">'
-            f'<div style="width:{i["pct"]}%;height:100%;background:{col}"></div></div>'
-            f'<div style="font-size:12px;text-align:right">'
-            f'<b>{i["pct"]}%</b><div class="note" style="font-size:10px">'
-            f'{i["value"]}{esc(i["unit"])} · 평소 {i["base"]}{esc(i["unit"])}'
-            f'{" · 하루 내내" if i.get("chronic") else ""}</div></div>'
-            f'</div>')
-    return head + "".join(bars)
+    def rows_of(group):
+        out = []
+        for i in group:
+            col = "var(--crit)" if i["fired"] else "var(--tx3)"
+            tag = ('<span class="chip lv위험" style="font-size:9.5px">발동</span>'
+                   if i["fired"] else "")
+            if i.get("chronic"):
+                tag += ('<span class="chip" style="font-size:9.5px">상시</span>')
+            out.append(
+                f'<div style="display:grid;grid-template-columns:minmax(0,300px) 1fr 132px;'
+                f'gap:8px;align-items:center;margin:3px 0">'
+                f'<div style="font-size:12px;min-width:0">'
+                f'<b class="mono" style="color:var(--tx);overflow-wrap:anywhere">'
+                f'{esc(i["name"])}</b>'
+                f'<div style="font-size:10.5px;color:var(--tx3)">{esc(i["label"])} {tag}</div></div>'
+                f'<div style="background:var(--line);border-radius:5px;height:15px;overflow:hidden">'
+                f'<div style="width:{i["pct"]}%;height:100%;background:{col}"></div></div>'
+                f'<div style="font-size:12px;text-align:right">'
+                f'<b>{i["pct"]}%</b><div class="note" style="font-size:10px">'
+                f'{i["value"]}{esc(i["unit"])} · 평소 {i["base"]}{esc(i["unit"])}'
+                f'{" · 하루 내내" if i.get("chronic") else ""}</div></div>'
+                f'</div>')
+        return "".join(out)
+
+    body = []
+    for key, title, sub in (("real", "실제지표 기여도 추정", "원본 컬럼"),
+                            ("new", "신규 지표 기여도 추정", "원본에서 계산해 만든 컬럼")):
+        grp = d.get(key) or []
+        if not grp and key == "new":
+            continue            # 신규 지표가 없는 화면(ALL 대부분)은 묶음째 뺀다
+        body.append(f'<div style="margin:10px 0 4px"><b style="font-size:12.5px">{title}</b> '
+                    f'<span class="note">— {sub}</span></div>')
+        body.append(rows_of(grp) if grp else
+                    '<div class="empty">평소와 뚜렷이 다른 지표가 없습니다</div>')
+    return head + "".join(body)
 
 
 if __name__ == "__main__":

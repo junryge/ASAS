@@ -565,8 +565,11 @@
   function drawGraph() {
     if (!GAT) return;
     var at = GAT, m = $id('lg-min').value;
-    // 관제 그래프는 light 만 밝게 그린다 (관제 GRAPH_THEMES) — 화이트(hmi) 말고는 다 어둡게
-    var theme = document.body.dataset.theme === 'hmi' ? 'light' : 'dark';
+    // 관제 그래프도 배경이 넷이다 (관제 graphs.THEMES: dark·light·navy·contrast) —
+    // 화이트(hmi)만 이름이 달라 light 로 바꿔 보낸다. 예전엔 네이비·고대비도 dark 로
+    // 보내서, 남색 화면 한가운데 다른 검정 그래프가 박혔다.
+    var bt = document.body.dataset.theme;
+    var theme = bt === 'hmi' ? 'light' : (bt === 'navy' || bt === 'contrast') ? bt : 'dark';
     $id('lg-body').innerHTML = '<div class="empty">그리는 중…</div>';
     $id('lg-contrib').innerHTML = '';
     Promise.all([

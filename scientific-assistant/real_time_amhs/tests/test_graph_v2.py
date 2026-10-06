@@ -54,7 +54,9 @@ def _cells(svg):
     for k, pos in enumerate(marks):
         end = marks[k + 1] if k + 1 < len(marks) else len(svg)
         chunk = svg[pos:end]
-        nm = re.search(r'font-size="11\.5" font-weight="700"[^>]*>([^<]*)', chunk)
+        # ★2026-10-06 — 칸 윗줄이 컬럼 이름, 아랫줄(class="mlbl")이 한글 이름이 됐다
+        #   (고객: "실제지표를 하고 밑에 M16HUB 리프터 정체"). 한글 이름으로 찾는다.
+        nm = re.search(r'class="mlbl"[^>]*>([^<]*)', chunk)
         if nm:
             out[nm.group(1)] = chunk
     return out

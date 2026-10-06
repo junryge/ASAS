@@ -685,7 +685,8 @@ class 더블클릭_그래프(unittest.TestCase):
     C = _dt.datetime(2026, 9, 16, 14, 30)
 
     def _labels(self, svg):
-        return re.findall(r'font-size="11.5" font-weight="700"[^>]*>([^<]*)', svg)
+        # 칸 아랫줄 한글 이름 (윗줄은 컬럼 이름 — 2026-10-06)
+        return re.findall(r'class="mlbl"[^>]*>([^<]*)', svg)
 
     def _legend(self, svg):
         return set(re.findall(r'font-size="8.5"[^>]*>([^<]*)', svg))

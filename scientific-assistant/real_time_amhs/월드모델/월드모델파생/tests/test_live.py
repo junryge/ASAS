@@ -794,6 +794,16 @@ class 배경_네_가지(unittest.TestCase):
         m = re.search(r'<select id="ms-mapTheme"[\s\S]*?</select>', self.h)
         self.assertEqual(re.findall(r'<option value="(\w+)"', m.group(0)), [t for t, _ in self.NAMES])
 
+    def test_더블클릭_그래프도_배경을_따라간다(self):
+        """관제 그래프도 네 벌이다(관제 graphs.THEMES). 네이비·고대비를 dark 로 보내면
+        남색 화면 한가운데 다른 검정 그래프가 박힌다."""
+        js = _read("static", "js", "live_mode.js")
+        i = js.index("function drawGraph()")
+        body = js[i:i + 900]
+        self.assertIn("bt === 'hmi' ? 'light'", body)
+        self.assertIn("(bt === 'navy' || bt === 'contrast') ? bt", body)
+        self.assertIn("'&theme=' + theme", body)
+
     def test_고르면_바로_바뀌고_남는다(self):
         i = self.h.index("function setMapBg(t) {")
         body = self.h[i:i + 400]

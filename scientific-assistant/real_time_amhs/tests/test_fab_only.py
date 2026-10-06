@@ -319,7 +319,8 @@ class 실제지표_그래프는_늘_선다(unittest.TestCase):
         return out
 
     def _labels(self, svg):
-        return re.findall(r'font-size="11.5" font-weight="700"[^>]*>([^<]*)', svg)
+        # 칸 아랫줄 한글 이름 (윗줄은 컬럼 이름 — 2026-10-06)
+        return re.findall(r'class="mlbl"[^>]*>([^<]*)', svg)
 
     def test_룰이_안_걸린_분에도_선다(self):
         """그 분 reason 에 M16B 블록이 없어도 M16B 실제지표 칸이 선다."""
@@ -344,10 +345,14 @@ class 실제지표_그래프는_늘_선다(unittest.TestCase):
         self.assertNotIn("STB", " ".join(self._labels(svg)))
 
     def test_칸_제목은_실제지표(self):
+        """★2026-10-06 고객: "실시간 보면 실제지표 컬럼들을 그래프로 보여주라".
+        ALL 도 실시간 표 '실제지표' 칸의 컬럼을 그대로 세우므로 이름이 같다
+        (예전 ALL 은 '발동 지표' 였다)."""
         svg = G.render(self._rows("M16B", "발동: M16B[R-D]"), self.C, 60)
         self.assertIn(">실제지표 <", svg)
         allsvg = G.render(self._rows("M16B", "발동: M16B[R-D]", fab_row=False), self.C, 60)
-        self.assertIn(">발동 지표 <", allsvg, "ALL 은 예전 그대로")
+        self.assertIn(">실제지표 <", allsvg)
+        self.assertNotIn(">발동 지표 <", allsvg)
 
     def test_ALL_은_늘_세우지_않는다(self):
         allsvg = G.render(self._rows("M16B", "발동: M16HUB[R-A_sus]", fab_row=False), self.C, 60)
