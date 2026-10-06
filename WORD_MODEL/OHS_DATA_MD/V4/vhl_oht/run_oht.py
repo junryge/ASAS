@@ -8,7 +8,7 @@ run_oht.py — HID_VHL_OHT.py + Rule_hid.py (+ OHT_MAP_INDEX.py) 같이 돌리�
 
   50초마다  HID_VHL_OHT 가 로그프레소에서 차량 보고를 받아 판정
   1분 끝나면 그 분 한 줄 → CSV  (HID_BOTTLENECK/{FAB}/HID_BOTTLENECK_{FAB}_YYYYMMDD.csv)
-                          → 같은 줄 + FAB → 로그프레소 AMHS_VHL_OHT  (Rule_hid)
+                          → 같은 줄 + FAB → 로그프레소 AMHS_VHL_OHT  (Rule_hid, 매분 51초에 모아서)
                           → 경계 이상이면 문제맵 (HID_BOTTLENECK/PROBLEM_MAP/…)
                           → 문제맵 경로 → ../m16a_hubroom_event_prediction/oht_map/OHT_MAP_YYYYMMDD.csv
                                           (OHT_MAP_INDEX — 다운로드 화면용 목록)
@@ -16,10 +16,22 @@ run_oht.py — HID_VHL_OHT.py + Rule_hid.py (+ OHT_MAP_INDEX.py) 같이 돌리�
   다시 켜도 이미 CSV 에 쓴 분은 다시 안 넣는다 (CSV · AMHS_VHL_OHT · 목록 중복 없음).
   영문 등급은 정상 NONE · 경계 WARNING · 위험 CRITICAL · 초위험 EMERGENCY (ALARM_EN_NEW)
 """
+import json
 import sys
+import threading
+import time
+from pathlib import Path
 
 import HID_VHL_OHT as HID
 import Rule_hid
+
+# ★ 로그프레소 저장 시각 — 매분 이 초에 그동안 CSV 에 새로 쓴 줄을 한 번에 AMHS_VHL_OHT 로
+#   config.json 의 "hid_upload_at_sec" 로 바꿀 수 있다 (0~59, 기본 51)
+try:
+    _cfg = json.loads((Path(__file__).resolve().parent / "config.json").read_text(encoding="utf-8"))
+except Exception:
+    _cfg = {}
+UPLOAD_AT_SEC = int(_cfg.get("hid_upload_at_sec", 51)) % 60
 
 # ★ 영문 등급 (2026-10 변경) — HID_VHL_OHT.py 는 그대로 두고 여기서 바꿔 끼운다
 #   CSV ALARM_EN · 문제맵 파일 이름 · 로그프레소 alarm_en 이 모두 이 이름으로 나간다
@@ -75,18 +87,75 @@ def _hook_map_index():
     HID.problem_map = problem_map
 
 
+# ---------- 로그프레소 저장: 매분 UPLOAD_AT_SEC 초 ----------
+_upload_now = Rule_hid.upload_rows                    # 원래 함수 (바로 보냄)
+_queue, _sent = [], set()                             # 보낼 줄 · 최근 보낸 줄 (같은 줄 두 번 안 보냄)
+_lock = threading.Lock()
+_stop = threading.Event()
+
+
+def _queue_rows(fab, header, rows):
+    """CSV 에 1분 줄을 쓸 때 — 바로 보내지 않고 모아 둔다."""
+    with _lock:
+        for r in rows:
+            k = (fab, tuple(r))
+            if k in _sent or any(k == (f, tuple(x)) for f, _, x in _queue):
+                continue
+            _queue.append((fab, header, list(r)))
+
+
+def _flush():
+    with _lock:
+        todo = list(_queue)
+        _queue.clear()
+    if not todo:
+        return
+    groups = {}                                       # (FAB, 헤더) 별로 묶어 원래 함수로
+    for fab, header, r in todo:
+        groups.setdefault((fab, tuple(header)), []).append(r)
+    for (fab, header), rows in groups.items():
+        try:
+            _upload_now(fab, list(header), rows)
+        except Exception as e:
+            HID.log.warning(f"  AMHS_VHL_OHT 저장 실패 ({fab} {len(rows)}줄) — CSV 는 그대로: {e}")
+        with _lock:
+            _sent.update((fab, tuple(r)) for r in rows)
+            if len(_sent) > 5000:                     # 오래된 것은 비운다 (CSV 쪽에서도 중복을 막는다)
+                _sent.clear()
+
+
+def _uploader():
+    while not _stop.is_set():
+        wait = (UPLOAD_AT_SEC - time.time() % 60) % 60
+        if _stop.wait(wait if wait > 0.05 else 60):
+            break
+        _flush()
+
+
+def _hook_upload():
+    """Rule_hid.upload_rows 를 '모아 두기' 로 바꿔 끼운다.
+       HID_VHL_OHT 가 스스로 등록하는 것도 같은 함수가 되어 바로 보내는 일이 없다."""
+    Rule_hid.upload_rows = _queue_rows
+    HID.SAVE_HOOKS[:] = [h for h in HID.SAVE_HOOKS if h is not _upload_now]
+    if _queue_rows not in HID.SAVE_HOOKS:
+        HID.SAVE_HOOKS.append(_queue_rows)            # CSV 에 1분 줄을 쓸 때마다 → 모아 둠
+    threading.Thread(target=_uploader, name="AMHS_VHL_OHT", daemon=True).start()
+    HID.log.info(f"  로그프레소 AMHS_VHL_OHT 저장: 매분 {UPLOAD_AT_SEC}초")
+
+
 def main():
     _rename_alarm_en()
     Rule_hid.start()
-    if Rule_hid.upload_rows not in HID.SAVE_HOOKS:
-        HID.SAVE_HOOKS.append(Rule_hid.upload_rows)   # CSV 에 1분 줄을 쓸 때마다 → AMHS_VHL_OHT
+    _hook_upload()
     _hook_map_index()
     try:
         HID.main()                                    # 50초마다 판정 (옵션은 HID_VHL_OHT.py 와 같다)
     except KeyboardInterrupt:
         HID.log.info("멈춤 (Ctrl+C)")
     finally:
-        Rule_hid.stop()                               # 남은 줄 다 보내고 끝
+        _stop.set()
+        _flush()                                      # 모아 둔 줄 마저 보내고
+        Rule_hid.stop()                               # 끝
 
 
 if __name__ == "__main__":
