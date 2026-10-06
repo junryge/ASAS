@@ -17,9 +17,19 @@ live_engine.py — 월드모델파생_실시간: 로그프레소 '지금' 데이
   (다른 자리면 환경변수 WM_DIR 에 월드모델파생 폴더를 적는다.)
 
 어떻게 도나 — FAB(지도) 하나에 피드(LiveFeed) 하나, 보는 사람이 몇이든 같이 쓴다.
-  · POLL_SEC(5초)마다 [마지막으로 받은 시각 − OVERLAP_SEC, 지금] 을 '상세' 쿼리로 묻는다.
-    처음(또는 MAX_GAP_SEC 넘게 끊긴 뒤)에는 지금부터 WARM_SEC(5분) 거꾸로 묻는다 —
-    멈춰 있어 보고가 드문 차까지 지도에 올리려고.
+  · ★화면의 [▶ 실시간 PLAY] 를 눌러야 묻는다 · [■ 정지] 를 눌러야 멈춘다 (2026-10-06 고객:
+    "PLAY 버튼 만들고 … 보는 사람 없어 조회를 멈춘다고 해서 좀 그래"). 저절로 멈추지 않는다.
+    보는 FAB 하나만 돈다 — 화면에서 FAB 을 옮기면 앞 FAB 은 멈춘다(그 FAB 을 PLAY 중인
+    다른 화면이 없을 때). ("전부 다 조회하면 안 되니까")
+  · ★작게 묻는다 — 한 번에 STEP_SEC(60초)까지. 현장에서 5분치를 '지금' 까지 한 번에 묻다가
+    응답이 중간에 끊겼다 (IncompleteRead · 0.8~1.7MB 받고 끊김) — 그리고 끊길 때마다 같은
+    큰 조회를 다시 했다.
+      처음        지금부터 STEP_SEC 만 → 바로 보인다
+      그다음      POLL_SEC(5초)마다 [마지막 시각 − OVERLAP_SEC, 지금] (밀렸으면 STEP_SEC 씩 따라잡기)
+      거꾸로 채움 묻을 때마다 STEP_SEC 씩 WARM_SEC(5분)까지 — 멈춰 있어 보고가 드문 차까지
+    끊긴 응답은 **받은 데까지 쓴다** (시간순이라 앞부분은 온전하다) — 다음엔 거기서부터 묻는다.
+    실패하면 묻는 폭을 반으로 (최소 10초), 되면 다시 넓힌다.
+    '지금' 의 끝 EDGE_SEC(3초)는 묻지 않는다 — 적재 중인 끝이다.
   · 겹쳐 묻는 OVERLAP 은 로그프레소에 **늦게 들어온 줄**을 받으려는 것이다. 같은 줄을
     두 번 받으면 차마다 '마지막으로 본 시각' 보다 새 것만 얹는다.
   · 받은 줄은 재생 엔진과 똑같이 **2초 칸**으로 묶어 시간 순서대로 얹는다 — 속도(m/min)를
@@ -31,11 +41,10 @@ live_engine.py — 월드모델파생_실시간: 로그프레소 '지금' 데이
   · 미보고는 **데이터 시계**로 잰다 (벽시계가 아니다). 로그프레소 적재가 통째로 1분 늦으면
     벽시계로는 모든 차가 미보고가 된다 — 그건 차의 일이 아니라 수집의 일이라, 상태줄의
     '지연' 으로 따로 보인다.
-  · 아무도 IDLE_STOP_SEC(5분) 동안 안 보면 조회를 멈춘다 (로그프레소를 괜히 두드리지 않게).
-    다시 보면 이어서 묻고, 오래 끊겼으면 처음처럼 WARM 부터 다시 받는다.
 """
 
 import csv
+import http.client
 import io
 import os
 import re
@@ -84,8 +93,9 @@ WARM_SEC = _env("LIVE_WARM_SEC", 300, int)         # 처음 열 때 거꾸로 �
 OVERLAP_SEC = _env("LIVE_OVERLAP_SEC", 20, int)    # 늦게 들어온 줄을 받으려고 겹쳐 묻는 폭
 MAX_GAP_SEC = _env("LIVE_MAX_GAP_SEC", 600, int)   # 이보다 오래 끊겼으면 처음부터(WARM)
 BUFFER_SEC = _env("LIVE_BUFFER_SEC", POLL_SEC + 3)  # 부드럽게 — 이만큼 늦춰 2초 칸을 차례로
-IDLE_STOP_SEC = _env("LIVE_IDLE_STOP_SEC", 300, int)  # 아무도 안 보면 조회를 멈춘다
-TIMEOUT_SEC = _env("LIVE_TIMEOUT_SEC", 30, int)    # 로그프레소 한 번 묻는 데 기다리는 한도
+STEP_Q_SEC = _env("LIVE_STEP_SEC", 60, int)      # 한 번에 묻는 최대 폭 (초) — 크게 물으면 응답이 끊긴다
+EDGE_SEC = _env("LIVE_EDGE_SEC", 3, int)           # '지금' 의 끝 몇 초는 묻지 않는다 (적재 중)
+TIMEOUT_SEC = _env("LIVE_TIMEOUT_SEC", 60, int)    # 로그프레소 한 번 묻는 데 기다리는 한도
 STEP_SEC = 2                                       # 프레임 간격 — 재생 엔진(snapshot_interval)과 같다
 KEEP_SEC = 180                                     # 들고 있는 프레임 (최근 3분)
 FMT = "%Y%m%d%H%M%S"
@@ -199,10 +209,19 @@ def server_of(table: str) -> str:
         return f"? ({e})"
 
 
-def fetch_rows(table: str, start: datetime, end: datetime) -> list:
-    """[start, end) 를 '상세' 쿼리로 묻는다 → CSV 줄(dict) 목록.
+class Rows(list):
+    """fetch_rows 결과. cut = 응답이 중간에 끊겨 받은 데까지만 담겼다."""
+    cut = False
+    cut_bytes = 0
 
-    ★키는 주소에 실려 가므로 주소를 통째로 찍지 않는다 (끝 4자만)."""
+
+def fetch_rows(table: str, start: datetime, end: datetime) -> list:
+    """[start, end) 를 '상세' 쿼리로 묻는다 → CSV 줄(dict) 목록 (Rows).
+
+    ★키는 주소에 실려 가므로 주소를 통째로 찍지 않는다 (끝 4자만).
+    ★응답이 중간에 끊기면(IncompleteRead) 받은 데까지 쓴다 — 쿼리가 시간순(sort _time)이라
+      앞부분은 온전하다. 마지막 줄은 반쯤 잘렸을 수 있어 버린다. (현장 2026-10-06:
+      'IncompleteRead(801577 bytes read)' 로 실패만 되풀이했다)"""
     LQ = _lq()
     if not LQ.API_KEY:
         raise RuntimeError("로그프레소 API 키가 없습니다 — 월드모델파생/logpresso_query.py 의 API_KEY, "
@@ -211,9 +230,13 @@ def fetch_rows(table: str, start: datetime, end: datetime) -> list:
     q = LQ._build_query(start.strftime(FMT), end.strftime(FMT), table, "raw")
     url = (f"http://{host}:{port}/logpresso/httpexport/query.csv?_apikey={LQ.API_KEY}"
            f"&_q={urllib.parse.quote(q, safe='')}")
+    cut = False
     try:
         with urllib.request.urlopen(url, timeout=TIMEOUT_SEC) as r:
-            raw = r.read()
+            try:
+                raw = r.read()
+            except http.client.IncompleteRead as e:
+                raw, cut = e.partial or b"", True
     except urllib.error.HTTPError as e:
         body = e.read()[:300].decode("utf-8", "replace")
         hint = " — 키와 서버가 안 맞습니다 (키 끝 4자 " + key_tail() + ")" if e.code == 401 else ""
@@ -221,7 +244,11 @@ def fetch_rows(table: str, start: datetime, end: datetime) -> list:
     except OSError as e:
         raise RuntimeError(f"{host}:{port} 접속 실패 — {e}") from None
     text = raw.decode("utf-8-sig", "replace")
-    return list(csv.DictReader(io.StringIO(text))) if text.strip() else []
+    if cut:
+        text = text[:text.rfind("\n") + 1]           # 반쯤 잘린 마지막 줄은 버린다
+    out = Rows(csv.DictReader(io.StringIO(text)) if text.strip() else [])
+    out.cut, out.cut_bytes = cut, len(raw)
+    return out
 
 
 _TFMTS = ("%Y-%m-%d %H:%M:%S.%f%z", "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%d %H:%M:%S.%f",
@@ -273,9 +300,12 @@ class LiveFeed:
         self.wall = wall or time.time               # 재생 시계가 흐르는 벽시계
         self.lock = threading.Lock()
         self._thread = None
+        self.playing = False                        # [▶ 실시간 PLAY] 를 눌러야 True
         self.last_view = self.wall()
+        self.step = STEP_Q_SEC                      # 지금 묻는 폭 — 실패하면 줄이고 되면 넓힌다
         self.status = {"polls": 0, "rows_last": 0, "rows_total": 0, "error": None,
-                       "error_at": None, "last_poll": None, "poll_ms": None, "fails": 0}
+                       "error_at": None, "last_poll": None, "poll_ms": None, "fails": 0,
+                       "cuts": 0, "cut_at": None}
         self._reset()
 
     # 상태 초기화 — 처음 · 오래 끊긴 뒤
@@ -293,25 +323,77 @@ class LiveFeed:
         self.frames = deque()       # [(t, snapshot)] 2초 칸, 최근 KEEP_SEC
         self.anchor = None          # (가장 새 프레임 시각, 그것이 도착한 벽시계)
         self.shown = None           # 화면에 마지막으로 내준 프레임 시각 — 뒤로 가지 않게
+        self.back_to = None         # 거꾸로 채운 데까지 (이 시각 앞은 아직 안 물었다)
+        self.warm_until = None      # 거꾸로 채울 끝 (처음 받은 시각 − WARM_SEC)
 
     # ── 묻기 ──
     def poll_once(self) -> int:
+        """한 번 묻는다 — 새 줄(작게) + 거꾸로 채움(작게). 얹은 줄 수."""
         now = self.clock()
-        warm = self.cursor is None or (now - self.cursor).total_seconds() > MAX_GAP_SEC
-        start = now - timedelta(seconds=WARM_SEC) if warm else self.cursor - timedelta(seconds=OVERLAP_SEC)
+        live_end = now - timedelta(seconds=EDGE_SEC)
+        gap = (now - self.cursor).total_seconds() if self.cursor else None
+        first = self.cursor is None or gap > MAX_GAP_SEC
+        if first:
+            start = live_end - timedelta(seconds=self.step)
+            end = live_end
+        else:
+            start = self.cursor - timedelta(seconds=OVERLAP_SEC)
+            end = min(live_end, start + timedelta(seconds=self.step + OVERLAP_SEC))   # 밀렸으면 조금씩 따라잡기
         t0 = time.perf_counter()
-        rows = self.fetch(self.table, start, now + timedelta(seconds=1))
+        try:
+            rows = self.fetch(self.table, start, end)
+        except Exception:
+            self.step = max(10, self.step // 2)          # 실패하면 묻는 폭을 반으로
+            raise
         with self.lock:
-            if warm and self.cursor is not None:
-                print(f"[실시간] {self.fab}/{self.prefix} {int((now - self.cursor).total_seconds())}초 "
-                      f"끊겼다 — 처음부터 다시 받습니다")
+            if first and self.cursor is not None:
+                print(f"[실시간] {self.fab}/{self.prefix} {int(gap)}초 끊겼다 — 처음부터 다시 받습니다")
                 self._reset()
             n = self._ingest(rows)
+            if first and rows:
+                self.back_to, self.warm_until = start, live_end - timedelta(seconds=WARM_SEC)
             st = self.status
             st.update(polls=st["polls"] + 1, rows_last=len(rows), rows_total=st["rows_total"] + len(rows),
                       error=None, last_poll=now.strftime("%H:%M:%S"), fails=0,
-                      poll_ms=int((time.perf_counter() - t0) * 1000), warm=warm)
+                      poll_ms=int((time.perf_counter() - t0) * 1000), warm=first)
+            self._note_cut(rows, now)
+        if not getattr(rows, "cut", False):
+            self.step = min(STEP_Q_SEC, int(self.step * 1.5) + 1)
+        n += self._backfill(now)
         return n
+
+    def _backfill(self, now) -> int:
+        """처음 받은 시각에서 WARM_SEC 까지 거꾸로, 한 번에 self.step 씩 — 멈춰 있어 보고가 드문 차.
+        ★실패해도 새 줄(위)은 이미 얹었다 — 채움만 다음에 다시 한다."""
+        with self.lock:
+            b1, until = self.back_to, self.warm_until
+        if not b1 or not until or b1 <= until:
+            return 0
+        b0 = max(until, b1 - timedelta(seconds=self.step))
+        try:
+            rows = self.fetch(self.table, b0, b1)
+        except Exception as e:                        # noqa: BLE001
+            self.step = max(10, self.step // 2)
+            print(f"[실시간] {self.fab}/{self.prefix} 거꾸로 채우기 실패 — 다음에 다시 ({type(e).__name__})")
+            return 0
+        with self.lock:
+            n = self._ingest(rows)
+            if getattr(rows, "cut", False) and rows:
+                # 끊겼으면 받은 데까지만 채운 것으로 친다 (앞에서부터 시간순이다)
+                t = max((parse_time(r.get("_time")) for r in rows), default=None)
+                self.back_to = max(b0, t) if t and t < b1 else b0
+            else:
+                self.back_to = b0
+            self._note_cut(rows, now)
+        return n
+
+    def _note_cut(self, rows, now):
+        if getattr(rows, "cut", False):
+            st = self.status
+            st["cuts"] = st.get("cuts", 0) + 1
+            st["cut_at"] = now.strftime("%H:%M:%S")
+            print(f"[실시간] {self.fab}/{self.prefix} 로그프레소 응답이 중간에 끊겼습니다 — 받은 데까지 씁니다 "
+                  f"({len(rows)}줄 · {getattr(rows, 'cut_bytes', 0):,}바이트) · 다음엔 {self.step}초씩")
 
     def _ingest(self, rows: list) -> int:
         """줄 → 차량 상태. 차마다 '마지막으로 본 시각' 보다 새 줄만 얹는다 (겹쳐 물은 줄 · 늦게 온 옛 줄)."""
@@ -432,6 +514,10 @@ class LiveFeed:
             st = dict(self.status)
             newest = self.frames[-1][0] if self.frames else None
             nveh = len(self.state)
+            # 거꾸로 채운 폭 (처음 WARM_SEC 중 몇 초) — 상태줄에 '처음 5분 중 2분' 처럼
+            filled = None
+            if self.back_to and self.warm_until:
+                filled = int(WARM_SEC - max(0.0, (self.back_to - self.warm_until).total_seconds()))
         return {
             "fab": self.fab, "prefix": self.prefix, "table": self.table,
             "server": server_of(self.table), "key": key_tail(),
@@ -441,29 +527,39 @@ class LiveFeed:
             "shown_time": shown_t.strftime("%Y-%m-%d %H:%M:%S") if shown_t else None,
             "lag_sec": int((now - shown_t).total_seconds()) if shown_t else None,
             "data_lag_sec": int((now - newest).total_seconds()) if newest else None,
-            "vehicles": nveh, "running": self.running(),
+            "vehicles": nveh, "running": self.running(), "playing": self.playing,
+            "step_sec": self.step, "warm_sec": WARM_SEC, "filled_sec": filled,
             **{k: st.get(k) for k in ("polls", "rows_last", "rows_total", "error", "error_at",
-                                      "last_poll", "poll_ms", "fails", "warm")},
+                                      "last_poll", "poll_ms", "fails", "warm", "cuts", "cut_at")},
         }
 
-    # ── 돌리기 ──
+    # ── 돌리기 — [▶ 실시간 PLAY] · [■ 정지] ──
     def touch(self):
+        """누가 이 지도를 보고 있다 (상태줄용 기록일 뿐 — 이것으로 멈추거나 켜지 않는다)."""
         self.last_view = self.wall()
-        if not self.running():
-            self.start()
 
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
 
-    def start(self):
+    def play(self, why: str = ""):
+        """묻기 시작 — 이미 돌고 있으면 그대로."""
+        self.playing = True
         with self.lock:
             if self._thread and self._thread.is_alive():
                 return
             self._thread = threading.Thread(target=self._loop, daemon=True,
                                             name=f"live-{self.fab}-{self.prefix}")
             self._thread.start()
-        print(f"[실시간] {self.fab}/{self.prefix} 조회 시작 - {self.table} @ {server_of(self.table)} "
-              f"· {POLL_SEC:g}초마다 · 키 {key_tail()}")
+        print(f"[실시간] {self.fab}/{self.prefix} ▶ PLAY{(' (' + why + ')') if why else ''} — "
+              f"{self.table} @ {server_of(self.table)} · {POLL_SEC:g}초마다 · 키 {key_tail()}")
+
+    def stop(self, why: str = ""):
+        """묻기를 멈춘다 — 받아 둔 그림은 그대로 둔다 (다시 PLAY 하면 이어서 묻는다)."""
+        if self.playing:
+            print(f"[실시간] {self.fab}/{self.prefix} ■ 정지{(' (' + why + ')') if why else ''}")
+        self.playing = False
+
+    start = play                                    # 예전 이름
 
     def tick(self) -> float:
         """한 번 묻는다 → 다음까지 기다릴 초. 실패하면 상태에 적고 점점 천천히 (최대 1분)."""
@@ -477,15 +573,14 @@ class LiveFeed:
                 st["error"] = f"{type(e).__name__}: {e}"[:400]
                 st["error_at"] = self.clock().strftime("%H:%M:%S")
                 n = st["fails"]
-            print(f"[실시간] {self.fab}/{self.prefix} 조회 실패 ({n}번째): {st['error']}")
+            print(f"[실시간] {self.fab}/{self.prefix} 조회 실패 ({n}번째, 다음엔 {self.step}초씩): {st['error']}")
             return min(POLL_SEC * (2 ** n), 60.0)
 
     def _loop(self):
-        while True:
-            if self.wall() - self.last_view > IDLE_STOP_SEC:
-                print(f"[실시간] {self.fab}/{self.prefix} {IDLE_STOP_SEC}초 동안 보는 사람이 없어 조회를 멈춥니다")
-                return
-            time.sleep(self.tick())
+        while self.playing:
+            end = time.time() + self.tick()
+            while self.playing and time.time() < end:
+                time.sleep(0.2)                       # ■ 정지를 누르면 바로 멈춘다
 
 
 _FEEDS: dict = {}
@@ -493,7 +588,8 @@ _FL = threading.Lock()
 
 
 def feed_for(fab: str, prefix: str) -> LiveFeed:
-    """그 지도의 피드 (없으면 만든다) — 보는 사람이 몇이든 하나다. 부를 때마다 '보고 있음' 표시."""
+    """그 지도의 피드 (없으면 만든다) — 보는 사람이 몇이든 하나다.
+    ★만들기만 한다. 묻기는 [▶ 실시간 PLAY] (feed.play) 를 눌러야 시작한다."""
     key = (fab, prefix)
     with _FL:
         f = _FEEDS.get(key)

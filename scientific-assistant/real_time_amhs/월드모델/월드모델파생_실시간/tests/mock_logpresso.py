@@ -33,6 +33,7 @@ KEY = os.environ.get("MOCK_LP_KEY", "dummy-key")
 LAG = float(os.environ.get("MOCK_LAG_SEC", "3"))
 FMT = "%Y%m%d%H%M%S"
 HITS = {"n": 0, "last_q": ""}
+CUT = {"n": 0}          # 0 이 아니면 응답을 그 바이트에서 끊는다 (진짜에서 난 IncompleteRead 흉내)
 
 TABLE_MAP = {"oht_data_m14a": "M14A_A", "oht_data_m14b": "M14B_A", "oht_data_m16a": "M16A_A",
              "oht_data_m16b": "M16B_B", "oht_data_m16br": "M16A_BR"}
@@ -154,6 +155,11 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlsplit(self.path)
         q = urllib.parse.parse_qs(u.query)
+        if u.path == "/mock/cut":
+            CUT["n"] = int((q.get("bytes") or ["0"])[0])
+            self.send_response(200)
+            self.end_headers()
+            return self.wfile.write(b"ok")
         if u.path == "/mock/hits":
             body = json.dumps(HITS).encode()
             self.send_response(200)
@@ -190,6 +196,10 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
+        if CUT["n"] and len(body) > CUT["n"]:
+            self.wfile.write(body[:CUT["n"]])          # 길이는 다 준다고 해 놓고 중간에 끊는다
+            self.close_connection = True
+            return
         self.wfile.write(body)
 
 
