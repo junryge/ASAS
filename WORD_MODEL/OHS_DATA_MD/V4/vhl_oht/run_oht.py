@@ -46,6 +46,9 @@ def _rename_alarm_en():
     for name, d in list(vars(HID).items()):
         if not isinstance(d, dict) or not d:
             continue
+        # 키 · 값이 전부 문자열인 사전만 본다 (DEFAULT_LEVELS 처럼 값이 사전인 것 · 숫자 · None 키는 건너뜀)
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in d.items()):
+            continue
         if set(d) <= kr and set(d.values()) <= en:          # 한글 → 영문 (색 등 다른 사전은 안 건드림)
             for k in d:
                 d[k] = ALARM_EN_NEW[k]
@@ -144,7 +147,10 @@ def _hook_upload():
 
 
 def main():
-    _rename_alarm_en()
+    try:
+        _rename_alarm_en()
+    except Exception as e:                            # 이름 바꾸기 때문에 멈추는 일은 없게
+        HID.log.warning(f"  영문 등급 바꾸기 실패 — 예전 이름으로 진행: {e}")
     Rule_hid.start()
     _hook_upload()
     _hook_map_index()
