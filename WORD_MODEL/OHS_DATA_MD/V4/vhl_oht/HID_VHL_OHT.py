@@ -143,6 +143,11 @@ _cfg_mtime = None
 HID_ZONE_COL = "auto"
 REF_FILE     = HERE / "HID_REF_M16HUB.csv"     # 문서 만들 때 쓴 주소 → HID 구간 (4/21 HID IN/OUT 로그)
 HID_ZONE_USE = "ZONE_ID"                            # 시작할 때 정해진다
+# ★HID 구역 = 마스터 Vehicle_Max > 0 인 구역만 (2026-10)
+#   M16A_BR 마스터: 1~37 (37개, 정원 있음) = HID / 4001~ · 5001~ · 10001~ (161개, 정원 0) = HID 아님
+#   HID 아닌 구역은 구역 계산(HID_ZONE · ZONE_STOP · 점유율)과 문제맵(구역 · 레인)에서 뺀다.
+#   False 면 예전처럼 마스터의 모든 구역.
+HID_ONLY_VMAX = True
 
 WINDOW_MIN = 10                 # 메모리에 남겨 둘 과거 분 (판정은 그 50초 구간 하나로 한다)
 TOP_N      = 3                  # 알람 때 저장할 HID 구역 수 (멈춘 차 많은 순)
@@ -438,10 +443,21 @@ def build_zone_map(fab_dir, prefix, cap=400):
                 best[n] = (dist, z)
 
     zone_of = {n: z for n, (_, z) in best.items()}
+    n_all = len(zones)
+    drop = []
+    if HID_ONLY_VMAX:                               # ★HID 구역(정원 > 0)만 — 주소 배정은 그대로 두고 HID 아닌 구역 주소는 뺀다
+        hid = {z for z, d in zones.items() if d["vmax"] > 0}
+        if hid:
+            drop = sorted((z for z in zones if z not in hid), key=zkey)
+            zones = {z: d for z, d in zones.items() if z in hid}
+            zone_of = {n: z for n, z in zone_of.items() if z in hid}
     info = {z: (d["name"], d["bay"], d["z2"], d["vmax"]) for z, d in zones.items()}
     ex = ", ".join(f"{z}→{zones[z]['z2'] or 0}" for z in sorted(zones, key=zkey)[:3])
     n2 = sum(1 for d in zones.values() if d["z2"])
-    msg = (f"{master.name}: 구역 {len(zones)} · 주소 {len(zone_of)}/{len(L.get('nodes', {}))} · "
+    msg = (f"{master.name}: 구역 {len(zones)}"
+           + (f" (HID 만 · Vehicle_Max 0 {len(drop)}개 제외: {', '.join(drop[:3])} …)" if drop else
+              (" (★Vehicle_Max 없음 — 전체 구역)" if HID_ONLY_VMAX and n_all else ""))
+           + f" · 주소 {len(zone_of)}/{len(L.get('nodes', {}))} · "
            f"ZONE_ID2 있는 구역 {n2} · 예 ZONE_ID→ZONE_ID2 {ex} …")
     if "zone_id2" not in cols:
         msg += " · ★ZONE_ID2 칸 없음 (HID_ZONE 0)"
@@ -1102,7 +1118,7 @@ def geometry(m, use):
         cols = {c.strip().lower().replace(" ", "_"): c for c in (rd.fieldnames or [])}
         for r in rd:
             z = (r.get(cols.get("zone_id", ""), "") or "").strip()
-            if not z or z == "0":
+            if not z or z == "0" or z not in st.info:   # ★HID 아닌 구역(정원 0)의 레인은 안 그린다
                 continue
             n = zone_number(st, z, use)
             for key, out in (("in_lanes", 0), ("out_lanes", 1)):
