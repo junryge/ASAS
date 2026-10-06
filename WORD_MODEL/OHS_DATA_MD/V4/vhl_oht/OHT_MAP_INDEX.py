@@ -33,7 +33,11 @@ DEFAULT_INDEX_DIR = "../m16a_hubroom_event_prediction/oht_map"
 COLS = ["날짜", "시간", "FAB", "ALARM_KR", "ALARM_EN", "HID_ZONE", "HID_section",
         "OHT_report", "OHT_missing", "OHT_JAM", "ZONE_STOP", "FILE_NAME", "FILE_PATH"]
 NAME_RE = re.compile(r"^PROBLEM_MAP_(.+)_(\d{8})_(\d{4})_([A-Z]+)\.html$")
-ALARM_KR_OF = {"NORMAL": "정상", "WARNING": "경계", "DANGER": "위험", "CRITICAL": "초위험"}
+#   영문 등급 (2026-10 변경): 정상 NONE · 경계 WARNING · 위험 CRITICAL · 초위험 EMERGENCY
+#   — 판정 CSV 줄이 없을 때 파일 이름의 영문으로 한글을 채운다. 예전 이름(NORMAL · DANGER)도 읽는다.
+#     ※ 예전 CRITICAL 은 초위험이었지만 지금은 위험 — 판정 CSV 줄이 있으면 그쪽 ALARM_KR 를 쓴다.
+ALARM_KR_OF = {"NONE": "정상", "WARNING": "경계", "CRITICAL": "위험", "EMERGENCY": "초위험",
+               "NORMAL": "정상", "DANGER": "위험"}
 
 
 def _config():
