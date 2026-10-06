@@ -1169,6 +1169,7 @@
     <button data-tab="policy">정책</button>
     <button data-tab="report">리포트·피드백</button>
     <button data-tab="ui">UI대쉬보드</button>
+    <button data-tab="updates">업데이트 내역</button>
   </div>
   <div class="chan">
     <span><i id="ch-lp"></i><span id="ch-lp-tx">로그프레소</span></span>
@@ -1547,6 +1548,50 @@
       <iframe id="uiframe" title="FAB별 실시간 상황 UI대쉬보드"
               style="width:100%;height:calc(100vh - 300px);min-height:620px;border:0;
                      border-radius:0 0 20px 20px;background:#06080c;display:block"></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- ── 업데이트 내역 — 날짜 · 버전 · 내용 (2026-10-06 고객) ──
+     "UI대쉬보드 옆에 업데이트 내역 쓸 수 있게 · 비밀번호는 숨김 활성화와 동일 ·
+      기록하고 저장하는 데 비밀번호 필요 · 날짜, 버전, 내용".
+     보는 것은 누구나, 저장 · 지우기만 비밀번호 — 서버(updates.py)가 확인한다. -->
+<div class="page hidden" id="tab-updates">
+  <div class="tabhead">
+    <div class="eyebrow">업데이트 내역</div>
+    <p>관제가 <b>언제 · 어느 버전으로 · 무엇이</b> 바뀌었는지 적어 둡니다 —
+       보는 것은 누구나, <b>저장 · 지우기는 숨김 해제와 같은 비밀번호</b>가 있어야 됩니다.</p>
+  </div>
+  <div class="card">
+    <h2>새로 적기</h2>
+    <div class="bd">
+      <form id="updform" autocomplete="off">
+        <div class="row">
+          <label for="upddate">날짜</label>
+          <input type="date" id="upddate">
+          <label for="updver">버전</label>
+          <input type="text" id="updver" maxlength="40" placeholder="예: v1.4.0">
+        </div>
+        <textarea id="updtext" rows="5" maxlength="5000" style="margin-top:12px"
+                  placeholder="무엇이 바뀌었나 — 한 줄에 하나씩"></textarea>
+        <div class="row" style="margin-top:12px">
+          <label for="updpw">비밀번호</label>
+          <input type="password" id="updpw" autocomplete="off">
+          <button type="submit" class="act pri">저장</button>
+          <span class="note" id="updmsg"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="card">
+    <h2>내역 <span class="note" id="updcount"></span></h2>
+    <div class="bd">
+      <div class="tw"><table class="pol"><thead><tr>
+        <th style="width:110px">날짜</th><th style="width:130px">버전</th><th>내용</th>
+        <th style="width:80px"></th>
+      </tr></thead><tbody id="updrows">
+        <tr><td colspan="4" class="empty">불러오는 중…</td></tr>
+      </tbody></table></div>
     </div>
   </div>
 </div>
@@ -2747,7 +2792,7 @@ function goPolicyTab(){
 /* 탭 */
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
-  ['live','past','ml','analysis','report','ui','policy'].forEach(t =>
+  ['live','past','ml','analysis','report','ui','policy','updates'].forEach(t =>
     $('#tab-'+t).classList.toggle('hidden', t !== b.dataset.tab));
   // ★ML 탭을 떠나면 자동 갱신을 멈춘다. 하루 종일 켜 두는 화면이라,
   //   안 보는 탭이 계속 요청을 던지면 그만큼 쓸데없는 부하다.
@@ -2761,6 +2806,8 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     initMl();
   }else if(b.dataset.tab==='ui'){
     initUi();
+  }else if(b.dataset.tab==='updates'){
+    initUpdates();
   }else if(b.dataset.tab==='policy'){
     initScorePolicy();
     initScoreTune();
@@ -2772,6 +2819,81 @@ document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     renderLlmNow(ACC);                   // 그 외 탭 = 오늘 최근 판단
   }
 });
+
+/* ══════════ 업데이트 내역 — 날짜 · 버전 · 내용 ══════════
+   보는 것은 누구나. 저장 · 지우기는 숨김 해제와 같은 비밀번호를 **서버가** 확인한다
+   (updates.py). 화면은 비밀번호 글자를 그대로 보낸다 — 해시를 보내면 안 된다:
+   HIDE_PW_SHA 는 화면 소스에 보이므로, 해시를 받아 주면 누구나 저장할 수 있다.
+   ★저장하고 나면 비밀번호 칸을 비운다 — 관제실 PC 에 적힌 채로 남지 않게. */
+const updToday = () => new Date().toLocaleDateString('sv-SE');      // YYYY-MM-DD
+function updRows(items){
+  if(!items.length) return '<tr><td colspan="4" class="empty">아직 적은 내역이 없습니다</td></tr>';
+  return items.map(x => `<tr>
+      <td class="mono">${esc(x.date)}</td>
+      <td><b>${esc(x.version)}</b></td>
+      <td style="white-space:pre-wrap;line-height:1.6">${esc(x.content)}</td>
+      <td><button class="act sm" data-upddel="${esc(x.id)}" title="${
+        esc('저장 ' + (x.saved || ''))}">지우기</button></td></tr>`).join('');
+}
+function updShow(items, err){
+  $('#updrows').innerHTML = updRows(items || []);
+  $('#updcount').innerHTML = err ? `<b style="color:var(--crit)">${esc(err)}</b>`
+                                 : `— ${(items || []).length}건`;
+}
+function updMsg(text, bad){
+  $('#updmsg').innerHTML = bad ? `<b style="color:var(--crit)">${esc(text)}</b>` : esc(text);
+}
+/* 서버가 옛것이면(/api/updates 가 없으면) JSON 이 아니라 404 페이지가 온다 */
+const UPD_OLD = '서버가 옛것입니다 — server.py · updates.py 를 덮어쓰고 서버를 다시 켜세요';
+async function loadUpdates(){
+  try{
+    const d = await api('/api/updates');
+    updShow(d.items, d.error);
+  }catch(e){
+    updShow([], UPD_OLD);
+  }
+}
+function initUpdates(){
+  if(!$('#upddate').value) $('#upddate').value = updToday();
+  loadUpdates();
+}
+$('#updform').onsubmit = async e => {
+  e.preventDefault();
+  const pw = $('#updpw').value;
+  if(!$('#updver').value.trim()){ updMsg('버전을 넣으세요', true); $('#updver').focus(); return; }
+  if(!$('#updtext').value.trim()){ updMsg('내용을 넣으세요', true); $('#updtext').focus(); return; }
+  if(!pw){ updMsg('비밀번호를 넣으세요 (숨김 해제와 같은 비밀번호)', true); $('#updpw').focus(); return; }
+  updMsg('저장 중…');
+  try{
+    const d = await post('/api/updates', {date: $('#upddate').value, version: $('#updver').value,
+                                          content: $('#updtext').value, pw});
+    if(!d.ok){ updMsg(d.error || '저장 실패', true); if(/비밀번호/.test(d.error || '')) $('#updpw').select(); return; }
+    $('#updpw').value = ''; $('#updver').value = ''; $('#updtext').value = '';
+    updMsg(`저장했습니다 — ${d.item.date} ${d.item.version}`);
+    updShow(d.items);
+  }catch(err){
+    updMsg(UPD_OLD, true);
+  }
+};
+/* 지우기 — 잘못 적은 것을 고치는 길이다(지우고 다시 적는다). 같은 비밀번호 칸을 쓴다 */
+$('#updrows').onclick = async e => {
+  const b = e.target.closest('[data-upddel]');
+  if(!b) return;
+  const pw = $('#updpw').value;
+  if(!pw){ updMsg('지우려면 위 비밀번호 칸에 비밀번호를 넣으세요', true); $('#updpw').focus(); return; }
+  const tr = b.closest('tr');
+  const what = tr ? [...tr.children].slice(0, 2).map(td => td.textContent.trim()).join(' ') : '';
+  if(!confirm(`이 내역을 지울까요?\n${what}`)) return;
+  try{
+    const d = await post('/api/updates', {delete: b.dataset.upddel, pw});
+    if(!d.ok){ updMsg(d.error || '지우기 실패', true); return; }
+    $('#updpw').value = '';
+    updMsg(`지웠습니다 — ${what}`);
+    updShow(d.items);
+  }catch(err){
+    updMsg(UPD_OLD, true);
+  }
+};
 
 /* ══════════ UI대쉬보드 — FAB별 실시간 상황 UI대쉬보드 ══════════
    월드모델파생에서 만든 그 화면(OHT_Bridge_Monitor.html)을 관제가 그대로 내준다.

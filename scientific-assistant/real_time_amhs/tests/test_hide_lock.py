@@ -46,14 +46,15 @@ class 가리는_것(unittest.TestCase):
         tabs = re.findall(r"'([a-z]+)'", m.group(1))
         self.assertEqual(tabs, ["ml", "analysis", "report"])
 
-    def test_남는_탭은_넷(self):
-        """실시간 관제 · 과거 데이터 조회 · 정책 · UI대쉬보드."""
+    def test_남는_탭은_다섯(self):
+        """실시간 관제 · 과거 데이터 조회 · 정책 · UI대쉬보드 · 업데이트 내역.
+        ★업데이트 내역(2026-10-06)은 보는 것은 누구나 — 저장만 비밀번호다(test_updates)."""
         box = self.h[self.h.index('<div class="tabs">'):]
         box = box[:box.index("</div>")]
         tabs = dict(re.findall(r'data-tab="([a-z]+)"[^>]*>([^<]+)<', box))
         hide = {"ml", "analysis", "report"}
         self.assertEqual({t for t in tabs if t not in hide},
-                         {"live", "past", "policy", "ui"})
+                         {"live", "past", "policy", "ui", "updates"})
         self.assertEqual(tabs["analysis"], "LLM 모델 분석")
         self.assertEqual(tabs["report"], "리포트·피드백")
 

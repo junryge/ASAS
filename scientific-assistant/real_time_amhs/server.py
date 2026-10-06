@@ -991,6 +991,9 @@ def version():
         "정책_보관기간카드": 'id="rtrow"' in body,
         "API_retention": any(str(r) == "/api/retention"
                              for r in app.url_map.iter_rules()),
+        "업데이트내역탭": 'id="tab-updates"' in body,
+        "API_updates": any(str(r) == "/api/updates"
+                           for r in app.url_map.iter_rules()),
     })
 
 
@@ -2407,6 +2410,25 @@ def api_oht_map_report():
         f'attachment; filename="{ascii_name}"; '
         f"filename*=UTF-8''{urllib.parse.quote(name)}")
     return resp
+
+
+@app.route("/api/updates", methods=["GET", "POST"])
+def api_updates():
+    """업데이트 내역 — 날짜 · 버전 · 내용 ('UI대쉬보드' 옆 탭, updates.py 참고).
+
+    GET                               → {"items": [...]} 날짜 최근이 위
+    POST {date, version, content, pw} → 하나 저장
+    POST {"delete": id, "pw": …}      → 하나 지움
+    ★저장·지우기는 숨김 해제와 같은 비밀번호 — **서버가** 확인한다 (틀리면 403).
+    """
+    import updates
+    if request.method == "POST":
+        b = request.get_json(silent=True)
+        b = b if isinstance(b, dict) else {}
+        out, code = updates.delete(b, CFG) if b.get("delete") else updates.add(b, CFG)
+        return jsonify(out), code
+    items, err = updates.load(CFG)
+    return jsonify({"ok": not err, "items": items, "error": err or None})
 
 
 @app.route("/api/collect", methods=["POST"])

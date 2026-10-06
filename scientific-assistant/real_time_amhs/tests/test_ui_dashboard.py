@@ -64,7 +64,7 @@ class 대쉬보드에_붙어_있다(unittest.TestCase):
 
     def test_탭_전환_목록에_들어_있다(self):
         """★여기서 빠지면 단추는 켜지는데 화면이 안 바뀐다 — 조용히 틀린다."""
-        m = re.search(r"\['live','past','ml','analysis','report','ui','policy'\]", self.h)
+        m = re.search(r"\['live','past','ml','analysis','report','ui','policy','updates'\]", self.h)
         self.assertTrue(m, "탭 전환 목록에 'ui' 가 없다")
 
     def test_처음_열_때_싣는다(self):
