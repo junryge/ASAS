@@ -23,6 +23,26 @@ body[data-theme="hmi"] {
   --chip:#e5e9ef; --chip-fg:#374151; --accent:#0e7490; --accent-line:#0e7490; --primary:#1d4ed8; --time:#1d4ed8; --link:#1d4ed8;
   --head:#1d4ed8; --overlay:rgba(17,24,39,0.45); --shadow:0 10px 30px rgba(17,24,39,.18);
 }
+/* ★배경 4종 (2026-10-06 고객: "배경 색상 가능하게 2D, 유사3D, 아이소메트리 배경 가능하게 · 다크, 화이트,
+     네이비, 고대비") — 관제(static/dashboard.html)의 테마 4벌과 같은 색이다.
+       다크 = 위 기본 · 화이트 = hmi (현장 HMI 밝은 바탕) · 네이비 · 고대비 (아래 둘)
+     네이비 = 관제 :root[data-theme="navy"] · 고대비 = [data-theme="contrast"] 의 --bg · --panel · --cy 를
+     이 화면 변수 이름으로 옮겼다. 맵(캔버스 · 3D)의 색은 MAP_THEMES 가 같이 바꾼다 — 배경만 바꾸면
+     레일 · 글자가 바탕에 묻힌다 (브릿지 모니터에서 흰 바탕에 흰 글자가 안 보였던 일). */
+body[data-theme="navy"] {
+  --bg:#08131F; --bar:#0E1E30; --panel:#0E1E30; --card:#08131F; --box:#16293F; --item:#16293F; --item-hover:#1B3049;
+  --line:#1B3049; --line2:#27405C; --fg:#E4EDF8; --fg2:#93A8C2; --muted:#647894;
+  --ctl:#16293F; --ctl-fg:#E4EDF8; --ctl-line:#27405C; --ctl-hover:#1B3049;
+  --chip:#1B3049; --chip-fg:#C6D6EA; --accent:#2F6B7F; --accent-line:#54D2E0; --primary:#0d6efd; --time:#54D2E0; --link:#54D2E0;
+  --head:#54D2E0; --overlay:rgba(4,10,18,0.75); --shadow:0 10px 30px rgba(0,0,0,.5);
+}
+body[data-theme="contrast"] {
+  --bg:#000000; --bar:#0A0A0A; --panel:#0A0A0A; --card:#000000; --box:#1A1A1A; --item:#0A0A0A; --item-hover:#1A1A1A;
+  --line:#33383F; --line2:#4A515B; --fg:#FFFFFF; --fg2:#B9C4D2; --muted:#8B97A6;
+  --ctl:#1A1A1A; --ctl-fg:#FFFFFF; --ctl-line:#4A515B; --ctl-hover:#33383F;
+  --chip:#1A1A1A; --chip-fg:#FFFFFF; --accent:#0E7C8A; --accent-line:#5BE9F5; --primary:#0d6efd; --time:#5BE9F5; --link:#5BE9F5;
+  --head:#5BE9F5; --overlay:rgba(0,0,0,0.8); --shadow:0 10px 30px rgba(0,0,0,.6);
+}
 body { font-family:'Malgun Gothic','Segoe UI',sans-serif; background:var(--bg); color:var(--fg); overflow:hidden; height:100vh; display:flex; flex-direction:column; }
 
 /* ── 상단 — 두 줄로 묶는다. 예전엔 한 줄에 스물몇 개를 늘어놓고 줄바꿈에
@@ -88,6 +108,17 @@ body[data-theme="hmi"] #topbar .tb-query input[type=datetime-local] { color-sche
 #loading-msg { color:#d97706; display:none; font-size:13px; font-weight:700; }
 .toggle-btn { font-size:12px !important; padding:5px 8px !important; }
 .toggle-btn.on { background:var(--accent) !important; color:#fff !important; border-color:var(--accent-line) !important; }
+/* ★리플레이 · 실시간 (2026-10-06 고객: "월드모델 파생, OHT 실시간 같은 포트 사용하게 · 리플레이 모드 ·
+     실시간 모드 변경 가능하게") — 맨 위 [리플레이 | 실시간] 이 body[data-app] 를 바꾼다.
+     리플레이에만 있는 것(구간 조회 · 재생 단추 · 속도 · 프레임 · 슬라이더)은 실시간에서 숨고,
+     실시간에만 있는 것(실시간 PLAY 단추 · 상태줄 · 스코어 탭)은 리플레이에서 숨는다.
+     하는 일은 static/js/live_mode.js 에 있다. */
+body[data-app="live"] .replay-only { display:none !important; }
+body:not([data-app="live"]) .live-only { display:none !important; }
+/* 실시간에서 큰 시계는 OHT 시각(로그프레소 데이터 시각)이다 — 스코어 시각(관제)은 상태줄 칩에 따로 */
+body[data-app="live"] #time-display::before { content:'OHT'; font-size:11px; font-weight:700; color:var(--muted);
+  margin-right:6px; font-family:'Malgun Gothic','Segoe UI',sans-serif; }
+#live-text { font-size:12px; color:var(--fg2); }
 
 #main { display:flex; flex:1; min-height:0; }   /* ★ topbar가 wrap 되어도 자동 맞춤 */
 /* ===== 스크롤바 숨김 처리 (기능은 유지, 외관만 숨김) ===== */
@@ -201,7 +232,8 @@ canvas.chart { width:100%; flex:1; }
 .rfilter { display:flex; gap:3px; flex-wrap:wrap; margin-bottom:6px; }
 .rfilter button { padding:3px 7px; font-size:10px; background:var(--chip); color:var(--chip-fg); border:none; border-radius:3px; cursor:pointer; }
 .rfilter button.active { background:var(--accent); color:#fff; }
-.rfilter button:hover { background:var(--ctl-hover); }
+/* ★켜진 단추는 마우스를 올려도 그대로 — 밝은 바탕에서 흰 글자가 밝은 hover 색에 묻혀 안 보였다 */
+.rfilter button:not(.active):hover { background:var(--ctl-hover); }
 .rsearch { width:100%; padding:5px 8px; background:var(--ctl); color:var(--ctl-fg); border:1px solid var(--ctl-line); border-radius:4px; font-size:11px; margin-bottom:6px; }
 .rlist { max-height:calc(100vh - 200px); overflow-y:auto; }
 .ritem { background:var(--item); padding:6px 8px; border-radius:5px; margin-bottom:4px; border-left:3px solid var(--line2); font-size:11px; cursor:pointer; border-top:1px solid var(--line); border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
@@ -292,11 +324,16 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
 
 <div id="topbar">
   <div class="tb-row">
+    <div class="tb-group tb-seg" id="app-mode" title="리플레이 — 지난 구간을 로그프레소에서 조회해 다시 봅니다 · 실시간 — 로그프레소 '지금' 을 몇 초마다 받아 봅니다 (지금 보는 FAB 하나만). 같은 주소 · 같은 포트입니다">
+      <span class="tb-cap">모드</span>
+      <button id="app-replay" class="toggle-btn on" onclick="setAppMode('replay')">⏪ 리플레이</button>
+      <button id="app-live" class="toggle-btn" onclick="setAppMode('live')">● 실시간</button>
+    </div>
     <div class="tb-group">
       <select id="fab-select" onchange="onFabChange()" title="FAB 선택"></select>
       <select id="layout-select" onchange="onLayoutChange()" title="Layout 선택"></select>
     </div>
-    <div class="tb-group tb-query">
+    <div class="tb-group tb-query replay-only">
       <label>시작</label>
       <input type="datetime-local" step="1" id="lp-from" onchange="lpFromChanged()" title="시작 날짜·시각 — 눌러서 달력·시계로 고릅니다">
       <span class="tb-tilde">~</span>
@@ -316,6 +353,13 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
               title="조회 멈춤 — 조각과 조각 사이에서 멈춘다. 누른 뒤 조각 하나(기본 10분치)만큼은 더 기다릴 수 있다. 멈춘 뒤 바로 다시 조회할 수 있다">⏹ 멈춤</button>
       <span id="lp-status"></span>
     </div>
+    <!-- 실시간 상태줄 — 테이블 · OHT 시각(지금보다 몇 초 늦은지) · 차 · 조회 · 관제 스코어 칩 (live_mode.js 가 채운다) -->
+    <div class="tb-group live-only" id="live-chip">
+      <span class="badge badge-stopped" id="live-dot">■ 정지</span>
+      <span id="live-text">[▶ 실시간 PLAY] 를 누르면 지금 데이터를 받습니다</span>
+      <span id="live-score" class="risk" style="display:none;cursor:pointer"
+            title="관제가 매긴 이 FAB 의 스코어 (1분마다) — 누르면 오른쪽 스코어 탭"></span>
+    </div>
     <span class="tb-spacer"></span>
     <div class="tb-group tb-seg" title="보기 — 2D 평면(기본) / 유사 3D(눕혀 보기) / 아이소메트리(three.js 3D · 레일·설비·차량을 세워 보기). 정보는 같다">
       <span class="tb-cap">보기</span>
@@ -323,15 +367,28 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <button id="btn-iso" class="toggle-btn"    onclick="setMapView('iso')">◈ 유사 3D</button>
       <button id="btn-3d"  class="toggle-btn"    onclick="setMapView('3d')" title="three.js — 등각(아이소메트리) 카메라. 드래그 회전 · 휠 줌 · 우클릭 이동 · 차량/존 클릭">⬢ 아이소메트리</button>
     </div>
+    <div class="tb-group tb-seg" id="bg-seg" title="배경 — 2D · 유사 3D · 아이소메트리가 같은 배경을 씁니다. 상단 · 패널도 같이 바뀝니다 (관제와 같은 4종). 이 브라우저에 저장됩니다">
+      <span class="tb-cap">배경</span>
+      <button data-bg="dark"     class="toggle-btn" onclick="setMapBg('dark')">다크</button>
+      <button data-bg="hmi"      class="toggle-btn" onclick="setMapBg('hmi')" title="현장 HMI 처럼 밝은 바탕 · 검은 레일">화이트</button>
+      <button data-bg="navy"     class="toggle-btn" onclick="setMapBg('navy')">네이비</button>
+      <button data-bg="contrast" class="toggle-btn" onclick="setMapBg('contrast')" title="검은 바탕 · 흰 레일 · 노란 글자 — 멀리서 · 밝은 방에서 읽기 쉽게">고대비</button>
+    </div>
     <button onclick="openMapSettings()" title="맵·화면 표시 설정">⚙ 설정</button>
   </div>
   <div class="tb-row">
     <div class="tb-group">
-      <button onclick="sendCmd('play')">&#9654; 재생</button>
-      <button onclick="sendCmd('pause')">&#9208; 일시정지</button>
-      <button onclick="sendCmd('stop')">&#9632; 정지</button>
+      <button class="replay-only" onclick="sendCmd('play')">&#9654; 재생</button>
+      <button class="replay-only" onclick="sendCmd('pause')">&#9208; 일시정지</button>
+      <button class="replay-only" onclick="sendCmd('stop')">&#9632; 정지</button>
+      <button class="live-only" id="live-play" onclick="liveCmd('play')"
+              title="로그프레소를 묻기 시작 — 지금 보는 FAB 하나만 · 시계가 흐른다">&#9654; 실시간 PLAY</button>
+      <button class="live-only" id="live-pause" onclick="liveCmd('pause')"
+              title="화면만 이 자리에 세운다 (조회는 계속) — 다시 PLAY 하면 지금으로">&#9208; 일시정지</button>
+      <button class="live-only" id="live-stop" onclick="liveCmd('stop')"
+              title="로그프레소 조회를 멈춘다 — 저절로 멈추지 않는다. 다시 PLAY 하면 이어서 묻는다">&#9632; 정지</button>
     </div>
-    <div class="tb-group tb-seg" title="재생 속도">
+    <div class="tb-group tb-seg replay-only" title="재생 속도">
       <span class="tb-cap">속도</span>
       <button class="speed-btn" onclick="setSpeed(1)">x1</button>
       <button class="speed-btn" onclick="setSpeed(2)">x2</button>
@@ -340,8 +397,8 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <button class="speed-btn" onclick="setSpeed(0)">MAX</button>
     </div>
     <span id="time-display">--:--:--</span>
-    <span id="frame-display"></span>
-    <div id="slider-container">
+    <span id="frame-display" class="replay-only"></span>
+    <div id="slider-container" class="replay-only">
       <input type="range" id="time-slider" min="0" max="100" value="0"
              oninput="onSliderInput(this.value)"
              onchange="onSliderChange(this.value)"
@@ -350,6 +407,7 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
              ontouchstart="userSliderDragging=true"
              ontouchend="userSliderDragging=false">
     </div>
+    <span class="tb-spacer live-only"></span><!-- 실시간에는 슬라이더가 없다 — 그 자리를 비워 오른쪽 단추가 제자리에 -->
     <span id="status-badge" class="badge badge-stopped">정지</span>
     <span id="loading-msg">로딩중...</span>
     <button onclick="resetMapView()" class="tb-fit" title="맵을 전체가 보이게 되돌린다">⤢ 전체보기</button>
@@ -470,8 +528,10 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
       <div id="rsidebar-toggle" class="open" onclick="toggleRSidebar()" title="OHT/Zone 목록 열기/닫기">&#9664;</div>
       <div id="rsidebar">
         <div class="rtabs">
-          <button class="rtab active" onclick="switchRTab('oht')">OHT 상태</button>
-          <button class="rtab" onclick="switchRTab('zone')">HID Zone</button>
+          <button class="rtab active" data-rt="oht" onclick="switchRTab('oht')">OHT 상태</button>
+          <button class="rtab" data-rt="zone" onclick="switchRTab('zone')">HID Zone</button>
+          <button class="rtab live-only" data-rt="score" onclick="switchRTab('score')"
+                  title="관제가 매긴 이 FAB 의 스코어 — 실시간 모드에서만">스코어</button>
         </div>
         <div id="rtab-oht">
           <!-- ★2026-09-29 미보고 · JAM · HT_STOP — 왼쪽 '차량 현황' 은 숨겨져 있어 여기에 보인다 -->
@@ -499,6 +559,19 @@ body[data-theme="hmi"] .cpanel, body[data-theme="hmi"] #bottom-panels { backgrou
           </div>
           <input type="text" id="zoneSearch" placeholder="Zone ID 검색..." oninput="renderZoneList()" class="rsearch">
           <div id="zoneList" class="rlist"></div>
+        </div>
+        <!-- 실시간 모드의 '스코어' — 관제가 매긴 그 FAB 의 점수 (static/js/live_mode.js 가 채운다) -->
+        <div id="rtab-score" class="live-only" style="display:none;">
+          <div id="sc-sum" class="rsum" style="font-size:12px;padding:4px 2px 8px;line-height:1.6">관제 스코어를 불러오는 중…</div>
+          <div id="sc-now"></div>
+          <div id="sc-spark" style="position:relative;margin:6px 0 2px"></div>
+          <div id="sc-cur"></div>
+          <div class="rfilter" id="sc-filter" style="margin-top:8px">
+            <button class="active" data-f="all">전체</button><button data-f="warn">경계↑</button>
+            <button data-f="danger">위험↑</button><button data-f="hid">HID·RET</button>
+          </div>
+          <div id="sc-list" class="rlist"></div>
+          <div class="sc-cap" style="margin:6px 2px">줄을 더블클릭하면 그 시각 구간 그래프 (관제와 같은 그림)</div>
         </div>
       </div>
     </div>
@@ -535,7 +608,8 @@ let currentSpeed = 1;
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws`);
-  ws.onopen = () => console.log('WS connected');
+  // ★다시 붙으면 서버는 리플레이로 시작한다 — 실시간을 보던 중이면 모드를 다시 알린다 (live_mode.js)
+  ws.onopen = () => { console.log('WS connected'); if (window.LiveMode) LiveMode.wsOpen(); };
   ws.onmessage = (e) => { try { updateUI(JSON.parse(e.data)); } catch(err) {} };
   ws.onclose = () => setTimeout(connectWS, 2000);
   ws.onerror = () => ws.close();
@@ -623,6 +697,23 @@ const MAP_THEMES = {
           mtl:'#2563eb', mtlText:'#fff', eq:'#475569', eqText:'#e2e8f0',
           junction:'#f87171', branch:'#94a3b8', sensor:'#38bdf8',
           zone:'#00ff88', vehicleStroke:'#0a0e17', cutX:'#fff' },
+  /* ★네이비 · 고대비 (2026-10-06) — 관제 테마 4벌의 색(--bg · --panel · --tx · --cy · 등급색)에서 골랐다.
+       맵 바탕은 관제 네이비의 패널색(#0E1E30) — 관제 바탕(#08131F)은 다크와 거의 같아 구별이 안 된다.
+       고대비는 검은 바탕 · 흰 레일 · 노란 글자 — 멀리서 · 밝은 방에서 읽히는 것이 먼저다. */
+  navy: { bg:'#0E1E30', rail:'rgba(228,237,248,0.80)', railW:1.0, node:'#2F6B7F',
+          station:'#1B3049', stationLine:'#93A8C2', stationOn:'#E4EDF8',
+          text:'#fde68a', text2:'#C6D6EA', textBg:'rgba(8,19,31,0.85)',
+          zc:'#16a34a', zcText:'#ecfdf5', hid:'#16a34a', hidText:'#ecfdf5',
+          mtl:'#2563eb', mtlText:'#fff', eq:'#27405C', eqText:'#E4EDF8',
+          junction:'#FF5C6B', branch:'#93A8C2', sensor:'#54D2E0',
+          zone:'#3BDB94', vehicleStroke:'#08131F', cutX:'#fff' },
+  contrast: { bg:'#000000', rail:'#FFFFFF', railW:1.2, node:'#8B97A6',
+          station:'#1A1A1A', stationLine:'#FFFFFF', stationOn:'#FFFFFF',
+          text:'#FFE64D', text2:'#FFFFFF', textBg:'rgba(0,0,0,0.9)',
+          zc:'#4AF5A6', zcText:'#000000', hid:'#4AF5A6', hidText:'#000000',
+          mtl:'#5BE9F5', mtlText:'#000000', eq:'#4A515B', eqText:'#FFFFFF',
+          junction:'#FF6B79', branch:'#B9C4D2', sensor:'#5BE9F5',
+          zone:'#4AF5A6', vehicleStroke:'#000000', cutX:'#fff' },
 };
 function mapPal() {
   const t = MAP_THEMES[mapSettings.mapTheme] ? mapSettings.mapTheme : 'hmi';
@@ -664,9 +755,27 @@ function saveMapSettings() {
   catch(e) { console.warn('mapSettings 저장 실패:', e); }
 }
 // 맵 테마 = 화면 테마. body[data-theme] 하나로 상단·패널·설정창·툴팁이 같이 바뀐다.
+//   ★배경 4종 — dark(다크) · hmi(화이트) · navy(네이비) · contrast(고대비). 저장된 값이 모르는
+//     것이면 화이트(기본)로 연다.
 function applyPageTheme() {
-  document.body.dataset.theme = (mapSettings.mapTheme === 'dark') ? 'dark' : 'hmi';
+  document.body.dataset.theme = MAP_THEMES[mapSettings.mapTheme] ? mapSettings.mapTheme : 'hmi';
+  syncBgSeg();
   if (typeof sync3DTheme === 'function') sync3DTheme();   // 3D 도 같은 테마·같은 차량 색
+}
+// 어두운 바탕인가 — 다크 · 네이비 · 고대비. 3D 글자판 · 유사 3D 바닥판이 이것으로 색을 고른다
+function isDarkMap() { return (MAP_THEMES[mapSettings.mapTheme] ? mapSettings.mapTheme : 'hmi') !== 'hmi'; }
+// 위 [배경] 단추 — 고르면 바로 바뀌고 이 브라우저에 남는다 (⚙ 설정의 '배경' 과 같은 값)
+function setMapBg(t) {
+  if (!MAP_THEMES[t]) return;
+  mapSettings.mapTheme = t;
+  saveMapSettings();
+  applyPageTheme();
+  railCacheCanvas = null;              // 레일 캐시를 새 색으로 다시 그린다
+  drawMap();
+}
+function syncBgSeg() {
+  const t = document.body.dataset.theme;
+  document.querySelectorAll('#bg-seg [data-bg]').forEach(b => b.classList.toggle('on', b.dataset.bg === t));
 }
 // 설정창에서 테마를 고르면 '어두운 화면 전용' 묶음을 흐리게 — 안 쓰는 설정을
 // 만지게 두면 "바꿨는데 왜 안 바뀌나" 가 된다.
@@ -2043,7 +2152,7 @@ function sync3DLayout() {
      그래서 '몇 대 이상' 을 고치면 2D 와 아이소메트리가 같이 바뀐다. */
 function sync3DTheme() {
   if (!v3d) return;
-  v3d.setOptions({ dark: mapSettings.mapTheme === 'dark', background: mapPal().bg,
+  v3d.setOptions({ dark: isDarkMap(), background: mapPal().bg,
                    stateColors: v3dColors(), jamMin: jamMins() });
 }
 // 지금 프레임을 3D 로 — updateUI 마다. 켜져 있을 때만 (안 보이는 화면에 매 프레임 넣지 않는다)
@@ -2072,7 +2181,7 @@ async function open3D() {
         flipY: false,
         projection: 'iso',                          // 단추 이름이 '아이소메트리' 다 — 등각으로 연다
         walls: false,                               // 벽 없음 — 돌려 보면 안쪽을 가리기만 한다 (고객 지시)
-        dark: mapSettings.mapTheme === 'dark',
+        dark: isDarkMap(),                         // 다크 · 네이비 · 고대비 = 어두운 글자판
         colors: { state: v3dColors(), background: pal.bg, accent: '#1f6feb' },
         /* 크기 — 기본은 oht3d.js DEFAULTS (고객이 정한 0.20/0.40/0.40/0.80).
            '크기' 판에서 고쳐 둔 것이 있으면 그 값으로 연다. */
@@ -2135,8 +2244,8 @@ function drawMap() {
 
   const b = mapData.bounds || (railGraph && railGraph.bounds);
   if (!b) {
-    mapCtx.fillStyle = '#0a0e17'; mapCtx.fillRect(0,0,w,h);
-    mapCtx.fillStyle = '#374151'; mapCtx.font = '14px sans-serif'; mapCtx.textAlign = 'center';
+    mapCtx.fillStyle = mapPal().bg; mapCtx.fillRect(0,0,w,h);
+    mapCtx.fillStyle = '#6b7280'; mapCtx.font = '14px sans-serif'; mapCtx.textAlign = 'center';
     mapCtx.fillText('날짜를 선택하고 재생을 누르세요', w/2, h/2);
     return;
   }
@@ -2171,7 +2280,7 @@ function drawMap() {
     if (showIso) {
       // 등각 바닥판 — 눕힌 마름모. 이게 있어야 '눕혔다' 가 읽힌다.
       const pl = mapPal();
-      rc.fillStyle = mapSettings.mapTheme === 'dark' ? 'rgba(255,255,255,0.05)' : '#dfe3ea';
+      rc.fillStyle = isDarkMap() ? 'rgba(255,255,255,0.05)' : '#dfe3ea';
       rc.strokeStyle = pl.line || '#b8c0cc'; rc.lineWidth = 1;
       rc.beginPath();
       [[b.min_x, b.min_y], [b.max_x, b.min_y], [b.max_x, b.max_y], [b.min_x, b.max_y]].forEach((c, i) => {
@@ -3108,8 +3217,13 @@ let selectedOHT = null;  // 선택된 OHT vid
 function switchRTab(tab) {
   document.getElementById('rtab-oht').style.display = tab==='oht' ? 'block' : 'none';
   document.getElementById('rtab-zone').style.display = tab==='zone' ? 'block' : 'none';
-  document.querySelectorAll('.rtab').forEach(b => b.classList.toggle('active', b.textContent.includes(tab==='oht'?'OHT':'Zone')));
+  // ★실시간 모드의 '스코어' 탭 (static/js/live_mode.js). 단추는 이름(data-rt)으로 고른다 —
+  //   글자로 고르면 '스코어' 를 누를 때 'HID Zone' 단추가 켜졌다.
+  const sc = document.getElementById('rtab-score');
+  if (sc) sc.style.display = tab==='score' ? 'block' : 'none';
+  document.querySelectorAll('.rtab').forEach(b => b.classList.toggle('active', b.dataset.rt === tab));
   refreshSidebar(true);               // 방금 보인 탭은 비어 있을 수 있다 — 바로 채운다
+  if (tab === 'score' && window.LiveMode) LiveMode.renderScore();
 }
 
 function filterOHT(f, btn) {
@@ -3739,7 +3853,8 @@ async function bootFabs() {
 //   부팅은 currentFab 과 lp-table 을 초기 FAB 으로 세팅한다. 순서가 반대면
 //   관제가 지정한 맵·테이블을 초기값이 도로 덮어써서, 눌러 봐야 엉뚱한
 //   FAB 의 빈 화면이 뜬다. 사람이 다시 고르게 만들면 안 된다.
-bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:', e));
+// ★실시간 모드(live_mode.js)도 부팅이 끝난 뒤에 지도를 맞춘다 — 그래서 약속(BOOT)을 남겨 둔다.
+window.BOOT = bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:', e));
 </script>
 <!-- 맵 표시 설정 모달 -->
 <div id="map-settings-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;justify-content:center;align-items:center;" onclick="if(event.target.id==='map-settings-modal')closeMapSettings()">
@@ -3751,13 +3866,15 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
 
     <section class="ms-sec">
       <h4>화면</h4>
-      <div class="ms-row"><label>테마</label>
+      <div class="ms-row"><label>배경</label>
         <span>
           <select id="ms-mapTheme" onchange="syncMsTheme()">
-            <option value="hmi">현장 HMI (밝은 바탕)</option>
-            <option value="dark">어두운 화면 (예전)</option>
+            <option value="dark">다크 (어두운 화면 — 예전)</option>
+            <option value="hmi">화이트 (현장 HMI 밝은 바탕)</option>
+            <option value="navy">네이비</option>
+            <option value="contrast">고대비</option>
           </select>
-          <small>화면 전체가 같이 바뀝니다</small>
+          <small>2D · 유사 3D · 아이소메트리 같은 배경 · 화면 전체가 같이 바뀝니다 (위 [배경] 단추와 같은 값)</small>
         </span>
       </div>
       <div class="ms-row"><label>포트 네모 크기</label>
@@ -3884,7 +4001,7 @@ bootFabs().then(autoFromQuery).catch(e => console.error('자동 조회 실패:',
     </section>
 
     <section class="ms-sec" id="ms-dark-only">
-      <h4>어두운 화면 전용 <small>현장 HMI 테마에서는 쓰지 않습니다</small></h4>
+      <h4>다크 전용 <small>화이트 · 네이비 · 고대비에서는 쓰지 않습니다</small></h4>
       <div class="ms-row"><label>맵 배경색</label><span><input type="color" id="ms-bgColor"></span></div>
       <div class="ms-row"><label>레일 색상</label><span><input type="text" id="ms-edgeColor" placeholder="rgba(255,255,255,0.75)" style="font-family:monospace;width:200px;"></span></div>
       <div class="ms-row"><label>레일 굵기</label><span><input type="number" id="ms-edgeWidth" step="0.1" min="0.1" max="10"><small>배수</small></span></div>
@@ -4282,5 +4399,7 @@ function drawBottleneckHeatmap(data) {
 <!-- OHT 맵 클릭 툴팁 -->
 <div id="oht-tooltip" style="position:fixed;display:none;background:rgba(10,14,23,0.96);border:1px solid #06b6d4;border-radius:6px;padding:8px 12px;font-size:11px;color:#e0e0e0;z-index:10000;pointer-events:none;min-width:200px;line-height:1.65;box-shadow:0 4px 16px rgba(6,182,212,0.35);"></div>
 
+<!-- 실시간 모드 — [리플레이 | 실시간] · 실시간 PLAY · 상태줄 · 관제 스코어 탭 · 구간 그래프 -->
+<script src="/static/js/live_mode.js"></script>
 </body>
 </html>

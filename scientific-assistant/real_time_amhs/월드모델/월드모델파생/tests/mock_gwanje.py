@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""가짜 관제(real_time_amhs) — 실시간판의 스코어 중계(/api/score/*) 시험용. 진짜 데이터 없음.
+"""가짜 관제(real_time_amhs) — 실시간 모드의 스코어 중계(/api/score/*) 시험용. 진짜 데이터 없음.
 
     python tests/mock_gwanje.py 18989
 
 관제와 같은 주소로 받는다: /api/feed · /api/graph · /api/contrib · /api/oht_map/report.
-/mock/last 는 마지막으로 받은 주소와 인자(sys 등)를 돌려준다.
+/mock/last 는 마지막으로 받은 주소와 인자(sys 등), 받은 수(n)를 돌려준다.
 """
 import json
 import sys
@@ -13,7 +13,7 @@ import urllib.parse
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-LAST = {"path": "", "q": {}}
+LAST = {"path": "", "q": {}, "n": 0}
 CUTS = {"warn": 60, "danger": 71, "critical": 85}
 
 
@@ -59,7 +59,7 @@ class H(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
         if u.path == "/mock/last":
             return self._send(200, json.dumps(LAST, ensure_ascii=False), "application/json")
-        LAST.update(path=u.path, q=q)
+        LAST.update(path=u.path, q=q, n=LAST["n"] + 1)
         s = q.get("sys", "ALL")
         if u.path == "/api/feed":
             n = int(q.get("limit", 90))

@@ -67,12 +67,25 @@ class _FakeEngine:
         return {"ok": True}
 
 
+class _FakeLive:
+    """가짜 실시간 엔진(live_engine) — 누가 PLAY 를 놓았는지만 적는다."""
+
+    def __init__(self):
+        self.stopped = []
+
+    def stop(self, sid, why=""):
+        self.stopped.append(sid)
+        return []
+
+
 class _Env:
     """세션 절을 돌릴 한 벌. 시험마다 새로 만든다(전역이 안 새게)."""
 
     def __init__(self, tmp, ttl=3600, mx=24):
         self.loads = []                       # _load_fab 이 몇 번 불렸나
+        self.live = _FakeLive()
         g = {
+            "LE": self.live,
             "os": os, "shutil": shutil, "secrets": __import__("secrets"),
             "threading": __import__("threading"), "_time": time,
             "print": lambda *a, **k: None,
@@ -262,6 +275,32 @@ class 오래_안_오면_치운다(unittest.TestCase):
         self.assertIn(ss[2].sid, e.SESSIONS)
         self.assertIn(new.sid, e.SESSIONS)
         self.assertLessEqual(len(e.SESSIONS), 3)
+
+    def test_보고_있는_사람은_수가_넘쳐도_안_치운다(self):
+        """고객: "여러 사람이 접속할 거야". 한도는 떠난 사람 몫의 메모리를 비우려는 것 —
+        웹소켓이 열려 있는(화면을 보고 있는) 사람을 치우면 그 사람 화면이 멎는다."""
+        e = _Env(self.tmp, mx=2)
+        ss = []
+        for i in range(2):
+            s, _ = e.get_session(None)
+            s.seen = time.time() - (10 - i)
+            s.ws = 1                                # 둘 다 보고 있다
+            ss.append(s)
+        idle, _ = e.get_session(None)               # 세 번째 — 창을 닫고 간 사람이 된다
+        idle.seen = time.time() - 30
+        new, _ = e.get_session(None)                # 네 번째
+        for s in ss:
+            self.assertIn(s.sid, e.SESSIONS, "★보고 있는 사람을 수 한도로 치웠다")
+        self.assertNotIn(idle.sid, e.SESSIONS, "안 보고 있는 사람부터 치워야 한다")
+        self.assertIn(new.sid, e.SESSIONS)
+
+    def test_치우면_실시간_PLAY_도_놓는다(self):
+        """창을 닫고 간 사람 몫으로 로그프레소를 계속 묻지 않게."""
+        e = _Env(self.tmp, ttl=1)
+        a, _ = e.get_session(None)
+        a.seen -= 5
+        e.get_session(None)
+        self.assertEqual(e.live.stopped, [a.sid], "세션을 치울 때 그 사람의 실시간 PLAY 를 놓아야 한다")
 
 
 class 서버_코드에_전역이_안_남았다(unittest.TestCase):

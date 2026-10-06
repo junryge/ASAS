@@ -5,6 +5,9 @@ main.py - OHT 월드모델 시뮬레이션 서버
 
 FastAPI 기반 통합 서버:
 - 실 데이터 리플레이 (플레이/일시정지/속도조절/시간점프)
+- 실시간 (로그프레소 '지금' 을 몇 초마다 — live_engine.py · 관제 스코어 — gwanje_score.py)
+  ★2026-10-06 따로 띄우던 실시간판(10006)을 합쳤다 — 같은 포트(10005), 화면 위
+    [리플레이 | 실시간] 으로 바꾼다. 웹소켓 하나가 탭마다 고른 쪽 장면을 보낸다.
 - 매크로 예측 (큐, TAT, 혼잡, 데드락)
 - WebSocket 실시간 전송
 - 스타/로그프레소 지표 연동 표시
@@ -20,8 +23,9 @@ import threading
 import time as _time
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 import uvicorn
 
 # 현재 디렉토리를 path에 추가 (개발 모드)
@@ -37,6 +41,8 @@ from config import (
 )
 from data_loader import LayoutData, HIDZoneData, get_available_dates, ensure_layout_cache
 from replay_engine import ReplayEngine, ReplayState
+import live_engine as LE                # 실시간 모드 — 로그프레소 '지금'
+import gwanje_score as GS               # 실시간 모드 — 관제 스코어 탭
 
 # 경로 자동 인식 결과 표시
 print(f"[경로] MAP_DIR  = {MAP_DIR}")
@@ -184,6 +190,8 @@ class Session:
         # 조회 번호 — 멈춤은 **제 조회만** 멈춘다 (전역이던 시절엔 남의 것도 죽였다)
         self.lp = {"gen": 0, "stop_upto": 0}
         self.seen = _time.time()
+        # 지금 열려 있는 웹소켓(화면 탭) 수 — ★보고 있는 사람은 수 한도로 치우지 않는다 (_reap_locked)
+        self.ws = 0
         # 로그프레소 CSV 도 사람마다 따로 — 같은 구간을 둘이 조회하면 같은
         # 파일을 서로 덮어쓰다가 반쯤 쓰인 것을 읽는다
         self.cache_dir = os.path.join(LOGPRESSO_CACHE_DIR, sid)
@@ -204,6 +212,12 @@ class Session:
             self.engine.stop()
         except Exception:
             pass
+        # 실시간 PLAY 도 놓는다 — 그 FAB 을 보는 다른 사람이 없으면 로그프레소 조회가 멎는다
+        # (창을 닫고 간 사람 몫으로 계속 묻지 않게. 저절로 멈추는 것은 이 정리 때뿐이다)
+        try:
+            LE.stop(self.sid, "접속이 끊긴 지 오래 — 정리")
+        except Exception:
+            pass
         shutil.rmtree(self.cache_dir, ignore_errors=True)
 
 
@@ -211,14 +225,27 @@ SESSIONS: dict = {}
 _SESS_LOCK = threading.Lock()
 
 
-def _reap_locked():
-    """치울 세션을 골라 목록에서 뺀다. 실제 정리(close)는 잠금 밖에서."""
+def _reap_locked(keep=None):
+    """치울 세션을 골라 목록에서 뺀다. 실제 정리(close)는 잠금 밖에서.
+    keep — 지금 요청한 사람 (방금 온 사람을 그 자리에서 치우면 쿠키만 받고 화면이 빈다).
+
+    ★수가 넘칠 때 **지금 화면을 보고 있는 사람**(웹소켓이 열려 있다)은 치우지 않는다
+      (고객: "여러 사람이 접속할 거야"). 한도(SESSION_MAX)는 리플레이로 하루치를 불러 놓고
+      떠난 사람 몫의 메모리를 비우려는 것이다. 보고 있는 사람까지 치우면 그 사람 화면이
+      멎는다 — 실시간 PLAY 가 풀리고, 고른 FAB · 불러온 리플레이가 날아간다.
+      그래서 보는 사람이 한도보다 많으면 한도를 넘겨서라도 둔다."""
     now = _time.time()
     dead = [k for k, v in SESSIONS.items() if now - v.seen > SESSION_TTL_SEC]
     live = [v for k, v in SESSIONS.items() if k not in dead]
     live.sort(key=lambda v: v.seen)          # 오래 안 온 사람이 앞
-    while len(live) > SESSION_MAX:
-        dead.append(live.pop(0).sid)
+    over = len(live) - SESSION_MAX
+    for v in live:
+        if over <= 0:
+            break
+        if getattr(v, "ws", 0) > 0 or v.sid == keep:     # 보고 있는 사람 · 지금 온 사람은 건너뛴다
+            continue
+        dead.append(v.sid)
+        over -= 1
     return [SESSIONS.pop(k) for k in dead if k in SESSIONS]
 
 
@@ -234,7 +261,7 @@ def get_session(sid):
             fresh = True
             print(f"[세션] 새 접속 {sid[:8]}… (지금 {len(SESSIONS)}명)")
         s.touch()
-        gone = _reap_locked()
+        gone = _reap_locked(keep=s.sid)
     for g in gone:
         print(f"[세션] 정리 {g.sid[:8]}… (오래 안 옴)")
         g.close()
@@ -284,6 +311,11 @@ async def _session_sweeper():
 
 # 시작할 때 기본 FAB 을 미리 읽어 둔다 — 첫 접속자가 기다리지 않게
 layout, hid_zones = get_layout(DEFAULT_FAB, DEFAULT_PREFIX)
+
+# 실시간 모드도 지도는 이것을 쓴다 — 리플레이와 한 벌을 같이 (따로 읽으면 메모리 · 시간이 두 배)
+LE.use_layouts(get_layout)
+# 실시간 장면을 웹소켓으로 보내는 간격 (초). 화면 시계는 그 사이를 벽시계로 메운다 (live_mode.js)
+LIVE_WS_SEC = 1.0
 
 # WebSocket 연결 관리
 ws_clients: list = []
@@ -366,10 +398,15 @@ async def select_fab(request: Request):
                 "bounds": s.layout.bounds, "nodes": len(s.layout.nodes),
                 "zones": len(s.hid_zones.zones)}
 
+    was_live = LE.playing_key(s.sid)
     try:
         s.select_fab(fab, prefix)
     except Exception as e:
         return JSONResponse({"error": f"Load failed: {e}"}, status_code=500)
+    # ★실시간 PLAY 중이었으면 새 FAB 으로 옮겨 PLAY — 앞 FAB 은 보는 사람이 없으면 멈춘다
+    #   (보는 FAB 하나만 묻는다. 고객: "전부 다 조회하면 안 되니까")
+    if was_live:
+        await run_in_threadpool(LE.play, s.sid, fab, prefix, "지도 바꿈")
 
     return {
         "fab": s.fab,
@@ -750,6 +787,88 @@ async def get_layout_graph(request: Request):
 
 
 # ============================================================
+# 실시간 모드 — 로그프레소 '지금' (live_engine.py) · 관제 스코어 (gwanje_score.py)
+# ============================================================
+# ★화면 위 [리플레이 | 실시간] 에서 실시간을 고르면 웹소켓이 이 사람이 고른 FAB 의 실시간 장면을
+#   1초마다 보낸다 (아래 /ws). 여기 HTTP 는 PLAY · 정지와 확인용이다.
+# ★지도 읽기 · 로그프레소 묻기 · 관제 묻기는 오래 걸릴 수 있어 다른 실에서 돌린다 (run_in_threadpool)
+#   — 여기서 그냥 부르면 그동안 서버 전체(남의 웹소켓까지)가 멎는다.
+
+@app.get("/api/live/snapshot")
+async def live_snapshot(request: Request):
+    """실시간 장면 한 장 — 웹소켓이 1초마다 보내는 것과 같다 (확인용)."""
+    s = sess(request)
+    return await run_in_threadpool(LE.snapshot, s.sid, s.fab, s.prefix)
+
+
+@app.get("/api/live/status")
+async def live_status(request: Request):
+    """실시간 조회 상태 한눈에 — 지도마다 피드 · PLAY 중인 화면 수 · 키 끝 4자."""
+    sess(request)
+    out = await run_in_threadpool(LE.status)
+    out["sessions"] = len(SESSIONS)
+    return out
+
+
+@app.post("/api/live/cmd")
+async def live_cmd(request: Request):
+    """[▶ 실시간 PLAY] · [■ 정지] — 그 사람이 보는 FAB 하나만 묻는다.
+
+    ★저절로 켜지거나 멈추지 않는다 (고객: "보는 사람 없어 조회를 멈춘다고 해서 좀 그래").
+      정지는 **그 사람 것만** 놓는다 — 같은 FAB 을 PLAY 중인 다른 사람이 있으면 계속 돈다."""
+    s = sess(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    act = str((body or {}).get("action") or "")
+    if act == "play":
+        await run_in_threadpool(LE.play, s.sid, s.fab, s.prefix, "화면에서 PLAY")
+    elif act == "stop":
+        LE.stop(s.sid)
+    else:
+        return JSONResponse({"error": f"모르는 명령: {act}"}, status_code=400)
+    return await run_in_threadpool(LE.live_info, s.sid, s.fab, s.prefix)
+
+
+@app.get("/api/score/feed")
+async def score_feed(request: Request):
+    """관제가 매긴 그 FAB 의 스코어 — 최근 limit 분 (최신이 위). 여기서 다시 계산하지 않는다."""
+    s = sess(request)
+    try:
+        n = max(1, min(240, int(request.query_params.get("limit") or 90)))
+    except ValueError:
+        n = 90
+    return await run_in_threadpool(GS.feed, s.fab, s.prefix, n)
+
+
+async def _score_pass(request: Request, which: str):
+    """관제가 그린 것을 그대로 넘긴다 — 그 FAB 의 관제 시스템으로 묻는다."""
+    s = sess(request)
+    q = dict(request.query_params)
+    st, ct, body, extra = await run_in_threadpool(GS.passthrough, s.fab, s.prefix, which, q)
+    return Response(content=body, status_code=st, media_type=ct, headers=extra)
+
+
+@app.get("/api/score/graph")
+async def score_graph(request: Request):
+    """구간 그래프 (관제와 같은 SVG — 누르면 그 분을 고정할 자리(.ghit)까지 그대로)."""
+    return await _score_pass(request, "graph")
+
+
+@app.get("/api/score/contrib")
+async def score_contrib(request: Request):
+    """그 분의 기여도 (관제가 만든 HTML 조각)."""
+    return await _score_pass(request, "contrib")
+
+
+@app.get("/api/score/report")
+async def score_report(request: Request):
+    """RET(레포트) 링크 — 관제의 PROBLEM_MAP 파일을 내려받기로."""
+    return await _score_pass(request, "report")
+
+
+# ============================================================
 # WebSocket
 # ============================================================
 
@@ -761,7 +880,12 @@ async def websocket_endpoint(websocket: WebSocket):
     _s, _ = get_session(websocket.cookies.get(SESSION_COOKIE))
     engine = _s.engine
     ws_clients.append(websocket)
+    _s.ws += 1                          # 보고 있는 사람 — 수 한도로 치우지 않는다 (_reap_locked)
     print(f"[WS] 연결 {_s.sid[:8]}… ({len(ws_clients)}개)")
+    # ★이 연결(탭)이 무엇을 보나 — 'replay' | 'live'. 화면 위 [리플레이 | 실시간] 이
+    #   {"action":"mode","mode":"live"} 로 바꾼다. 탭마다 따로라 한 탭은 지난 구간을 리플레이,
+    #   다른 탭은 실시간으로 같이 볼 수 있다. 다시 붙으면(끊김) 화면이 모드를 다시 알려 준다.
+    view = "replay"
 
     try:
         while True:
@@ -778,7 +902,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     cmd = json.loads(data)
                     action = cmd.get('action')
-                    if action == 'play':
+                    if action == 'mode':
+                        view = 'live' if cmd.get('mode') == 'live' else 'replay'
+                        # 실시간으로 가면 리플레이는 그 자리에 세워 둔다 (돌아와서 ▶ 재생 하면 이어서)
+                        if view == 'live' and engine.state == ReplayState.PLAYING:
+                            engine.pause()
+                    elif view == 'live':
+                        pass                # 실시간에는 재생 명령이 없다 (늦게 온 것은 버린다)
+                    elif action == 'play':
                         engine.play()
                     elif action == 'pause':
                         engine.pause()
@@ -799,6 +930,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     pass
             except asyncio.TimeoutError:
                 pass
+
+            # ★실시간 — 같은 관으로 그 사람이 고른 FAB 의 '지금' 장면을 1초마다.
+            #   장면 만들기 · 글자로 바꾸기(차 수백 대 ≈ 100KB)는 다른 실에서 (남의 웹소켓을 안 멈추게)
+            #   ★여럿이 같은 FAB 을 보면 장면 글자는 한 번만 만들어 나눠 쓴다 (LE.snapshot_json)
+            if view == 'live':
+                text = await run_in_threadpool(LE.snapshot_json, _s.sid, _s.fab, _s.prefix)
+                await websocket.send_text(text)
+                await asyncio.sleep(LIVE_WS_SEC)
+                continue
 
             # 상태 전송
             if engine.state == ReplayState.PLAYING:
@@ -840,6 +980,8 @@ async def websocket_endpoint(websocket: WebSocket):
         if websocket in ws_clients:
             ws_clients.remove(websocket)
         print(f"[WS] 오류: {e}")
+    finally:
+        _s.ws = max(0, _s.ws - 1)
 
 
 # ============================================================
@@ -847,6 +989,13 @@ async def websocket_endpoint(websocket: WebSocket):
 # ============================================================
 
 if __name__ == "__main__":
+    # ★윈도 콘솔 출력을 파일로 돌리면 cp949 라 '—' 같은 글자에서 print 가 터진다 — 실시간 조회
+    #   실 안에서 터지면 조회 실패로 잡힌다. 못 찍는 글자는 ? 로 찍고 넘어간다.
+    for _st in (sys.stdout, sys.stderr):
+        try:
+            _st.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     print("=" * 60)
     print("  OHT 월드모델 시뮬레이션 서버")
     print(f"  http://localhost:{SERVER_PORT}")
@@ -860,6 +1009,10 @@ if __name__ == "__main__":
         print(f"  데이터[{_k}]: {sorted(_v.keys())}")
     print(f"  기본 FAB 날짜: {list(get_dates_for_fab(DEFAULT_FAB, DEFAULT_PREFIX).keys())}")
     print(f"  세션: 최대 {SESSION_MAX}명 · {SESSION_TTL_SEC}초 쉬면 정리")
+    print("  모드: 화면 위 [리플레이 | 실시간] — 같은 주소 · 같은 포트")
+    print(f"  실시간: {LE.POLL_SEC:g}초마다 · 한 번에 {LE.STEP_Q_SEC}초씩 · 화면은 {LE.BUFFER_SEC:g}초 늦춰 부드럽게"
+          f" · 로그프레소 키 {LE.key_tail()}")
+    print(f"  관제 스코어: {GS.base()}  (GWANJE_URL 로 바꾼다)")
     print("=" * 60)
 
     # ★일꾼(worker)을 늘리지 마라. 세션은 이 프로세스 메모리에 있다 —

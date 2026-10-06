@@ -27,8 +27,8 @@ from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WM_DIR = os.path.abspath(os.environ.get("WM_DIR") or os.path.join(HERE, "..", "..", "월드모델파생"))
-CACHE = os.path.join(WM_DIR, "OHT_MAP", "cache")
+APP = os.path.dirname(HERE)                                     # 월드모델파생
+CACHE = os.path.join(APP, "OHT_MAP", "cache")
 KEY = os.environ.get("MOCK_LP_KEY", "dummy-key")
 LAG = float(os.environ.get("MOCK_LAG_SEC", "3"))
 FMT = "%Y%m%d%H%M%S"

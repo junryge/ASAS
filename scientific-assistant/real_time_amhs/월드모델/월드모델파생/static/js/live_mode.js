@@ -1,25 +1,35 @@
-/* 월드모델파생_실시간 — 같은 화면을 'FAB별 OHT 실시간' 으로 쓰게 하는 조각.
-   서버가 월드모델파생 dashboard.html 의 </body> 바로 앞에 끼운다 (화면 파일은 그대로다).
+/* 월드모델파생 — 실시간 모드 (2026-10-06).
 
-   위 도구줄
-     · [▶ 실시간 PLAY] [⏸ 일시정지] [■ 정지] — 재생판 단추 자리·모양 그대로, 하는 일만 바꾼다.
-         PLAY  로그프레소를 묻기 시작 (보는 FAB 하나만) · 시계가 흐른다
-         일시정지  화면만 그 자리에 세운다 (조회는 계속 — 다시 PLAY 하면 지금으로)
-         정지  조회를 멈춘다 (저절로 멈추지 않는다 — 고객 2026-10-06)
-     · 속도 · 프레임 막대 · 구간 조회 칸은 숨긴다 — 실시간에는 없다.
-     · 상태줄: [● 실시간] 테이블 · 화면 시각(지연) · 차 · 조회 · 관제 스코어 칩.
-   오른쪽 '스코어' 탭 (관제가 매긴 그 FAB 의 점수 — 여기서 다시 계산하지 않는다)
-     · 지금 점수 · 등급 · 알람 · HI_FAB → 최근 60분 추이 → 지금 걸린 것(발동 룰 · 실제지표 ·
-       HID_JAM · RET) → 최근 목록. 줄을 더블클릭하면 관제와 같은 구간 그래프 + 기여도.
+   고객: "월드모델 파생, OHT 실시간 같은 포트 사용하게 해 주라. 리플레이 모드 · 실시간 모드 변경
+         가능하게" · "10005번 포트" · "메인은 월드모델파생이 메인이야!"
+   → 따로 띄우던 실시간판(10006)을 이 화면에 합쳤다. 맨 위 [⏪ 리플레이 | ● 실시간] 으로 바꾼다.
+
+   어떻게 바꾸나
+     · body[data-app] = 'replay' | 'live' — 리플레이에만 있는 것(.replay-only)과 실시간에만 있는 것
+       (.live-only)을 CSS 가 숨기고 보인다 (dashboard.html 위쪽 <style>). 단추 · 칸은 dashboard.html 에
+       있고, 여기는 하는 일만 있다.
+     · 웹소켓(/ws) 하나를 그대로 쓴다 — {"action":"mode","mode":"live"} 를 보내면 서버가 이 탭에는
+       실시간 장면을 1초마다 보낸다. 탭마다 따로라 한 탭은 리플레이, 다른 탭은 실시간으로 볼 수 있다.
+       다시 붙으면(끊김) 서버는 리플레이로 시작하므로 모드를 다시 알린다 (connectWS → LiveMode.wsOpen).
+     · 들어갈 때 — 리플레이는 그 자리에 세워 둔다 (서버). 맵의 리플레이 차는 지운다.
+       나올 때 — 실시간 PLAY 를 놓는다 (그 FAB 을 다른 사람이 안 보면 로그프레소 조회가 멎는다).
+       맵의 실시간 차는 지운다 — 리플레이 장면이 바로 다시 온다.
+     · 고른 모드는 이 브라우저에 남는다. 주소 ?mode=live (&fab=M16A&prefix=BR) 로 바로 열 수 있다.
+       관제에서 넘어온 구간 조회(?auto=1)는 늘 리플레이로 연다.
+
+   실시간 안에서 — [▶ 실시간 PLAY] [⏸ 일시정지] [■ 정지]
+       PLAY      로그프레소를 묻기 시작 (보는 FAB 하나만) · 시계가 흐른다
+       일시정지  화면만 그 자리에 세운다 (조회는 계속 — 다시 PLAY 하면 지금으로)
+       정지      조회를 멈춘다 (저절로 멈추지 않는다 — 고객 2026-10-06)
+     · 상태줄: [● 실시간] 테이블 · OHT 시각(지금보다 몇 초 늦은지) · 차 · 조회 · 관제 스코어 칩.
+     · 오른쪽 '스코어' 탭 (관제가 매긴 그 FAB 의 점수 — 여기서 다시 계산하지 않는다)
+       지금 점수 · 등급 · 알람 · HI_FAB → 최근 60분 추이 → 지금 걸린 것(발동 룰 · 실제지표 · HID_JAM ·
+       RET) → 최근 목록. 줄을 더블클릭하면 관제와 같은 구간 그래프 + 기여도.
    ★색은 화면에 있던 것만 쓴다 — 등급은 risk-NORMAL/WARNING/DANGER/CRITICAL 칩, 줄 왼쪽 띠는
      차량 목록과 같은 초록·주황·빨강. 색만으로 말하지 않는다 — 늘 글자(정상·경계·위험·초위험)와 같이. */
 (function () {
   'use strict';
-  document.title = 'OHT 월드모델 — 실시간';
-  try { statusMap.playing = '실시간'; } catch (e) { /* 옛 화면 */ }
-
   var $id = function (id) { return document.getElementById(id); };
-  function hide(el) { if (el) el.style.display = 'none'; }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
@@ -32,6 +42,9 @@
   }
   function hms(s) { return s ? String(s).slice(11, 19) : '--:--:--'; }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
+  // 이 브라우저에만 남기는 것 (고른 모드) — 막혀 있어도 화면은 돈다
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function save(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 사생활 보호 창 등 */ } }
 
   /* ── 조각 전용 모양 — 관제 기여도 HTML 이 쓰는 이름을 이 화면 변수로 잇는다 (새 색 없음) ── */
   var css = document.createElement('style');
@@ -55,80 +68,102 @@
   ].join('\n');
   document.head.appendChild(css);
 
-  /* ════════════ 1) 위 도구줄 — PLAY · 일시정지 · 정지 ════════════ */
-  var query = document.querySelector('#topbar .tb-query');
-  document.querySelectorAll('#topbar .speed-btn').forEach(function (b) { hide(b.closest('.tb-group') || b); });
-  hide($id('slider-container'));
-  hide($id('frame-display'));
-  var btnPlay = document.querySelector('#topbar button[onclick="sendCmd(\'play\')"]');
-  var btnPause = document.querySelector('#topbar button[onclick="sendCmd(\'pause\')"]');
-  var btnStop = document.querySelector('#topbar button[onclick="sendCmd(\'stop\')"]');
-  if (btnPlay) {
-    btnPlay.innerHTML = '&#9654; 실시간 PLAY';
-    btnPlay.title = '로그프레소를 묻기 시작 — 지금 보는 FAB 하나만 · 시계가 흐른다';
-    btnPlay.onclick = function () { setMode('play'); };
-  }
-  if (btnPause) {
-    btnPause.title = '화면만 이 자리에 세운다 (조회는 계속) — 다시 PLAY 하면 지금으로';
-    btnPause.onclick = function () { setMode('pause'); };
-  }
-  if (btnStop) {
-    btnStop.title = '로그프레소 조회를 멈춘다 — 다시 PLAY 하면 이어서 묻는다';
-    btnStop.onclick = function () { setMode('stop'); };
-  }
-
-  // 큰 시계 앞에 'OHT' — 이 시계는 OHT 시각(로그프레소 데이터)이다. 스코어 시각(관제)은 칩에 따로
-  var tdisp = $id('time-display');
-  if (tdisp && tdisp.parentNode) {
-    var cap = document.createElement('span');
-    cap.className = 'tb-cap';
-    cap.textContent = 'OHT';
-    cap.title = 'OHT 시각 — 로그프레소에서 받은 OHT 데이터의 시각 (화면은 몇 초 늦춰 부드럽게 보입니다)';
-    tdisp.parentNode.insertBefore(cap, tdisp);
-    tdisp.title = cap.title;
-  }
-
-  // 상태줄 — 구간 조회 칸 자리에
-  var chip = document.createElement('div');
-  chip.className = 'tb-group';
-  chip.id = 'live-chip';
-  chip.innerHTML = '<span class="badge badge-stopped" id="live-dot">■ 정지</span>'
-    + '<span id="live-text" style="font-size:12px;color:var(--fg2)">연결 중…</span>'
-    + '<span id="live-score" class="risk risk-NORMAL" style="display:none;cursor:pointer"'
-    + ' title="관제가 매긴 이 FAB 의 스코어 (1분마다) — 누르면 오른쪽 스코어 탭"></span>';
-  if (query && query.parentNode) {
-    query.parentNode.insertBefore(chip, query);
-    hide(query);
-  } else {
-    var tbr = document.querySelector('#topbar .tb-row');
-    if (tbr) tbr.insertBefore(chip, tbr.firstChild.nextSibling);
-  }
-
-  var MODE = 'stop';          // 'play' | 'pause' | 'stop'
-  var INIT = true;            // 첫 스냅샷 — 서버 피드가 이미 PLAY 중이면 따라간다
+  var APP = 'replay';         // 화면 모드 — 'replay' | 'live'
+  var MODE = 'stop';          // 실시간 안에서 — 'play' | 'pause' | 'stop'
+  var INIT = true;            // 실시간에 들어와 첫 장면 — 그 FAB 을 누가 이미 PLAY 중이면 같이 본다
   var LAST = null, LAST_AT = 0, LIVE = null;
   var SHOW = 0;               // 화면 시계(ms) — ★절대 뒤로 안 간다 (고객: "늘었다 다시 과거로 가면 안 돼")
+  var GOT_AT = 0;             // 마지막으로 실시간 장면을 받은 때 — 끊김 표시
+  var ERR = '';               // 실시간 명령이 서버에 안 닿았을 때
+  var APP_KEY = 'oht_world_app_mode';
+  var TITLE = document.title;
+
+  function wsSend(o) {
+    // ws 는 dashboard.html 의 웹소켓 (맨 위 let) — 아직 안 열렸으면 열릴 때 wsOpen 이 보낸다
+    try { if (typeof ws !== 'undefined' && ws && ws.readyState === 1) ws.send(JSON.stringify(o)); } catch (e) { /* 다음에 */ }
+  }
+  function wsOpen() { if (APP === 'live') wsSend({ action: 'mode', mode: 'live' }); }
+
+  // 다른 모드의 차를 지운다 — 남겨 두면 몇 초 동안 두 모드의 차가 섞여 보인다 (화면 전역은 dashboard.html 것)
+  function clearView() {
+    try { vehicleDisplay = {}; } catch (e) { /* 옛 화면 */ }
+    try {
+      mapData.vehicles = []; mapData.railCuts = []; mapData.blockedEdges = {};
+      mapData.hotspots = []; mapData.zoneCounts = {};
+    } catch (e) { /* 옛 화면 */ }
+    try { obsHistory = []; jamEvents = []; _lastObsSampleTime = ''; _lastJamCount = 0; } catch (e) { /* 옛 화면 */ }
+    var td = $id('time-display');
+    if (td) td.textContent = '--:--:--';
+    try { push3D({}); } catch (e) { /* 3D 가 꺼져 있다 */ }
+    try { refreshSidebar(true); } catch (e) { /* 옛 화면 */ }
+    try { drawMap(); } catch (e) { /* 옛 화면 */ }
+  }
+
+  /* ════════════ 1) [리플레이 | 실시간] ════════════ */
+  function setAppMode(m) {
+    m = m === 'live' ? 'live' : 'replay';
+    if (m === APP) return;
+    var was = APP;
+    APP = m;
+    document.body.dataset.app = m;
+    var r = $id('app-replay'), l = $id('app-live');
+    if (r) r.classList.toggle('on', m === 'replay');
+    if (l) l.classList.toggle('on', m === 'live');
+    save(APP_KEY, m);
+    if (m === 'live') {
+      INIT = true; MODE = 'stop'; LAST = null; LIVE = null; SHOW = 0; GOT_AT = 0; ERR = '';
+      document.title = 'OHT 월드모델 — 실시간';
+      clearView();
+      wsSend({ action: 'mode', mode: 'live' });       // 서버는 리플레이를 그 자리에 세운다
+      badge();
+      paint(null);
+      scoreLoad();
+    } else {
+      // 실시간 PLAY 를 놓는다 — 그 FAB 을 다른 사람이 안 보면 로그프레소 조회가 멎는다
+      if (was === 'live') post('/api/live/cmd', { action: 'stop' }).catch(function () { /* 서버가 꺼졌다 */ });
+      MODE = 'stop';
+      document.title = TITLE;
+      wsSend({ action: 'mode', mode: 'replay' });
+      clearView();
+      var sc = $id('rtab-score');
+      if (sc && sc.style.display !== 'none' && typeof window.switchRTab === 'function') window.switchRTab('oht');
+      closeGraph();
+      var b = $id('status-badge');
+      if (b) { b.textContent = '정지'; b.className = 'badge badge-stopped'; }   // 리플레이 장면이 곧 고친다
+    }
+  }
+
+  /* ════════════ 2) 실시간 PLAY · 일시정지 · 정지 ════════════ */
+  function liveCmd(m) {
+    if (APP !== 'live') return;
+    MODE = m;
+    badge();
+    if (m === 'play' || m === 'stop') {
+      post('/api/live/cmd', { action: m })
+        .then(function (L) { ERR = ''; if (L && !L.error) { LIVE = L; paint(L); } })
+        .catch(function (e) { ERR = String((e && e.message) || e); paint(LIVE); });
+    }
+    paint(LIVE);
+  }
 
   function badge() {
+    if (APP !== 'live') return;
     var b = $id('status-badge');
     if (!b) return;
     if (MODE === 'play') { b.textContent = '실시간'; b.className = 'badge badge-playing'; }
     else if (MODE === 'pause') { b.textContent = '일시정지'; b.className = 'badge badge-paused'; }
     else { b.textContent = '정지'; b.className = 'badge badge-stopped'; }
   }
-  function setMode(m) {
-    MODE = m;
-    badge();
-    if (m === 'play' || m === 'stop') {
-      post('/api/live/cmd', { action: m }).then(function (L) { LIVE = L; paint(L); })
-        .catch(function (e) { window.__liveErr = String((e && e.message) || e); });
-    }
-    paint(LIVE);
-  }
 
   function paint(L) {
     var t = $id('live-text'), dot = $id('live-dot');
     if (!t || !dot) return;
+    if (ERR) {
+      dot.className = 'badge badge-stopped';
+      dot.textContent = '● 연결 끊김';
+      t.innerHTML = '<b style="color:#dc2626">서버에 닿지 않습니다 — ' + esc(ERR) + '</b>';
+      return;
+    }
     if (!L) { t.textContent = '실시간 서버 응답을 기다리는 중…'; return; }
     if (MODE === 'stop' || !L.playing) {
       dot.className = 'badge badge-stopped';
@@ -166,35 +201,44 @@
       + ' · 미보고 기준 ' + (L.miss_sec || 50) + '초';
   }
 
-  // 스냅샷마다 — PLAY 일 때만 화면에 얹는다 (일시정지 · 정지는 그 자리)
+  /* ════════════ 3) 장면 — 모드에 맞는 것만 화면에 얹는다 ════════════ */
+  // ★웹소켓 하나로 두 모드의 장면이 오므로, 바꾼 직후 늦게 도착한 다른 모드 장면은 버린다
+  //   (실시간 장면에는 'live' 가 붙어 있다). 다른 FAB 의 장면(지도를 바꾸는 사이)도 버린다.
   var origUpdate = window.updateUI;
-  if (typeof origUpdate === 'function') {
-    window.updateUI = function (d) {
-      var L = d && d.live;
-      if (L) LIVE = L;
-      if (INIT && L) {
-        INIT = false;
-        if (L.playing) setMode('play');        // 다른 화면이 PLAY 중이면 같이 본다
-      }
-      if (MODE === 'play' && d && d.time) {
-        origUpdate(d);
-        // ★시계 기준은 **장면이 바뀔 때만** 잡는다 — 같은 장면이 1초마다 다시 오는데 그때마다
-        //   잡으면 시계가 그 초에 붙어 안 흐른다
-        if (!LAST || LAST.time !== d.time) LAST_AT = Date.now();
-        LAST = d;
-        tickClock();          // ★화면 함수가 방금 시계를 장면 시각으로 되돌려 놓았다 — 같은 차례에 다시 쓴다
-      }
-      badge();
-      try { paint(L); } catch (e) { /* 상태줄 실패로 화면을 멈추지 않는다 */ }
-    };
-  }
+  window.updateUI = function (d) {
+    var L = d && d.live;
+    if (APP !== 'live') {
+      if (L) return;
+      return origUpdate(d);
+    }
+    if (!L) return;
+    if (typeof currentFab !== 'undefined' && currentFab && (L.fab !== currentFab || L.prefix !== currentPrefix)) return;
+    LIVE = L;
+    GOT_AT = Date.now();
+    ERR = '';
+    if (INIT) {
+      INIT = false;
+      if (L.playing && MODE !== 'play') liveCmd('play');   // 누가 이미 PLAY 중이면 같이 본다 (다시 열었을 때도)
+    }
+    if (MODE === 'play' && d.time) {
+      origUpdate(d);
+      // ★시계 기준은 **장면이 바뀔 때만** 잡는다 — 같은 장면이 1초마다 다시 오는데 그때마다
+      //   잡으면 시계가 그 초에 붙어 안 흐른다
+      if (!LAST || LAST.time !== d.time) LAST_AT = Date.now();
+      LAST = d;
+      tickClock();          // ★화면 함수가 방금 시계를 장면 시각으로 되돌려 놓았다 — 같은 차례에 다시 쓴다
+    }
+    badge();
+    try { paint(L); } catch (e) { /* 상태줄 실패로 화면을 멈추지 않는다 */ }
+  };
+
   // PLAY 중에는 시계가 초 단위로 흐른다 — 2초 칸 사이를 벽시계로 메운다 (칸 하나 넘게는 안 간다).
   // ★절대 뒤로 안 간다. 다음 장면이 시계보다 앞이면(칸 시각은 그 칸의 마지막 보고 시각이라 1초
   //   어긋날 수 있다) 따라올 때까지 그 자리에서 기다린다. 앞으로 크게 뛰는 것은 정지했다 다시
   //   PLAY 해서 '지금' 으로 건너뛸 때뿐이다.
   function tickClock() {
     var el = $id('time-display');
-    if (!el || MODE !== 'play' || !LAST || !LAST.time) return;
+    if (!el || APP !== 'live' || MODE !== 'play' || !LAST || !LAST.time) return;
     var b = Date.parse(LAST.time.replace(' ', 'T'));
     if (isNaN(b)) return;
     var t = b + Math.min(Date.now() - LAST_AT, 2000);
@@ -204,16 +248,16 @@
     el.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
   }
   setInterval(tickClock, 250);
-  // 서버가 아예 응답이 없을 때
+  // 실시간 장면이 끊겼을 때 (서버가 꺼졌거나 웹소켓이 다시 붙는 중)
   setInterval(function () {
-    if (window.__liveErr && (!window.__liveOk || Date.now() - window.__liveOk > 5000)) {
-      var t = $id('live-text'), dot = $id('live-dot');
-      if (t) t.innerHTML = '<b style="color:#dc2626">실시간 서버에 닿지 않습니다 — ' + esc(window.__liveErr) + '</b>';
-      if (dot) { dot.className = 'badge badge-stopped'; dot.textContent = '● 연결 끊김'; }
-    }
+    if (APP !== 'live' || !GOT_AT || Date.now() - GOT_AT < 5000) return;
+    var t = $id('live-text'), dot = $id('live-dot');
+    if (t) t.innerHTML = '<b style="color:#dc2626">실시간 장면이 ' + Math.round((Date.now() - GOT_AT) / 1000)
+      + '초째 안 옵니다 — 서버(10005)가 켜져 있는지 보세요 (다시 붙으면 저절로 이어집니다)</b>';
+    if (dot) { dot.className = 'badge badge-stopped'; dot.textContent = '● 연결 끊김'; }
   }, 2000);
 
-  /* ════════════ 2) 관제 스코어 — 오른쪽 '스코어' 탭 ════════════ */
+  /* ════════════ 4) 관제 스코어 — 오른쪽 '스코어' 탭 ════════════ */
   var GRADE = { '정상': { cls: 'NORMAL', c: '#22c55e' }, '경계': { cls: 'WARNING', c: '#f59e0b' },
                 '위험': { cls: 'DANGER', c: '#ef4444' }, '초위험': { cls: 'CRITICAL', c: '#ef4444' } };
   function gradeOf(lv) { return GRADE[lv] || { cls: 'NORMAL', c: 'var(--line2)' }; }
@@ -253,47 +297,43 @@
 
   var SCORE = null, SC_FILTER = 'all';
 
-  // 탭 단추 · 화면
-  var tabs = document.querySelector('#rsidebar .rtabs');
-  var pane = document.createElement('div');
-  pane.id = 'rtab-score';
-  pane.style.display = 'none';
-  pane.innerHTML =
-    '<div id="sc-sum" class="rsum" style="font-size:12px;padding:4px 2px 8px;line-height:1.6">관제 스코어를 불러오는 중…</div>'
-    + '<div id="sc-now"></div>'
-    + '<div id="sc-spark" style="position:relative;margin:6px 0 2px"></div>'
-    + '<div id="sc-cur"></div>'
-    + '<div class="rfilter" id="sc-filter" style="margin-top:8px">'
-    + '<button class="active" data-f="all">전체</button><button data-f="warn">경계↑</button>'
-    + '<button data-f="danger">위험↑</button><button data-f="hid">HID·RET</button></div>'
-    + '<div id="sc-list" class="rlist"></div>'
-    + '<div class="sc-cap" style="margin:6px 2px">줄을 더블클릭하면 그 시각 구간 그래프 (관제와 같은 그림)</div>';
-  if (tabs) {
-    var tb = document.createElement('button');
-    tb.className = 'rtab';
-    tb.textContent = '스코어';
-    tb.dataset.rt = 'score';
-    tb.onclick = function () { window.switchRTab('score'); };
-    tabs.appendChild(tb);
-    var rs = $id('rsidebar');
-    if (rs) rs.appendChild(pane);
+  // 경계↑ · 위험↑ · HID·RET 가 몇 개인지 (고객: "경계, 위험, HID RET 몇 개 있는지 탭에 표시해 줘야") —
+  // 필터 단추마다 개수, 탭 위 요약에 HID_JAM · RET 를 나눠서. 세는 기준은 필터와 같다 (단추 수 = 누르면 나오는 줄 수).
+  var F_NAME = { all: '전체', warn: '경계↑', danger: '위험↑', hid: 'HID·RET' };
+  function counts(rows) {
+    var c = { all: rows.length, warn: 0, danger: 0, hid: 0, jam: 0, ret: 0 };
+    rows.forEach(function (r) {
+      var hs = r.hid || [];
+      if (r.level && r.level !== '정상') c.warn++;
+      if (r.level === '위험' || r.level === '초위험') c.danger++;
+      if (hs.length) c.hid++;
+      if (hs.some(function (h) { return h.z; })) c.jam++;
+      if (hs.some(function (h) { return h.file; })) c.ret++;
+    });
+    return c;
   }
-  var origSwitch = window.switchRTab;
-  window.switchRTab = function (tab) {
-    var sc = $id('rtab-score');
-    if (tab === 'score') {
-      ['rtab-oht', 'rtab-zone'].forEach(function (id) { var e = $id(id); if (e) e.style.display = 'none'; });
-      if (sc) sc.style.display = 'block';
-      document.querySelectorAll('#rsidebar .rtab').forEach(function (b) {
-        b.classList.toggle('active', b.dataset.rt === 'score');
-      });
-      renderScore();
-      return;
-    }
-    if (sc) sc.style.display = 'none';
-    if (typeof origSwitch === 'function') origSwitch(tab);
-  };
-  $id('live-score').onclick = function () {
+  function paintCounts(c) {
+    document.querySelectorAll('#sc-filter button').forEach(function (b) {
+      var f = b.dataset.f;
+      b.innerHTML = esc(F_NAME[f] || f) + (c ? ' <b>' + c[f] + '</b>' : '');
+    });
+  }
+  // 요약 줄 — 0 이면 흐리게, 있으면 등급 칩(경계 · 위험) · 빨강 굵게(HID_JAM · RET — 그래프 창과 같은 모양)
+  function cntChip(label, n, cls) {
+    return n ? '<span class="risk ' + cls + '">' + label + ' ' + n + '</span>'
+      : '<span style="color:var(--muted);white-space:nowrap">' + label + ' 0</span>';
+  }
+  function cntRed(label, n) {
+    return n ? '<span style="white-space:nowrap"><b style="color:var(--fg)">' + label + '</b> <b class="lv-red">' + n + '</b></span>'
+      : '<span style="color:var(--muted);white-space:nowrap">' + label + ' 0</span>';
+  }
+  function countLine(c) {
+    return '최근 ' + c.all + '분 · ' + cntChip('경계↑', c.warn, 'risk-WARNING') + ' '
+      + cntChip('위험↑', c.danger, 'risk-DANGER') + ' · ' + cntRed('HID_JAM', c.jam) + ' · ' + cntRed('RET', c.ret);
+  }
+
+  var chip = $id('live-score');
+  if (chip) chip.onclick = function () {
     var rs = $id('rsidebar');
     if (rs && rs.classList.contains('collapsed') && typeof toggleRSidebar === 'function') toggleRSidebar();
     window.switchRTab('score');
@@ -307,20 +347,21 @@
   });
 
   function scoreLoad() {
+    if (APP !== 'live') return Promise.resolve();
     return fetch('/api/score/feed?limit=90', { cache: 'no-store', credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (d) { SCORE = d; })
-      .catch(function (e) { SCORE = { ok: false, error: '실시간 서버에 닿지 않습니다 — ' + ((e && e.message) || e) }; })
+      .catch(function (e) { SCORE = { ok: false, error: '서버에 닿지 않습니다 — ' + ((e && e.message) || e) }; })
       .then(function () { paintScoreChip(); renderScore(); });
   }
   setInterval(scoreLoad, 15000);
-  scoreLoad();
-  // 지도를 바꾸면 그 FAB 스코어로 바로
+  // 지도를 바꾸면 그 FAB 스코어로 바로 · 시계도 새로
   if (typeof window.applyFab === 'function') {
     var origApply = window.applyFab;
     window.applyFab = function (f, p) {
       SHOW = 0;               // 다른 FAB 의 시계 — 앞 FAB 시각에 붙어 기다리지 않게 새로
       LAST = null;
+      if (MODE !== 'play') INIT = true;      // 새 FAB 을 누가 PLAY 중이면 같이 본다
       return Promise.resolve(origApply(f, p)).then(function (x) { scoreLoad(); return x; });
     };
   }
@@ -354,20 +395,24 @@
 
   function renderScore() {
     var sc = $id('rtab-score');
-    if (!sc || sc.style.display === 'none') return;
+    if (!sc || sc.style.display === 'none' || APP !== 'live') return;
     var S = SCORE;
     var sum = $id('sc-sum');
-    if (!S) { sum.textContent = '관제 스코어를 불러오는 중…'; return; }
+    if (!S) { sum.textContent = '관제 스코어를 불러오는 중…'; paintCounts(null); return; }
     if (!S.ok) {
       sum.innerHTML = '<b style="color:#dc2626">' + esc(S.error || '관제 스코어를 못 받았습니다') + '</b>';
       ['sc-now', 'sc-spark', 'sc-cur', 'sc-list'].forEach(function (id) { $id(id).innerHTML = ''; });
+      paintCounts(null);
       return;
     }
     var rows = S.rows || [], r = rows[0];
     var ago = r ? minsAgo(r.datetime) : null;
+    var c = counts(rows);
+    paintCounts(c);
     sum.innerHTML = '관제 <b>' + esc(S.sys) + '</b> 스코어 <b>' + esc(r ? r.time || '' : '') + '</b> · 1분마다'
       + (S.fallback ? ' · <b style="color:#f59e0b">오늘 수집이 없어 ' + esc(S.day) + ' 자료</b>' : '')
-      + (ago != null && ago > 5 && !S.fallback ? ' · <b style="color:#f59e0b">마지막 ' + esc((r.datetime || '').slice(11, 16)) + ' (' + ago + '분 전)</b>' : '');
+      + (ago != null && ago > 5 && !S.fallback ? ' · <b style="color:#f59e0b">마지막 ' + esc((r.datetime || '').slice(11, 16)) + ' (' + ago + '분 전)</b>' : '')
+      + (rows.length ? '<div id="sc-count" style="margin-top:4px">' + countLine(c) + '</div>' : '');
     if (!r) {
       $id('sc-now').innerHTML = '<div class="ritem" style="cursor:default">관제 표에 아직 줄이 없습니다</div>';
       ['sc-spark', 'sc-cur', 'sc-list'].forEach(function (id) { $id(id).innerHTML = ''; });
@@ -471,7 +516,7 @@
     svg.ondblclick = function () { var r = pts[pick >= 0 ? pick : pts.length - 1]; if (r) openGraph(r.at); };
   }
 
-  /* ════════════ 3) 더블클릭 → 구간 그래프 (관제가 그린 그림 + 기여도) ════════════ */
+  /* ════════════ 5) 더블클릭 → 구간 그래프 (관제가 그린 그림 + 기여도) ════════════ */
   var modal = document.createElement('div');
   modal.id = 'live-gmodal';
   modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;justify-content:center;align-items:center;background:var(--overlay)';
@@ -520,6 +565,7 @@
   function drawGraph() {
     if (!GAT) return;
     var at = GAT, m = $id('lg-min').value;
+    // 관제 그래프는 light 만 밝게 그린다 (관제 GRAPH_THEMES) — 화이트(hmi) 말고는 다 어둡게
     var theme = document.body.dataset.theme === 'hmi' ? 'light' : 'dark';
     $id('lg-body').innerHTML = '<div class="empty">그리는 중…</div>';
     $id('lg-contrib').innerHTML = '';
@@ -555,5 +601,27 @@
           + '</div>';
       };
     });
+  }
+
+  /* ════════════ 6) 밖에서 부르는 것 · 처음 모드 ════════════ */
+  window.setAppMode = setAppMode;          // 맨 위 [리플레이 | 실시간] (onclick)
+  window.liveCmd = liveCmd;                // [▶ 실시간 PLAY] [⏸ 일시정지] [■ 정지] (onclick)
+  window.LiveMode = { setAppMode: setAppMode, liveCmd: liveCmd, wsOpen: wsOpen, renderScore: renderScore,
+                      app: function () { return APP; }, mode: function () { return MODE; } };
+
+  // 처음 모드 — ?auto=1(관제에서 넘어온 구간 조회)은 늘 리플레이 · ?mode= · 이 브라우저가 마지막에 고른 것
+  var q = new URLSearchParams(location.search);
+  var want = (q.get('mode') || '').toLowerCase();
+  var start = q.get('auto') === '1' ? 'replay'
+    : (want === 'live' || want === 'replay') ? want
+    : (load(APP_KEY) === 'live' ? 'live' : 'replay');
+  document.body.dataset.app = 'replay';
+  if (start === 'live') setAppMode('live');
+  // ?mode=live&fab=M16A&prefix=BR — 부팅(지도 목록)이 끝난 뒤에 그 지도로
+  var qf = (q.get('fab') || '').trim(), qp = (q.get('prefix') || '').trim();
+  if (start === 'live' && qf && qp) {
+    Promise.resolve(window.BOOT).then(function () {
+      if (qf !== currentFab || qp !== currentPrefix) return window.applyFab(qf, qp);
+    }).catch(function (e) { console.warn('실시간 지도 전환 실패:', e); });
   }
 })();

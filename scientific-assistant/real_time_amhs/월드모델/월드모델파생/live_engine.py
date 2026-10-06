@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-live_engine.py — 월드모델파생_실시간: 로그프레소 '지금' 데이터를 몇 초마다 받아 월드모델 상태로.
+live_engine.py — 월드모델파생 '실시간' 모드: 로그프레소 '지금' 데이터를 몇 초마다 받아 월드모델 상태로.
 
-고객 2026-10-06: "따로 해서 만들어 보자 — 로그프레소 데이터 있어, API 데이터 전부 다 있는데
-실시간 형태 만들어 볼 수 있지 않아??"
+고객 2026-10-06: "월드모델 파생, OHT 실시간 같은 포트 사용하게 해 주라. 리플레이 모드 · 실시간 모드
+변경 가능하게" · "10005번 포트" · "메인은 월드모델파생이 메인이야!"
+  → 따로 띄우던 확인판(월드모델파생_실시간 · 10006)을 이 앱에 합쳤다. 서버는 main.py 하나(10005),
+    화면도 하나(dashboard.html) — 화면 위 [리플레이 | 실시간] 으로 바꾼다 (static/js/live_mode.js).
 
-★옆 폴더 **월드모델파생**의 것을 그대로 가져다 쓴다 — 복사하지 않는다.
-    지도(OHT_MAP/cache · layout.zip)   data_loader.LayoutData · ensure_layout_cache
+★재생(리플레이)과 같은 것을 쓴다 — 따로 만들지 않는다.
+    지도 · HID 존                        main.get_layout — 재생과 한 벌을 같이 쓴다 (use_layouts)
     줄 → 차량 상태                       data_loader.parse_oht_data_m14a_row
     위치 · 속도 · 정체 묶음              world_model.WorldModel
     미보고 · HT_STOP · 전조 판정 기준    config.MISS_SEC · IDLE_SEC · OHT_ALERT (재생과 같은 기준)
     로그프레소 서버 · 키 · 쿼리          logpresso_query (SERVERS · API_KEY · '상세' 쿼리)
-  그래서 월드모델파생에서 고친 것(현장 판정 기준 · 서버 주소 · 키)이 여기에도 그대로 들어온다.
-  두 폴더는 **나란히** 있어야 한다:  월드모델/월드모델파생 · 월드모델/월드모델파생_실시간
-  (다른 자리면 환경변수 WM_DIR 에 월드모델파생 폴더를 적는다.)
+  그래서 현장 판정 기준 · 서버 주소 · 키를 한 곳에서 고치면 리플레이 · 실시간 둘 다 바뀐다.
 
 어떻게 도나 — FAB(지도) 하나에 피드(LiveFeed) 하나, 보는 사람이 몇이든 같이 쓴다.
   · ★화면의 [▶ 실시간 PLAY] 를 눌러야 묻는다 · [■ 정지] 를 눌러야 멈춘다 (2026-10-06 고객:
     "PLAY 버튼 만들고 … 보는 사람 없어 조회를 멈춘다고 해서 좀 그래"). 저절로 멈추지 않는다.
-    보는 FAB 하나만 돈다 — 화면에서 FAB 을 옮기면 앞 FAB 은 멈춘다(그 FAB 을 PLAY 중인
-    다른 화면이 없을 때). ("전부 다 조회하면 안 되니까")
+    보는 FAB 하나만 돈다 — 화면에서 FAB 을 옮기거나 리플레이로 돌아가면 앞 FAB 은 놓는다(그 FAB 을
+    PLAY 중인 다른 화면이 없으면 멈춘다). ("전부 다 조회하면 안 되니까")
+    누가 무엇을 PLAY 중인지는 아래 _PLAYERS 가 화면(세션)마다 적어 둔다.
   · ★작게 묻는다 — 한 번에 STEP_SEC(60초)까지. 현장에서 5분치를 '지금' 까지 한 번에 묻다가
     응답이 중간에 끊겼다 (IncompleteRead · 0.8~1.7MB 받고 끊김) — 그리고 끊길 때마다 같은
     큰 조회를 다시 했다.
@@ -37,6 +38,7 @@ live_engine.py — 월드모델파생_실시간: 로그프레소 '지금' 데이
   · 받은 줄은 재생 엔진과 똑같이 **2초 칸**으로 묶어 시간 순서대로 얹는다 — 속도(m/min)를
     재는 방법이 같아야 재생과 같은 그림이 나온다.
   · 칸마다 스냅샷(재생 엔진 get_current_snapshot 과 같은 모양)을 만들어 최근 3분을 들고 있다.
+    화면에는 웹소켓(/ws)이 1초마다 실어 보낸다 — 리플레이와 같은 관이다 (main.py).
   · 화면에는 BUFFER_SEC 만큼 **늦춰서** 2초 칸을 차례로 내준다 — 5초마다 한 번에 도착한
     줄을 그대로 보이면 차가 5초마다 뛴다. 늦춘 만큼은 화면 상태줄에 '지연' 으로 적는다.
     BUFFER_SEC=0 이면 늘 가장 새 칸을 준다 (부드러움 대신 빠름).
@@ -48,6 +50,7 @@ live_engine.py — 월드모델파생_실시간: 로그프레소 '지금' 데이
 import csv
 import http.client
 import io
+import json
 import os
 import re
 import sys
@@ -60,17 +63,10 @@ from collections import deque
 from datetime import datetime, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WM_DIR = os.path.abspath(os.environ.get("WM_DIR") or os.path.join(HERE, "..", "월드모델파생"))
-if not os.path.isfile(os.path.join(WM_DIR, "world_model.py")):
-    raise SystemExit(f"[실시간] 월드모델파생 폴더를 못 찾았습니다: {WM_DIR}\n"
-                     f"  이 폴더 옆에 '월드모델파생' 이 있어야 합니다 (아니면 환경변수 WM_DIR).")
-if WM_DIR not in sys.path:
-    # ★이 폴더 **바로 뒤**에 넣는다 — 두 폴더에 같은 이름(main.py)이 있다. 이 폴더가 먼저여야
-    #   `import main` 이 실시간판 것이 되고, config · data_loader 같은 것은 월드모델파생에서 온다.
-    _i = next((k for k, x in enumerate(sys.path) if os.path.abspath(x or ".") == HERE), -1)
-    sys.path.insert(_i + 1, WM_DIR)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
 
-import config as WC                                            # noqa: E402  (월드모델파생)
+import config as WC                                            # noqa: E402
 from data_loader import (HIDZoneData, LayoutData,              # noqa: E402
                          ensure_layout_cache, parse_oht_data_m14a_row)
 from world_model import WorldModel                             # noqa: E402
@@ -128,8 +124,8 @@ _CACHE_RE = re.compile(r"^([A-Za-z0-9]+)_([A-Za-z0-9]+)_layout_cache\.json$")
 
 
 def catalog() -> list:
-    """[{fab, prefix, table, zip, cache, hid_csv}] — 월드모델파생 카탈로그(MAP/*.layout.zip)에
-    이미 만들어진 캐시(OHT_MAP/cache)를 더한다. 현장은 zip 이, 저장소는 캐시만 있다."""
+    """[{fab, prefix, table, zip, cache, hid_csv}] — 카탈로그(MAP/*.layout.zip)에 이미 만들어진
+    캐시(OHT_MAP/cache)를 더한다. 현장은 zip 이, 저장소는 캐시만 있다 (시험은 캐시로 돈다)."""
     out = {}
     for e in getattr(WC, "FAB_CATALOG", []) or []:
         out[(e["fab"], e["prefix"])] = {"fab": e["fab"], "prefix": e["prefix"],
@@ -148,25 +144,29 @@ def catalog() -> list:
     return [out[k] for k in sorted(out)]
 
 
-def default_fab() -> tuple:
-    """처음 보이는 지도 — LIVE_FAB=M16A/BR 처럼 고를 수 있다. 없으면 월드모델파생 기본값."""
-    want = os.environ.get("LIVE_FAB", "")
-    cat = catalog()
-    keys = [(e["fab"], e["prefix"]) for e in cat]
-    if "/" in want and tuple(want.split("/", 1)) in keys:
-        return tuple(want.split("/", 1))
-    d = (getattr(WC, "DEFAULT_FAB", ""), getattr(WC, "DEFAULT_PREFIX", ""))
-    if d in keys:
-        return d
-    return keys[0] if keys else d
-
-
+# ── 지도 읽기 ───────────────────────────────────────────────────────────
+# ★서버(main.py)는 재생과 **같은** 지도를 쓴다 — use_layouts(get_layout). M14A 만 해도 노드 9,403 ·
+#   엣지 10,424 라, 리플레이 · 실시간이 따로 읽으면 메모리와 시간이 두 배로 든다. 존(HID Zone)도
+#   재생과 같은 것이 선다. 아래 제 읽기(_own_layout)는 서버 없이 이 파일만 쓸 때(시험)의 길이다.
+_LAYOUT_SRC = None
 _LAYOUTS: dict = {}
 _LL = threading.Lock()
 
 
+def use_layouts(fn):
+    """지도 읽는 길을 바꿔 끼운다 — fn(fab, prefix) → (layout, hid_zones)."""
+    global _LAYOUT_SRC
+    _LAYOUT_SRC = fn
+
+
 def layout_for(fab: str, prefix: str):
     """(layout, hid_zones) — FAB 마다 한 벌만 읽어 같이 쓴다 (읽기만 하는 자료다)."""
+    if _LAYOUT_SRC is not None:
+        return _LAYOUT_SRC(fab, prefix)
+    return _own_layout(fab, prefix)
+
+
+def _own_layout(fab: str, prefix: str):
     key = (fab, prefix)
     with _LL:
         hit = _LAYOUTS.get(key)
@@ -191,7 +191,7 @@ def layout_for(fab: str, prefix: str):
 
 # ── 로그프레소 ──────────────────────────────────────────────────────────
 def _lq():
-    """월드모델파생의 logpresso_query — 서버(SERVERS) · 키(API_KEY) · 쿼리 규칙을 같이 쓴다."""
+    """리플레이 조회와 같은 logpresso_query — 서버(SERVERS) · 키(API_KEY) · 쿼리 규칙을 같이 쓴다."""
     import logpresso_query as LQ
     return LQ
 
@@ -307,6 +307,7 @@ class LiveFeed:
         self.last_view = self.wall()
         self.step = STEP_Q_SEC                      # 지금 묻는 폭 — 실패하면 줄이고 되면 넓힌다
         self._ok_wall = None                        # 마지막으로 물어서 된 벽시계 — 오래 쉬었나
+        self.json_cache = None                      # (칸, 그 칸의 글자) — 여럿이 보면 한 번만 만든다
         self.status = {"polls": 0, "rows_last": 0, "rows_total": 0, "error": None,
                        "error_at": None, "last_poll": None, "poll_ms": None, "fails": 0,
                        "cuts": 0, "cut_at": None}
@@ -577,8 +578,6 @@ class LiveFeed:
             print(f"[실시간] {self.fab}/{self.prefix} ■ 정지{(' (' + why + ')') if why else ''}")
         self.playing = False
 
-    start = play                                    # 예전 이름
-
     def tick(self) -> float:
         """한 번 묻는다 → 다음까지 기다릴 초. 실패하면 상태에 적고 점점 천천히 (최대 1분)."""
         try:
@@ -617,3 +616,109 @@ def feed_for(fab: str, prefix: str) -> LiveFeed:
             f = _FEEDS.setdefault(key, f)
     f.touch()
     return f
+
+
+# ── 누가 어느 지도를 PLAY 중인가 — 화면(세션)마다 ──────────────────────────
+# ★보는 FAB 하나만 묻는다 (고객: "전부 다 조회하면 안 되니까"). 한 화면은 한 지도만 PLAY 한다 —
+#   지도를 옮기면 앞 지도는 놓는다. 그 지도를 PLAY 중인 화면이 하나도 안 남으면 피드를 멈춘다.
+# ★여럿이 같은 지도를 보면 피드 하나를 같이 쓴다 — 한 사람이 정지해도 다른 사람 것은 그대로 돈다.
+_PLAYERS: dict = {}          # (fab, prefix) → {sid, ...}
+_PL = threading.Lock()
+
+
+def playing_key(sid):
+    """이 화면이 PLAY 중인 지도 (fab, prefix) — 없으면 None."""
+    with _PL:
+        return next((k for k, s in _PLAYERS.items() if sid in s), None)
+
+
+def _drop_locked(sid, keep=None):
+    """sid 를 keep 말고 다른 지도에서 뺀다 → 아무도 안 남은 지도들 (_PL 잠금 안에서 부른다)."""
+    empty = []
+    for k, s in _PLAYERS.items():
+        if k != keep and sid in s:
+            s.discard(sid)
+            if not s:
+                empty.append(k)
+    for k in empty:
+        _PLAYERS.pop(k, None)
+    return empty
+
+
+def _stop_feeds(keys, why):
+    for k in keys:
+        with _FL:
+            f = _FEEDS.get(k)
+        if f:
+            f.stop(why)
+
+
+def play(sid, fab: str, prefix: str, why: str = "") -> LiveFeed:
+    """이 화면이 (fab, prefix) 를 PLAY. 앞에 PLAY 하던 다른 지도는 놓는다 (아무도 안 남으면 멈춘다)."""
+    key = (fab, prefix)
+    f = feed_for(fab, prefix)                     # 처음이면 지도를 읽느라 오래 걸린다 — 잠금 밖에서
+    with _PL:
+        empty = _drop_locked(sid, keep=key)
+        _PLAYERS.setdefault(key, set()).add(sid)
+    _stop_feeds(empty, f"화면이 {fab}/{prefix} 로 옮김")
+    f.play(why)
+    return f
+
+
+def stop(sid, why: str = "■ 정지") -> list:
+    """이 화면의 PLAY 를 놓는다. ★그 지도를 PLAY 중인 다른 화면이 있으면 피드는 그대로 돈다.
+    리플레이로 돌아갈 때 · 접속이 오래 끊겨 세션을 치울 때도 이것을 부른다."""
+    with _PL:
+        empty = _drop_locked(sid)
+    _stop_feeds(empty, why)
+    return empty
+
+
+def live_info(sid, fab: str, prefix: str, shown_t=None) -> dict:
+    """화면 상태줄 — 피드 상태 + 이 화면이 PLAY 중인지 (me_playing)."""
+    f = feed_for(fab, prefix)
+    return dict(f.info(shown_t), me_playing=playing_key(sid) == (fab, prefix))
+
+
+def snapshot(sid, fab: str, prefix: str) -> dict:
+    """화면 한 장 — 재생 웹소켓이 보내던 것과 같은 모양 + 'live' (상태줄). 웹소켓이 1초마다 보낸다."""
+    f = feed_for(fab, prefix)
+    t, snap = f.current()
+    out = dict(snap) if snap else {
+        "time": "", "time_short": "--:--:--", "frame": 0, "totalFrames": 0, "state": "playing",
+        "speed": 1, "date": "LIVE", "vehicleStats": {"total": 0}, "vehicles": [], "star": None,
+        "prediction": {}, "hidSpeeds": {}, "railCuts": [], "zoneCounts": {}, "hotspots": []}
+    out["live"] = live_info(sid, fab, prefix, t)
+    return out
+
+
+def snapshot_json(sid, fab: str, prefix: str) -> str:
+    """웹소켓이 1초마다 보내는 글자 — snapshot() 과 같은 내용.
+
+    ★여럿이 같은 FAB 을 보면 같은 장면을 사람마다 다시 글자로 바꾸지 않는다 (고객: "여러 사람이
+      접속할 거야"). 차 수백 대면 장면 하나가 100KB 쯤이다 — 스무 명이면 1초에 2MB 를 다시 만든다.
+      장면(칸) 하나는 한 번만 바꿔 피드에 걸어 두고, 사람마다 다른 상태줄('live' — 이 사람이
+      PLAY 중인지 등)만 붙인다."""
+    f = feed_for(fab, prefix)
+    t, snap = f.current()
+    live = json.dumps(live_info(sid, fab, prefix, t), default=str)
+    if not snap:
+        return json.dumps(snapshot(sid, fab, prefix), default=str)
+    hit = f.json_cache
+    if hit and hit[0] is snap:
+        body = hit[1]
+    else:
+        body = json.dumps(snap, default=str)          # 'live' 는 없다 — 칸에는 안 넣는다
+        f.json_cache = (snap, body)
+    return body[:-1] + ', "live": ' + live + '}'
+
+
+def status() -> dict:
+    """조회 상태 한눈에 — 지도마다 피드 상태 · PLAY 중인 화면 수 (/api/live/status)."""
+    with _FL:
+        feeds = list(_FEEDS.values())
+    with _PL:
+        players = {f"{k[0]}/{k[1]}": len(s) for k, s in _PLAYERS.items()}
+    return {"feeds": [f.info() for f in feeds], "players": players,
+            "poll_sec": POLL_SEC, "step_sec": STEP_Q_SEC, "buffer_sec": BUFFER_SEC, "key": key_tail()}
+
