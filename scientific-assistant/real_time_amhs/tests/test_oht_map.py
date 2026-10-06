@@ -255,7 +255,7 @@ class 화면(unittest.TestCase):
         cls.h = _read("static", "dashboard.html")
 
     def test_두_표_모두_실제지표_바로_뒤에(self):
-        heads = re.findall(r'<th class="mcol">실제지표</th>\s*<th class="hjcol"[^>]*>HID_JAM</th>\s*'
+        heads = re.findall(r'<th class="mcol"[^>]*>실제지표</th>\s*<th class="hjcol"[^>]*>HID_JAM</th>\s*'
                            r'<th class="rtcol"[^>]*>RET\(레포트\)</th>\s*<th class="amhd"', self.h)
         self.assertEqual(len(heads), 2, "실시간 · 과거 두 표")
 
@@ -294,9 +294,14 @@ console.log(JSON.stringify(out));
         r = subprocess.run([node, "-e", js], capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         a, b, c = json.loads(r.stdout)
-        self.assertIn('HID_JAM <b class="mono">1</b>', a)
-        self.assertIn("RET(레포트) <a class=\"act\" href=\"/api/oht_map/report?day=20261003&name=", a)
-        self.assertEqual(b, 'HID_JAM <b class="mono">2</b>', "레포트가 없으면 RET 은 안 쓴다")
+        # ★고객: "1 은 빨간색 굵게, 링크 빨간색 굵게" — 이름은 굵게(본문 글자색)
+        red = 'style="color:var(--crit);font-weight:700"'
+        self.assertIn(f'<b style="color:var(--tx)">HID_JAM</b> <b class="mono" {red}>1</b>', a)
+        self.assertIn(f'<b style="color:var(--tx)">RET(레포트)</b> <a class="act" {red} '
+                      'href="/api/oht_map/report?day=20261003&name=', a)
+        self.assertIn(">링크</a>", a)
+        self.assertEqual(b, f'<b style="color:var(--tx)">HID_JAM</b> <b class="mono" {red}>2</b>',
+                         "레포트가 없으면 RET 은 안 쓴다")
         self.assertEqual(c, "", "없으면 아무것도 안 쓴다")
 
     def test_칸_그리기(self):

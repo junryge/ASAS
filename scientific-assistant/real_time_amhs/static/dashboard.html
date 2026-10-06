@@ -454,7 +454,16 @@
   /* ★HID_JAM · RET(레포트) 두 칸(80 + 94px, 머리글 글자 폭 + 여백 20px)을 '실제지표'
      옆에 더하며(2026-10-06 고객 요청) 최소 폭도 그만큼 올렸다 — 안 올리면 좁은 창에서
      '실제지표' 칸이 0 으로 눌려 글자가 겹친다. 대신 1366px 노트북에서는 가로 스크롤이 생긴다. */
-  table.cases{width:100%;min-width:1474px;border-collapse:collapse;table-layout:fixed}
+  /* ★남는 자리를 갖는 칸을 '실제지표' 에서 **맨 끝 'AMOS QUEUE 지표'** 로 옮겼다
+     (2026-10-06 고객: "글자 줄였는데 HID_JAM, RET, AMOS HID 구역, AMOS QUEUE 지표 옆으로
+     땡겨도 안 되나"). 실제지표를 10px 로 줄이자 넓은 화면에서 그 칸에 빈자리가 크게
+     남아 오른쪽 네 칸이 멀리 밀려 있었다. 이제 실제지표는 10px raw 이름 한 줄
+     (M16HUB.CNV.SENDFAB.TO_M14A_CURRENTQCNT · 38자 ≈ 209px, 고객 PC 의 Consolas) 폭
+     230px 를 받고, 남는 자리는 표 끝으로 간다 — AMOS QUEUE 칩은 왼쪽에 붙어 있으니
+     빈자리는 행 끝에 남는다. 그보다 긴 이름(리프터 40자 넘는 것)은 예전처럼 접힌다.
+     ★최소 폭 = ALL 화면 고정 폭 합 1462px + AMOS QUEUE 의 예전 폭 130px = 1592px.
+       이보다 좁으면 맨 끝 칸이 0 으로 눌린다 (예전에 실제지표가 그랬다). */
+  table.cases{width:100%;min-width:1592px;border-collapse:collapse;table-layout:fixed}
   /* ★머리글 고정 — 하루치 1440행을 내리다 보면 지금 보는 숫자가 M14 인지
      M16B 인지 알 수 없어진다. 머리글이 상단 바 바로 아래에 붙어 멈춘다.
      · sticky 는 thead 가 아니라 **th** 에 건다. border-collapse:collapse 인
@@ -1293,11 +1302,11 @@
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th class="acol" style="width:150px">알람</th>
         <th class="rhcol" style="width:170px">발동 룰</th>
-        <th class="mcol">실제지표</th>
+        <th class="mcol" style="width:230px">실제지표</th>
         <th class="hjcol" style="width:80px" title="OHT_MAP 의 HID_ZONE">HID_JAM</th>
         <th class="rtcol" style="width:94px" title="PROBLEM_MAP 레포트 (html) — '링크' 를 누르면 내려받습니다">RET(레포트)</th>
         <th class="amhd" style="width:118px">AMOS HID 구역</th>
-        <th class="amhd" style="width:130px">AMOS QUEUE 지표</th>
+        <th class="amhd">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="cases"><tr><td colspan="10" class="empty">불러오는 중…</td></tr></tbody>
     </table>
@@ -1370,11 +1379,11 @@
         <th class="scol" style="width:108px"><span class="scth">스코어</span></th>
         <th class="acol" style="width:150px">알람</th>
         <th class="rhcol" style="width:170px">발동 룰</th>
-        <th class="mcol">실제지표</th>
+        <th class="mcol" style="width:230px">실제지표</th>
         <th class="hjcol" style="width:80px" title="OHT_MAP 의 HID_ZONE">HID_JAM</th>
         <th class="rtcol" style="width:94px" title="PROBLEM_MAP 레포트 (html) — '링크' 를 누르면 내려받습니다">RET(레포트)</th>
         <th class="amhd" style="width:118px">AMOS HID 구역</th>
-        <th class="amhd" style="width:130px">AMOS QUEUE 지표</th>
+        <th class="amhd">AMOS QUEUE 지표</th>
       </tr></thead>
       <tbody id="pcases"><tr><td colspan="10" class="empty">날짜를 선택하고 조회하세요</td></tr></tbody>
     </table>
@@ -5560,15 +5569,19 @@ async function fillOht(at, label){
 
 /* 그 분의 HID_JAM · RET(레포트) — 그래프 창 'OHT 재생' 줄, FAB 단추 옆.
    ★고객: "더블 클릭하면 그래프 나오는 거기서 HID_JAM, RET(레포트) 데이터 나오게 —
-     OHT 맵 클릭하는 데 집어넣으면 되겠네". 표와 같이 없으면 아무것도 안 쓴다. */
+     OHT 맵 클릭하는 데 집어넣으면 되겠네". 표와 같이 없으면 아무것도 안 쓴다.
+   ★고객: "글자색 굵게 — 1 은 빨간색 굵게, 링크 빨간색 굵게". 이름은 굵게(본문 글자색),
+     값과 링크는 빨강(--crit) 굵게. 표 칸은 그대로 둔다 (요청은 이 줄이다). */
 function fillHid(r){
   const el = $('#ohthid');
   if(!el) return;
   const hs = (r && r.hid) || [];
   const z = hs.filter(h => h.z), f = hs.filter(h => h.file);
-  el.innerHTML = (z.length ? `HID_JAM <b class="mono">${z.map(h => esc(h.z)).join(' · ')}</b>` : '')
-    + (f.length ? `${z.length ? ' · ' : ''}RET(레포트) ` + f.map(h =>
-        `<a class="act" href="${retHref(h)}" download="${esc(h.file)}" title="${esc(h.file)}">링크</a>`).join(' ')
+  const RED = 'color:var(--crit);font-weight:700';
+  el.innerHTML = (z.length ? `<b style="color:var(--tx)">HID_JAM</b> <b class="mono" style="${RED}">${
+        z.map(h => esc(h.z)).join(' · ')}</b>` : '')
+    + (f.length ? `${z.length ? ' · ' : ''}<b style="color:var(--tx)">RET(레포트)</b> ` + f.map(h =>
+        `<a class="act" style="${RED}" href="${retHref(h)}" download="${esc(h.file)}" title="${esc(h.file)}">링크</a>`).join(' ')
       : '');
 }
 

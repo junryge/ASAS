@@ -504,8 +504,9 @@ class 화면배선(unittest.TestCase):
 
     def test_표_최소폭도_같이_올렸다(self):
         # 칸이 하나 늘었는데 min-width 가 그대로면 마지막 칸이 0으로 눌린다
-        # ★2026-10-06 — HID_JAM(80) · RET(레포트)(94) 두 칸만큼 더 올렸다
-        self.assertIn("min-width:1474px", self.src)
+        # ★2026-10-06 — HID_JAM(80) · RET(레포트)(94) 두 칸만큼 더 올렸다 (1474px)
+        # ★같은 날 — 남는 자리를 맨 끝 AMOS QUEUE 로 옮기며 고정 폭 합 + 130px = 1592px
+        self.assertIn("min-width:1592px", self.src)
 
     def test_내려받기에도_들어간다(self):
         m = re.search(r"function viewCsv\(list\)\{[\s\S]*?\n\}", self.src)

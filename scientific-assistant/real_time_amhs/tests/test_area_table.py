@@ -884,6 +884,12 @@ class 칸이_겹치지_않는다(unittest.TestCase):
     # ★2026-10-06 고객 요청으로 '실제지표' 옆에 두 칸을 더했다 — HID_JAM(80) · RET(레포트)(94).
     #   이 두 칸 몫만 예산에 더한다 (다른 칸이 넓어지면 여전히 잡힌다).
     NEW_COLS = 80 + 94
+    # ★같은 날 — 남는 자리를 갖는 칸을 '실제지표' 에서 맨 끝 'AMOS QUEUE 지표' 로 옮겼다
+    #   (고객: "글자 줄였는데 HID_JAM, RET, AMOS HID 구역, AMOS QUEUE 지표 옆으로 땡겨도
+    #   안 되나"). 실제지표가 고정 폭(10px raw 이름 38자 한 줄 230px)을 받고 AMOS QUEUE 의
+    #   130px 이 고정 합에서 빠진다 — 그 차이만큼만 예산에 더한다.
+    MCOL = 230
+    AMOS_Q = 130        # 맨 끝 칸이 최소한 갖던 폭 — 최소 폭은 이것을 남긴다
     FABS5 = ["M14", "M14B", "M16A", "M16B", "M16HUB"]
 
     @classmethod
@@ -930,9 +936,33 @@ class 칸이_겹치지_않는다(unittest.TestCase):
         static = [int(x) for x in re.findall(r'width:(\d+)px', self.heads[0])]
         hcol = int(re.search(r'<th class="hcol" style="width:(\d+)px">', self.h).group(1))
         total = sum(static) + hcol + sum(fw(f) for f in self.FABS5)
-        self.assertLessEqual(total, self.OLD_SUM + self.NEW_COLS,
-                             "고정 폭 합 %d — 겹치던 시절(%d) + 새 두 칸(%d)보다 넓어졌다"
-                             % (total, self.OLD_SUM, self.NEW_COLS))
+        swap = self.MCOL - self.AMOS_Q
+        self.assertLessEqual(total, self.OLD_SUM + self.NEW_COLS + swap,
+                             "고정 폭 합 %d — 겹치던 시절(%d) + 새 두 칸(%d) + 남는 칸 옮김(%d)보다 넓어졌다"
+                             % (total, self.OLD_SUM, self.NEW_COLS, swap))
+
+    def test_남는_자리는_맨_끝_칸이_갖는다(self):
+        """고객 2026-10-06: "글자 줄였는데 HID_JAM, RET, AMOS HID 구역, AMOS QUEUE 지표
+        옆으로 땡겨도 안 되나". 폭을 안 준 칸이 남는 자리를 다 갖는다 — 그 칸이 가운데
+        (실제지표)면 오른쪽 네 칸이 멀리 밀린다. 맨 끝 하나만 폭이 없어야 한다."""
+        for head in self.heads:
+            ths = re.findall(r"<th[^>]*>", head)
+            free = [i for i, t in enumerate(ths) if "width:" not in t]
+            self.assertEqual(free, [len(ths) - 1], "폭을 안 준 칸은 맨 끝 하나여야 한다")
+            self.assertIn('<th class="mcol" style="width:%dpx">실제지표</th>' % self.MCOL, head)
+            self.assertIn('<th class="amhd">AMOS QUEUE 지표</th>', head)
+
+    def test_최소_폭이_맨_끝_칸을_남긴다(self):
+        """창이 좁아져도 맨 끝 칸이 0 으로 눌리면 안 된다 (예전에 실제지표가 그랬다).
+        ALL 화면(FAB 다섯)의 고정 폭 합 + 그 칸의 예전 폭 130px 이상이어야 한다."""
+        fw = self._fcolW()
+        static = [int(x) for x in re.findall(r'width:(\d+)px', self.heads[0])]
+        hcol = int(re.search(r'<th class="hcol" style="width:(\d+)px">', self.h).group(1))
+        total = sum(static) + hcol + sum(fw(f) for f in self.FABS5)
+        mw = int(re.search(r"table\.cases\{[^}]*min-width:(\d+)px", self.h).group(1))
+        self.assertGreaterEqual(mw, total + self.AMOS_Q,
+                                "최소 폭 %d < 고정 합 %d + %d — 맨 끝 칸이 눌린다"
+                                % (mw, total, self.AMOS_Q))
 
     def test_두_표의_폭이_같다(self):
         """과거 데이터 탭도 같은 표다 — 한쪽만 고치면 탭을 옮길 때 칸이 흔들린다."""
