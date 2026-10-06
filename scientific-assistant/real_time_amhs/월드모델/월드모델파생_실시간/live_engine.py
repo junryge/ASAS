@@ -191,10 +191,32 @@ def key_tail() -> str:
     return ("…" + k[-4:]) if len(k) >= 4 else "없음"
 
 
+def route(table: str) -> tuple:
+    """(host, port, 판) — 월드모델파생 logpresso_query.py 가 정한 대로 묻는다.
+
+    ★현장 월드모델파생에 어느 판이 깔려 있든 그것을 따른다 (2026-10-06 현장: "변경 안 했다, 기존꺼"):
+      · 운영판 (2026-10-02~)  server_for(table) — 테이블마다 서버, remote 로 감싸지 않음
+      · 기존판                HOST · PORT 서버 한 대, 쿼리를 remote {REMOTE_NODE} [ … ] 로 감쌈
+                              (감싸는 것은 그 파일의 _build_query 가 한다 — 여기서 안 건드린다)
+      재생판이 지금 묻는 곳에 실시간판도 묻는다. 운영 서버로 가려면 월드모델파생의
+      logpresso_query.py 를 운영판으로 바꾸면 된다 — 실시간판은 손댈 것 없다.
+    """
+    LQ = _lq()
+    if hasattr(LQ, "server_for"):
+        h, p = LQ.server_for(table)
+        return h, int(p), "운영판 · 테이블마다 서버"
+    host = os.environ.get("LP_HOST", "").strip() or str(getattr(LQ, "HOST", "") or "").strip()
+    port = os.environ.get("LP_PORT", "").strip() or getattr(LQ, "PORT", 8888) or 8888
+    if not host:
+        raise RuntimeError("월드모델파생 logpresso_query.py 에 서버 주소가 없습니다 (server_for · HOST 둘 다 없음)")
+    rn = str(getattr(LQ, "REMOTE_NODE", "") or "").strip()
+    return host, int(port), "기존판 · 서버 한 대" + (f" · remote {rn}" if rn else "")
+
+
 def server_of(table: str) -> str:
     try:
-        h, p = _lq().server_for(table)
-        return f"{h}:{p}"
+        h, p, how = route(table)
+        return f"{h}:{p} ({how})"
     except Exception as e:                # noqa: BLE001
         return f"? ({e})"
 
@@ -207,7 +229,7 @@ def fetch_rows(table: str, start: datetime, end: datetime) -> list:
     if not LQ.API_KEY:
         raise RuntimeError("로그프레소 API 키가 없습니다 — 월드모델파생/logpresso_query.py 의 API_KEY, "
                            "환경변수 LP_API_KEY, 또는 관제 config.json 의 api_key")
-    host, port = LQ.server_for(table)
+    host, port, _how = route(table)
     q = LQ._build_query(start.strftime(FMT), end.strftime(FMT), table, "raw")
     url = (f"http://{host}:{port}/logpresso/httpexport/query.csv?_apikey={LQ.API_KEY}"
            f"&_q={urllib.parse.quote(q, safe='')}")

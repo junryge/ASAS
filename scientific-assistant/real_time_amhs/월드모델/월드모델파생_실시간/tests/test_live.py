@@ -210,7 +210,7 @@ class 로그프레소(unittest.TestCase):
         rows = LE.fetch_rows("oht_data_m16br", now - timedelta(seconds=10), now)
         self.assertTrue(rows)
         self.assertEqual(set(rows[0]) >= {"_time", "VEHICLE", "ADDRESS", "DISTANCE", "NEXT_ADDRESS", "STATUS"}, True)
-        self.assertEqual(LE.server_of("oht_data_m16br"), f"127.0.0.1:{self.port}")
+        self.assertTrue(LE.server_of("oht_data_m16br").startswith(f"127.0.0.1:{self.port} (운영판"))
 
     def test_상세_쿼리_그대로(self):
         self.LQ.API_KEY = KEY
@@ -237,6 +237,75 @@ class 로그프레소(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             LE.fetch_rows("oht_data_m16br", datetime.now(), datetime.now())
         self.assertIn("API 키", str(cm.exception))
+
+
+class 기존판_logpresso_query(unittest.TestCase):
+    """현장 월드모델파생이 운영 전환 전 판이어도 그 판대로 묻는다 (2026-10-06 현장: "변경 안 했다, 기존꺼").
+
+    기존판 = 서버 한 대(HOST · PORT) · 쿼리를 remote {REMOTE_NODE} [ … ] 로 감쌈 · server_for 없음.
+    현장에서 실제로 난 오류: module 'logpresso_query' has no attribute 'server_for'."""
+
+    @classmethod
+    def setUpClass(cls):
+        import types
+        cls.port = _free_port()
+        env = dict(os.environ, MOCK_LP_KEY=KEY, MOCK_LAG_SEC="0")
+        cls.p = subprocess.Popen([sys.executable, os.path.join(HERE, "mock_logpresso.py"), str(cls.port)],
+                                 env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(50):
+            try:
+                socket.create_connection(("127.0.0.1", cls.port), 0.2).close()
+                break
+            except OSError:
+                time.sleep(0.1)
+        cls.env = {k: os.environ.pop(k, None) for k in ("LP_HOST", "LP_PORT")}
+        old = types.ModuleType("logpresso_query")      # 기존판과 같은 겉모양
+        old.HOST, old.PORT, old.API_KEY, old.REMOTE_NODE = "127.0.0.1", cls.port, KEY, "icamcslogdt01"
+
+        def _build_query(from_dt, to_dt, table, profile=None):
+            inner = f'table from={from_dt} to={to_dt} {table} | search MSG_ID == "2" | sort _time'
+            return f"remote {old.REMOTE_NODE} [ {inner} ]" if old.REMOTE_NODE else inner
+        old._build_query = _build_query
+        cls.old = old
+        cls._lq0 = LE._lq
+        LE._lq = lambda: old
+
+    @classmethod
+    def tearDownClass(cls):
+        LE._lq = cls._lq0
+        cls.p.kill()
+        cls.p.wait()
+        for k, v in cls.env.items():
+            if v is not None:
+                os.environ[k] = v
+
+    def test_server_for_가_없어도_묻는다(self):
+        self.assertFalse(hasattr(self.old, "server_for"))
+        self.assertEqual(LE.route("oht_data_m14a"),
+                         ("127.0.0.1", self.port, "기존판 · 서버 한 대 · remote icamcslogdt01"))
+        now = datetime.now()
+        rows = LE.fetch_rows("oht_data_m14a", now - timedelta(seconds=10), now)
+        self.assertTrue(rows, "기존판 서버에서 줄을 받는다")
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", "/mock/hits")
+        q = json.loads(c.getresponse().read())["last_q"]
+        self.assertTrue(q.startswith("remote icamcslogdt01 [ table from="), "그 판의 쿼리 모양(remote) 그대로")
+        self.assertIn("기존판", LE.server_of("oht_data_m14a"))
+
+    def test_피드도_돈다(self):
+        f = LE.LiveFeed("M16A", "BR")
+        f.poll_once()
+        self.assertTrue(f.frames, "기존판으로도 차가 올라온다")
+        self.assertIn("기존판", f.info()["server"])
+
+    def test_주소가_아예_없으면_알려_준다(self):
+        self.old.HOST = ""
+        try:
+            with self.assertRaises(RuntimeError) as cm:
+                LE.route("oht_data_m14a")
+            self.assertIn("서버 주소가 없습니다", str(cm.exception))
+        finally:
+            self.old.HOST = "127.0.0.1"
 
 
 class 서버(unittest.TestCase):
@@ -331,7 +400,7 @@ class 서버(unittest.TestCase):
         self.assertTrue(snap["vehicles"], "차가 올라온다")
         L = snap["live"]
         self.assertEqual(L["table"], "oht_data_m16br")
-        self.assertEqual(L["server"], f"127.0.0.1:{self.mport}")
+        self.assertTrue(L["server"].startswith(f"127.0.0.1:{self.mport}"), L["server"])
         self.assertEqual(L["key"], "…" + KEY[-4:])
         self.assertIsNone(L["error"])
         self.assertIsNotNone(L["lag_sec"])
