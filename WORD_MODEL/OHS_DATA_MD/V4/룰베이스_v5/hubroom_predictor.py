@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 8영역)
+M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 7영역)
 ======================================================
-8개 FAB 영역 통합 룰베이스 데드락 예측기.
-   대상 영역: M16HUB, M14, M14B, M16A, M16B, M16, M16_PKT, M16_WT
+7개 FAB 영역 통합 룰베이스 데드락 예측기.
+   대상 영역: M16HUB, M14, M14B, M16A, M16B, M16, M16_WT
+   ※ M16_PKT 제외 (2026-08 고객 요청 — 관련 컬럼·점수 전부 미사용)
+   ※ M16HUB.STRATE.STB.3F_STORAGE_UTIL 은 판정 미사용 (2026-08 고객 요청 —
+      R-D 는 M16HUB.STRATE.ALL.FABSTORAGERATIO 만 판정. 값은 기록용으로만
+      발동이벤트 M16HUB_stb_util 컬럼에 계속 남긴다)
    학습 임계값: 2026-03-24 14:39 ~ 2026-04-30 정상분포 (p95/p99) 기반
    테스트 구간 : 2026-05-01 ~ (사용자가 5월로 검증 예정)
 
@@ -17,10 +21,14 @@ M16 HUBROOM 통합 이벤트 예측기 v4.1 (룰베이스 8영역)
         - M16A.SORTER.ABN.SORTERTRANSFERFAIL
         - M16B.SORTER.ABN.SORTERTRANSFERFAIL
    3) R-A' 컬럼명 영역별 차이 (검증완료):
-        - M16HUB / M14B / M16_PKT / M16_WT  →  QUE.TIME.AVGTOTALTIME1MIN
+        - M16HUB / M14B / M16_WT            →  QUE.TIME.AVGTOTALTIME1MIN
         - M14   / M16A  / M16B              →  QUE.LOAD.AVGLOADTIME1MIN
    4) 계획서 269컬럼 vs 실제 수집 265컬럼 차이는 폐기 19 / 추가 4(AOTRANSDELAY) /
       추가 11(v3 collector 호환) — 본 예측기는 실제 수집 컬럼만 사용.
+
+   ※ OHT 가감점 (2026-10) — 입력의 {FAB}_OHT_missing/_JAM/_HT_STOP 으로 ALL 점수
+      (unified_risk_score) 와 FAB 점수({FAB}_score_raw) 를 올리고 내린다 (오탐 줄이기).
+      켜기/끄기 · FAB · 점수는 thresholds.json 의 OHT_ADJ_* (지금 M16HUB 만)
 
 수집기가 매분 ./predict/M16A_HUBROOM_PR.csv 덮어쓰면
 본 스크립트는 ./predict_tobe/ 폴더에 날짜별 CSV 로 append.
@@ -104,7 +112,9 @@ INCIDENT_END_GAP_MIN = _T('INCIDENT_END_GAP_MIN', 60)  # ★ v6: 10→60분, 진
 PREDICT_LOOKBACK_MIN = _T('PREDICT_LOOKBACK_MIN', 60)
 # ★ 사건 정의 = '점수 이 값 이상(경계+)' 으로 시작/종료. (전엔 stage 3 기준이라
 #   점수 낮은(정상) 시각이 사건 시작으로 잡혀 9시간 가짜 사건이 생기던 문제 → 점수 기준으로 교정)
-MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 50)
+#   등급 하한(경계)과 같은 값이어야 한다 — 아래 unified_risk_level 의 60 과 짝.
+#   50 → 60 (2026-08 변경): 경계 구간을 60~70 으로 올리면서 사건 시작 기준도 같이 올렸다.
+MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 60)
 
 # ============================================================
 # 영역별 임계값 (2026-03-24 14:39 ~ 04-30 학습 분포 p95/p99 기반)
@@ -112,7 +122,8 @@ MIN_INCIDENT_SCORE = _T('MIN_INCIDENT_SCORE', 50)
 # ============================================================
 TH_RA = _TD('TH_RA', {
     'M16HUB':  9.0, 'M14':     3.3, 'M14B':    5.0,
-    'M16A':    3.2, 'M16B':    3.5, 'M16_PKT': 7.5, 'M16_WT':  2.8,
+    'M16A':    3.2, 'M16B':    3.5, 'M16_WT':  2.8,
+    # M16_PKT 제외 (2026-08 고객 요청) — 룰베이스에서 M16_PKT 영역 전체 미사용
 })
 TH_RA_SUSTAINED_RATIO = _T('TH_RA_SUSTAINED_RATIO', 0.67)
 TH_RA_SUSTAINED_COUNT = _T('TH_RA_SUSTAINED_COUNT', 3)
@@ -126,7 +137,8 @@ TH_RB_10 = _TD('TH_RB_10', {k: max(10, int(v * 0.3)) for k, v in TH_RB_30.items(
 
 TH_RC_REVERSE = _T('TH_RC_REVERSE', 2)
 TH_RD_FABSTORAGE = _T('TH_RD_FABSTORAGE', 25.0)
-TH_RD_HUB_STB_UTIL = _T('TH_RD_HUB_STB_UTIL', 99.0)
+# TH_RD_HUB_STB_UTIL 제거 (2026-08 고객 요청) — R-D 는 FABSTORAGERATIO 만 사용,
+#   M16HUB.STRATE.STB.3F_STORAGE_UTIL 은 룰베이스에서 사용하지 않는다.
 TH_RD_OHT_UTIL = _T('TH_RD_OHT_UTIL', 95.0)
 
 # ★ v5 신규 룰 임계
@@ -152,8 +164,11 @@ TH_SORTER_TRANSFER_FAIL = _T('TH_SORTER_TRANSFER_FAIL', 1)
 #   · 값 1.0 = 현행 유지. 0.5 = 그 영역 점수 기여를 정확히 절반.
 #   · thresholds.json 에 {"AREA_WEIGHT": {"M16B": 0.5}} 로 넣으면
 #     코드 수정 없이 조정 가능 (재시작 필요).
+#   · 기본값은 비움 = 전 영역 1.0. (M16B 0.5 가중은 취소됨 —
+#     M16B_score_raw 가 가중 전 원본값이라 단독 제공 시 융합 점수와 어긋나서)
+#     _TD 는 json 을 기본값에 '병합'하므로, 되살리려면 json 에 값을 넣어야 한다.
 # ============================================================
-AREA_WEIGHT = _TD('AREA_WEIGHT', {'M16B': 0.5})
+AREA_WEIGHT = _TD('AREA_WEIGHT', {})
 
 
 def _aw(area):
@@ -186,6 +201,209 @@ TH_FLOW_X1_5 = _T('TH_FLOW_X1_5', 1.5)
 TH_FLOW_X2_0 = _T('TH_FLOW_X2_0', 2.0)
 TH_FLOW_X3_0 = _T('TH_FLOW_X3_0', 3.0)
 
+# ============================================================
+# ★ PIO 항 (2026-09 신규) — PIO 반송실패(DEPOSITED)가 unified 점수를 밀어올린다
+# ------------------------------------------------------------
+#   PIO_DATA_MAKE(별도 스레드/프로세스)가 매분 ICASTAR 에서 12경로 실패 건수를 받아
+#   predict_tobe/pio_state.json 에 그날 전체를 남긴다. 예측기는 점수 낼 때 그걸 읽어
+#       10분 건수 = 그 분 포함 최근 PIO_WINDOW 분, 12경로 합계
+#       PIO 항   = 구간표(PIO_BINS)에 따른 raw 가산  (최대 11 = 점수 +5)
+#   을 raw 에 더한다 (흐름 항과 같은 자리 — 더하기만 하고 깎지 않는다).
+#
+#   · 상태파일이 없거나 PIO_STALE_MIN 분 넘게 안 바뀌면 PIO 항 0 → 예전과 동일한 점수
+#   · 9/1~9/3 실측 3,375분 검증: 등급 바뀌는 분 16개(0.5%), 위험·초위험 건수 변화 없음
+#   · 구간·배점은 thresholds.json 의 PIO_BINS 로 조정 (코드 수정 불필요)
+# ============================================================
+PIO_WINDOW = _T('PIO_WINDOW', 10)            # 몇 분 합으로 볼지
+PIO_STALE_MIN = _T('PIO_STALE_MIN', 5)       # 상태파일이 이 시간 넘게 안 바뀌면 무시
+PIO_STATE_FILE = _T('PIO_STATE_FILE', 'pio_state.json')
+#   [10분 건수 하한, raw 가산]  — 위에서부터 큰 값이 우선
+PIO_BINS = _T('PIO_BINS', [[16, 2], [26, 4], [41, 7], [61, 9], [81, 11]])
+
+
+def pio_term(cnt10):
+    """10분 건수 → raw 가산 (구간표)."""
+    add = 0
+    for row in PIO_BINS:
+        try:
+            th, pts = row[0], row[1]
+        except (TypeError, IndexError):
+            continue
+        if cnt10 >= th:
+            add = pts
+    return add
+
+
+class PioState:
+    """pio_state.json 을 읽어 그 분의 PIO 항을 계산한다. 파일이 바뀐 때만 다시 읽는다."""
+
+    def __init__(self, out_dir):
+        self.path = Path(out_dir) / PIO_STATE_FILE
+        self.sig = None
+        self.minutes = {}
+        self.updated = None
+        self.warned = False
+        self.announced = False
+
+    def _load(self):
+        try:
+            st = self.path.stat()
+        except OSError:
+            if not self.announced:
+                self.announced = True
+            self.minutes, self.updated = {}, None
+            return
+        sig = (st.st_mtime_ns, st.st_size)
+        if sig == self.sig:
+            return
+        try:
+            with open(self.path, encoding='utf-8') as f:
+                d = _json.load(f)
+            self.minutes = d.get('minutes') or {}
+            u = d.get('updated') or ''
+            self.updated = parse_time(u) if u else None
+            self.sig = sig
+            self.warned = False
+        except Exception as e:
+            if not self.warned:
+                print(f'⚠ {PIO_STATE_FILE} 읽기 실패 — PIO 항 0 으로 진행: {e}')
+                self.warned = True
+            self.minutes, self.updated = {}, None
+
+    def term(self, t):
+        """→ {'score': raw가산, 'cnt10': 10분 건수, 'hot_path': 최다 경로, 'hot_cnt': 그 건수}"""
+        z = {'score': 0, 'cnt10': 0, 'hot_path': '', 'hot_cnt': 0}
+        self._load()
+        if not self.minutes:
+            return z
+        # 실시간에서 기입기가 멈췄으면 옛 값으로 점수를 올리지 않는다.
+        #   (과거 일괄 처리는 t 가 한참 전이므로 이 검사를 건너뛴다)
+        if self.updated is not None:
+            now = datetime.now()
+            if (now - t) < timedelta(hours=1) and (now - self.updated) > timedelta(minutes=PIO_STALE_MIN):
+                return z
+        agg = {}
+        for k in range(int(PIO_WINDOW)):
+            e = self.minutes.get((t - timedelta(minutes=k)).strftime('%Y-%m-%d %H:%M'))
+            if e:
+                for g, c in e.items():
+                    agg[g] = agg.get(g, 0) + (c or 0)
+        cnt10 = int(sum(agg.values()))
+        if cnt10 <= 0:
+            return z
+        hot = max(agg, key=agg.get)
+        return {'score': pio_term(cnt10), 'cnt10': cnt10,
+                'hot_path': hot, 'hot_cnt': int(agg[hot])}
+
+
+# ============================================================
+# ★ OHT 가감점 (2026-10 신규) — 오탐 줄이기
+# ------------------------------------------------------------
+#   입력 CSV 의 FAB 별 OHT 컬럼(VHL_OHT 50초 판정 → 1분)을 보고 점수를 올리고 내린다.
+#       {FAB}_OHT_report · {FAB}_OHT_missing · {FAB}_OHT_JAM · {FAB}_OHT_HT_STOP
+#
+#   ALL 점수 (unified_risk_score) — OHT_ADJ_FABS 중
+#       미보고 ≥5 + JAM ≥10 같이인 FAB 이 하나라도 있으면     +15
+#       아니고, 데이터 있는 FAB 이 모두 미보고 ≤5 + JAM ≤10   −10
+#       HT_STOP ≥1 인 FAB 이 하나라도 있으면                  +10   (0 이면 그대로)
+#   FAB 점수 ({FAB}_score_raw) — 그 FAB 의 OHT 만 보고 같은 규칙
+#
+#   · 둘 다 걸리는 경계값(미보고 5 · JAM 10 정확히)은 + 가 우선
+#   · 보고(report) 가 비었거나 0 인 FAB 은 판정하지 않는다 (OHT 수집이 멈춰도 감점 안 됨)
+#   · 꺼져 있거나(OHT_ADJ_ENABLED false) 컬럼이 없으면 예전과 같은 점수
+#   · ALL 가감은 0~100 정규화 뒤에 더한다 → 등급 · 사건 시작/종료도 가감된 점수로 판단
+#   · FAB 가감은 {FAB}_score_raw 에만 — 영역 점수(area_score) · ALL 합산에는 안 들어간다
+#   · 원래 점수는 unified_risk_score_orig 에 남긴다
+# ============================================================
+OHT_FABS_ALL = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B']     # 입력에 OHT 컬럼이 있는 FAB
+OHT_ADJ_ENABLED = bool(_T('OHT_ADJ_ENABLED', False))
+OHT_ADJ_FABS = [f for f in (_T('OHT_ADJ_FABS', ['M16HUB']) or []) if f in OHT_FABS_ALL]
+_OHT_RULE = {
+    'enabled': True,
+    'plus_missing': 5,  'plus_jam': 10,  'plus_score': 15,     # 미보고 ≥ · JAM ≥ 같이 → +
+    'minus_missing': 5, 'minus_jam': 10, 'minus_score': -10,   # 미보고 ≤ · JAM ≤ 같이 → −
+    'ht_min': 1,        'ht_score': 10,                        # HT_STOP ≥ → +
+}
+OHT_ADJ_ALL = _TD('OHT_ADJ_ALL', _OHT_RULE)
+#   FAB 점수 규칙 — 공통 값 + FAB 이름 키로 그 FAB 만 덮어쓰기
+#     예) "OHT_ADJ_FAB": {"plus_score": 15, "M16A": {"plus_score": 20}}
+OHT_ADJ_FAB = _TD('OHT_ADJ_FAB', _OHT_RULE)
+
+
+def _oht_fab_rule(fab):
+    rule = {k: v for k, v in OHT_ADJ_FAB.items() if k not in OHT_FABS_ALL}
+    if isinstance(OHT_ADJ_FAB.get(fab), dict):
+        rule.update(OHT_ADJ_FAB[fab])
+    return rule
+
+
+def _oht_judge(o, rule):
+    """FAB 하나의 OHT 값 → (미보고·JAM 판정 '+'/'-'/'', HT 판정 bool). 데이터 없으면 None."""
+    if not o or not o.get('report'):
+        return None
+    miss, jam, ht = o.get('missing'), o.get('jam'), o.get('ht')
+    mj = ''
+    if miss is not None and jam is not None:
+        if miss >= rule['plus_missing'] and jam >= rule['plus_jam']:
+            mj = '+'
+        elif miss <= rule['minus_missing'] and jam <= rule['minus_jam']:
+            mj = '-'
+    return mj, (ht is not None and ht >= rule['ht_min'])
+
+
+def oht_config_text():
+    """시작 로그용 — OHT 가감점 설정 한 줄."""
+    if not OHT_ADJ_ENABLED:
+        return "OHT 가감점: 끔 (OHT_ADJ_ENABLED false — 예전 점수 그대로)"
+    def rt(r):
+        if not r.get('enabled', True):
+            return '끔'
+        return (f"미보고≥{r['plus_missing']}+JAM≥{r['plus_jam']} {r['plus_score']:+g} · "
+                f"미보고≤{r['minus_missing']}+JAM≤{r['minus_jam']} {r['minus_score']:+g} · "
+                f"HT≥{r['ht_min']} {r['ht_score']:+g}")
+    fab = ' | '.join(f"{f}: {rt(_oht_fab_rule(f))}" for f in OHT_ADJ_FABS)
+    return (f"OHT 가감점: 켬 · FAB {','.join(OHT_ADJ_FABS) or '없음'}\n"
+            f"    ALL: {rt(OHT_ADJ_ALL)}\n    FAB: {fab}")
+
+
+def oht_adjust(oht):
+    """입력 1분의 OHT 값 → {'all': ALL 가감, 'fab': {FAB: 가감}, 'signals': 설명}"""
+    out = {'all': 0, 'fab': {}, 'signals': ''}
+    if not OHT_ADJ_ENABLED or not oht:
+        return out
+    sig = []
+    all_mj, all_ht, n_data = [], False, 0
+    for fab in OHT_ADJ_FABS:
+        o = oht.get(fab)
+        j_all = _oht_judge(o, OHT_ADJ_ALL)
+        if j_all is None:
+            continue
+        n_data += 1
+        all_mj.append(j_all[0])
+        all_ht = all_ht or j_all[1]
+        part = (f"{fab} 보고{o.get('report')} 미보고{o.get('missing')} "
+                f"JAM{o.get('jam')} HT{o.get('ht')}")
+        rule = _oht_fab_rule(fab)
+        if rule.get('enabled', True):
+            mj, ht = _oht_judge(o, rule)
+            adj = ((rule['plus_score'] if mj == '+' else rule['minus_score'] if mj == '-' else 0)
+                   + (rule['ht_score'] if ht else 0))
+            out['fab'][fab] = adj
+            part += f" FAB{adj:+g}"                  # 0 이어도 남긴다 (FAB+0)
+        sig.append(part)
+    if n_data and OHT_ADJ_ALL.get('enabled', True):
+        r = OHT_ADJ_ALL
+        if '+' in all_mj:
+            out['all'] += r['plus_score']
+        elif all(m == '-' for m in all_mj):
+            out['all'] += r['minus_score']
+        if all_ht:
+            out['all'] += r['ht_score']
+    if sig:
+        out['signals'] = ' / '.join(sig) + (f" → ALL{out['all']:+g}"
+                                            if OHT_ADJ_ALL.get('enabled', True) else '')
+    return out
+
 LIFTER_IDS = [
     '6ABL6011', '6ABL6012', '6ABL6021', '6ABL6022',
     '6ABL6031', '6ABL6032', '6ABL0111', '6ABL0112',
@@ -198,7 +416,6 @@ RA_COL = {
     'M14B':    'M14B.QUE.TIME.AVGTOTALTIME1MIN',
     'M16A':    'M16A.QUE.LOAD.AVGLOADTIME1MIN',
     'M16B':    'M16B.QUE.LOAD.AVGLOADTIME1MIN',
-    'M16_PKT': 'M16_PKT.QUE.TIME.AVGTOTALTIME1MIN',
     'M16_WT':  'M16_WT.QUE.TIME.AVGTOTALTIME1MIN',
 }
 RB_COL = {
@@ -319,6 +536,7 @@ def iter_unified_rows(filepath):
                         'sla_ratio': safe_float(g(SLA_COL['M16HUB'])),
                         'sla_cnt': safe_int(g('M16HUB.QUE.ALL.TRANSPORT4MINOVERCNT')),
                         'sorter': safe_int(g(SORTER_COL['M16HUB'])),
+                        # STB 는 기록용으로만 수집 — R-D 판정에는 쓰지 않음 (2026-08 고객 요청, FABSTORAGERATIO 만 판정)
                         'hub_stb_util': safe_float(g('M16HUB.STRATE.STB.3F_STORAGE_UTIL')),
                         'oht_qcnt': safe_int(g('M16HUB.QUE.OHT.CURRENTOHTQCNT')),
                         'oht_alarm': safe_int(g('M16HUB.OHT.ALERT.OHTMCPALARMCNT')),
@@ -414,11 +632,15 @@ def iter_unified_rows(filepath):
                         'sfab_ret': safe_int(g('M16.QUE.SFAB.RETURNQUEUETOTAL')),
                     }
 
-                    d['M16_PKT'] = {
-                        'ra': safe_float(g(RA_COL['M16_PKT'])),
-                        'rd_oht': safe_float(g('M16_PKT.QUE.OHT.OHTUTIL')),
-                        'aotransdelay': safe_int(g('M16_PKT.QUE.ABN.AOTRANSDELAY')),
-                    }
+                    # ★ OHT 가감점용 — FAB 별 OHT 1분 값 (컬럼 없으면 None → 가감 안 함)
+                    d['OHT'] = {fab: {
+                        'report':  safe_int(g(f'{fab}_OHT_report')),
+                        'missing': safe_int(g(f'{fab}_OHT_missing')),
+                        'jam':     safe_int(g(f'{fab}_OHT_JAM')),
+                        'ht':      safe_int(g(f'{fab}_OHT_HT_STOP')),
+                    } for fab in OHT_FABS_ALL}
+
+                    # M16_PKT 는 로딩하지 않음 (2026-08 고객 요청 — 영역 전체 제외)
 
                     d['M16_WT'] = {
                         'ra': safe_float(g(RA_COL['M16_WT'])),
@@ -505,8 +727,8 @@ def eval_area_rules(area, window):
     if area == 'M16HUB':
         out['rd_fab'] = latest.get('rd_fab') or 0
         out['rd_oht'] = latest.get('rd_oht') or 0
-        stb = latest.get('hub_stb_util') or 0
-        out['hub_stb_util'] = stb
+        # STB 는 값만 기록 (발동이벤트 M16HUB_stb_util 컬럼용) — 판정에는 미사용
+        out['hub_stb_util'] = latest.get('hub_stb_util') or 0
         # ★ v5 신규 — R-MLUD: MLUD 잡 누적 (메신저 "MLUD 정체" 패턴)
         mlud_job = latest.get('mlud_job') or 0
         mlud_manual = latest.get('mlud_manual') or 0
@@ -519,9 +741,9 @@ def eval_area_rules(area, window):
         cnv_ratio = (cnv_cur / cnv_capa) if cnv_capa > 0 else 0
         out['cnv_ratio'] = cnv_ratio
         out['cnv_full_trig'] = cnv_ratio >= TH_CNV_FULL_RATIO
-        # R-D 통합 트리거 — 기존 FAB/STB + 신규 MLUD/CNV (R-D 우산 아래로)
+        # R-D 통합 트리거 — FAB저장률 + 신규 MLUD/CNV (R-D 우산 아래로)
+        #   ※ STB(3F_STORAGE_UTIL) 항은 제거됨 (2026-08 고객 요청 — FABSTORAGERATIO 만 사용)
         out['rd_trig'] = ((out['rd_fab'] >= TH_RD_FABSTORAGE)
-                          or (stb >= TH_RD_HUB_STB_UTIL)
                           or out['mlud_trig']
                           or out['cnv_full_trig'])
     elif area in RD_OHT_COL:
@@ -639,7 +861,10 @@ def eval_flow_rules(flow_history):
 # ============================================================
 # Layer 3 통합 융합
 # ============================================================
-def evaluate_unified(t, area_results, flow_result, propagation_history):
+def evaluate_unified(t, area_results, flow_result, propagation_history, pio=None, oht=None):
+    # pio: PioState.term(t) 결과. 없으면 PIO 항 0 (상태파일 없음·백테스트)
+    # oht: 입력 1분의 FAB 별 OHT 값 (iter_unified_rows 의 d['OHT']). 없으면 가감 0
+    pio = pio or {'score': 0, 'cnt10': 0, 'hot_path': '', 'hot_cnt': 0}
     # ★ AREA_WEIGHT: 점수 합산에만 영역 가중 적용 (아래 hot_area/affected_areas 는 원본 사용)
     layer1_total = round(sum(r.get('area_score', 0) * _aw(a)
                              for a, r in area_results.items()), 1)
@@ -667,15 +892,31 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
     mc_score = round(mc_score, 1)
 
     # ★ 점수 정규화 — raw 합산 → 0~100 척도 (raw 220 = 100점 발동)
-    raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score
+    #   PIO 항은 여섯 번째 항으로 더해진다 (최대 11 = 점수 +5). 0 이면 예전과 동일.
+    pio_score = pio.get('score', 0) or 0
+    raw_score = layer1_total + flow_score + sla_score + sorter_score + mc_score + pio_score
     unified_risk_score = min(100, round(raw_score * 100 / 220))
 
-    # ★ 위험도 등급 (회사 표준 50/71/85): 경계 50~70 / 위험 71~84 / 초위험 85~100. 50 미만은 등급 공란 (정상 라벨 없음).
+    # ★ OHT 가감점 — ALL 은 정규화된 점수에 직접 (0~100), FAB 은 {FAB}_score_raw 에만
+    unified_risk_score_orig = unified_risk_score
+    oa = oht_adjust(oht)
+    if oa['all']:
+        unified_risk_score = max(0, min(100, round(unified_risk_score + oa['all'])))
+    for fab, adj in oa['fab'].items():
+        r = area_results.get(fab)
+        if r is not None:
+            r['area_score_raw_orig'] = r.get('area_score_raw', 0)
+            r['oht_adj'] = adj
+            if adj:
+                r['area_score_raw'] = max(0, r.get('area_score_raw', 0) + adj)
+
+    # ★ 위험도 등급 60/71/85: 경계 60~70 / 위험 71~84 / 초위험 85~100.
+    #   60 미만은 등급 공란 (정상 라벨 없음). 경계 하한은 MIN_INCIDENT_SCORE 와 같은 값.
     if unified_risk_score >= 85:
         unified_risk_level = '초위험'
     elif unified_risk_score >= 71:
         unified_risk_level = '위험'
-    elif unified_risk_score >= 50:
+    elif unified_risk_score >= MIN_INCIDENT_SCORE:
         unified_risk_level = '경계'
     else:
         unified_risk_level = ''
@@ -735,6 +976,15 @@ def evaluate_unified(t, area_results, flow_result, propagation_history):
         'sla_score': sla_score,
         'sorter_score': sorter_score,
         'mc_score': mc_score,
+        # ★ PIO — pio_score 는 raw 에 더해진 값, pio_10min_cnt 는 그 근거(10분 건수)
+        'pio_score': pio_score,
+        'pio_10min_cnt': pio.get('cnt10', 0) or 0,
+        'pio_hot_path': pio.get('hot_path', '') or '',
+        'pio_hot_cnt': pio.get('hot_cnt', 0) or 0,
+        # ★ OHT 가감점 — 원래 점수 · ALL 가감 · 근거
+        'unified_risk_score_orig': unified_risk_score_orig,
+        'oht_all_adj': oa['all'],
+        'oht_signals': oa['signals'],
     }
 
 
@@ -761,7 +1011,6 @@ def _predict_fault_type(ctx):
         if r.get('rc_trig') and (r.get('rev_count', 0) or 0) >= 4: return 'HUB-리프터역증가'
         if r.get('rd_trig'):
             if (r.get('rd_fab', 0) or 0) >= TH_RD_FABSTORAGE: return 'HUB-FAB정체'
-            if (r.get('hub_stb_util', 0) or 0) >= TH_RD_HUB_STB_UTIL: return 'HUB-STB정체'
         if r.get('rb_trig'):         return 'HUB-큐누적'
         if r.get('ra_trig'):         return 'HUB-반송지연'
         return 'HUB-신호'
@@ -880,7 +1129,9 @@ class IncidentTracker:
         c = self.current
         ar = ctx.get('area_results', {}) or {}
         for area, r in ar.items():
-            if r.get('area_score', 0) == 0:
+            # 영역 점수 0 이어도 OHT 가감으로 {FAB}_score_raw 가 생기면 사건 통계에 넣는다
+            #   (OHT 가 꺼져 있으면 area_score 0 ⇔ score_raw 0 이라 예전과 같다)
+            if r.get('area_score', 0) == 0 and not r.get('area_score_raw', 0):
                 continue
             am = c['area_max'].setdefault(area, {})
             for k in ('ra_value', 'rb_diff_30', 'rev_count',
@@ -974,12 +1225,12 @@ EVENT_FIELDS = [
     'affected_areas', 'propagation_chain',
     'flow_signals', 'maxcapa_signals',
     'M16HUB_score', 'M14_score', 'M14B_score', 'M16A_score', 'M16B_score',
-    'M16_score', 'M16_PKT_score', 'M16_WT_score',
+    'M16_score', 'M16_WT_score',
     'M16HUB_signals', 'M14_signals', 'M14B_signals', 'M16A_signals', 'M16B_signals',
     'M16HUB_ra', 'M14_ra', 'M14B_ra', 'M16A_ra', 'M16B_ra',
     'M16HUB_rb_diff30', 'M14_rb_diff30', 'M14B_rb_diff30', 'M16A_rb_diff30',
     'M16B_rb_diff30',                            # ★ A 보강: 대칭 복구
-    'M16HUB_rd_fab', 'M16HUB_stb_util',
+    'M16HUB_rd_fab', 'M16HUB_stb_util',   # stb 는 기록용 값 — 판정 미사용
     'M16HUB_rev_count', 'M16HUB_rev_lids',
     'sla_M14', 'sla_M14B', 'sla_M16A', 'sla_M16B', 'sla_M16HUB',  # ★ A 보강: sla_M14B
     'sorter_M14', 'sorter_M14B', 'sorter_M16A', 'sorter_M16B',
@@ -1000,6 +1251,8 @@ EVENT_FIELDS = [
     'M16B_pts_RC', 'M16B_pts_RD', 'M16B_pts_SLA', 'M16B_pts_SORT', 'M16B_pts_MAXCAPA',
     # 통합 점수 분해 (5 컬럼)
     'layer1_total', 'flow_score', 'sla_score_total', 'sorter_score_total', 'mc_score_total',
+    # ★ PIO (2026-09) — pio_10min_cnt: 12경로 최근 10분 실패 합계 / pio_score: raw 에 더해진 값
+    'pio_10min_cnt', 'pio_score',
     # ─────────────────────────────────────────────────────────
     # ★ B 보강 — 룰 진단 키 (운영자 디버깅 + ML 피처)
     # RA 진단: 10분 중 임계 초과 횟수 (5 영역)
@@ -1016,6 +1269,13 @@ EVENT_FIELDS = [
     'M16A_sorter_fail', 'M16B_sorter_fail',
     # 영역 점수 원본 (50 클리핑 전, 5 영역) — score 가 50 캡 됐는지 확인용
     'M16HUB_score_raw', 'M14_score_raw', 'M14B_score_raw', 'M16A_score_raw', 'M16B_score_raw',
+    # ★ OHT 가감점 (2026-10) — unified_risk_score · {FAB}_score_raw 는 가감 후 값,
+    #   _orig 는 가감 전 원래 점수, *_oht_adj 는 더해진 값, oht_signals 는 근거
+    'unified_risk_score_orig', 'oht_all_adj',
+    'M16HUB_oht_adj', 'M14_oht_adj', 'M14B_oht_adj', 'M16A_oht_adj', 'M16B_oht_adj',
+    'M16HUB_score_raw_orig', 'M14_score_raw_orig', 'M14B_score_raw_orig',
+    'M16A_score_raw_orig', 'M16B_score_raw_orig',
+    'oht_signals',
 ]
 
 INCIDENT_FIELDS = [
@@ -1087,17 +1347,71 @@ INCIDENT_FIELDS = [
 ]
 
 
+def _read_header(path):
+    """기존 파일의 헤더 한 줄만 읽는다 (없거나 못 읽으면 None)."""
+    try:
+        with open(path, 'r', encoding='utf-8-sig', newline='') as f:
+            return next(csv.reader(f), None)
+    except (OSError, StopIteration):
+        return None
+
+
+def _migrate_header(path, fields, header):
+    """헤더에 없는 새 컬럼을 파일 전체에 추가한다 (기존 값·기입기 컬럼은 그대로).
+
+    새 컬럼은 fields 의 순서에 맞는 자리에 끼워 넣고, 기입기(PIO·로그프레소·MAXCAPA)가
+    붙인 컬럼은 뒤에 유지한다. 임시파일 → 원자 교체. 성공하면 새 헤더를 반환.
+    """
+    extra = [c for c in header if c not in fields]      # 예측기가 안 만드는 컬럼
+    want = list(fields) + extra
+    with open(path, 'r', encoding='utf-8-sig', newline='') as f:
+        rd = csv.DictReader(f)
+        rows = list(rd)
+    tmp = path + '.hdrtmp'
+    with open(tmp, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=want, extrasaction='ignore')
+        w.writeheader()
+        for r in rows:
+            w.writerow({c: (r.get(c) if r.get(c) is not None else '') for c in want})
+    os.replace(tmp, path)
+    return want
+
+
 def append_rows_csv(path, fields, rows):
-    new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+    """행 추가. ★ 헤더가 fields 와 다르면 자동으로 맞춘다.
+
+    예전에는 파일이 있으면 헤더를 보지 않고 그대로 이어 붙였다. 그래서 컬럼이 늘어난
+    새 버전으로 교체하면 그날 파일에서 열이 밀렸다(사람이 도구로 고쳐야 했다).
+    이제는 매번 헤더를 확인해서
+      · 같으면      그냥 이어 붙이고 (평소 경로)
+      · fields 가 헤더의 부분집합이면  헤더 순서에 맞춰 값을 배치해 붙이고
+      · 새 컬럼이 있으면  파일 전체에 그 컬럼을 추가한 뒤 붙인다 (컬럼당 1회)
+    """
     last_err = None
     for attempt in range(10):
         try:
+            new_file = not os.path.exists(path) or os.path.getsize(path) == 0
+            header = None if new_file else _read_header(path)
+            if header is None:
+                new_file = True
+            if not new_file and header != list(fields):
+                missing = [c for c in fields if c not in header]
+                if missing:
+                    header = _migrate_header(path, fields, header)
+                    print(f'  ↔ 헤더에 새 컬럼 {len(missing)}개 추가: '
+                          f'{", ".join(missing[:6])}' + ('…' if len(missing) > 6 else ''))
             with open(path, 'a', encoding='utf-8-sig', newline='') as f:
                 w = csv.writer(f)
                 if new_file:
                     w.writerow(fields)
-                for r in rows:
-                    w.writerow(r)
+                    for r in rows:
+                        w.writerow(r)
+                else:
+                    # 헤더 순서대로 값을 배치 — 헤더에만 있는 칸(기입기용)은 빈칸으로 둔다
+                    pos = {c: i for i, c in enumerate(fields)}
+                    for r in rows:
+                        w.writerow([(r[pos[c]] if c in pos and pos[c] < len(r) else '')
+                                    for c in header])
             return
         except PermissionError as e:
             last_err = e
@@ -1152,7 +1466,7 @@ def _build_reason(ctx):
                 sub.append("R-C'(CNV쏠림)")
         if r.get('rd_trig'):
             if area == 'M16HUB':
-                sub.append(f"R-D(FAB저장={r.get('rd_fab', 0):.1f}%,STB={r.get('hub_stb_util', 0):.1f}%)")
+                sub.append(f"R-D(FAB저장={r.get('rd_fab', 0):.1f}%)")
             else:
                 sub.append(f"R-D(OHT={r.get('rd_oht', 0):.1f}%)")
         if r.get('sla_trig'):
@@ -1171,6 +1485,17 @@ def _build_reason(ctx):
     mc = ctx.get('maxcapa_signals')
     if mc:
         parts.append(f"운영자조치:{mc}")
+    # ★ PIO — 어느 경로에서 몇 건 실패했는지 (조치 지점)
+    pc = ctx.get('pio_10min_cnt', 0) or 0
+    if pc:
+        hp, hc = ctx.get('pio_hot_path', ''), ctx.get('pio_hot_cnt', 0) or 0
+        ps = ctx.get('pio_score', 0) or 0
+        detail = f"{hp}={hc}건" if hp else f"{pc}건"
+        parts.append(f"PIO({detail}/10분,합{pc}" + (f",+{ps}" if ps else "") + ")")
+    # ★ OHT 가감점 — 가감이 0 이어도 OHT 값이 있으면 남긴다
+    if ctx.get('oht_signals'):
+        parts.append(f"OHT({ctx.get('oht_signals', '')}; "
+                     f"ALL {ctx.get('unified_risk_score_orig', '')}→{ctx.get('unified_risk_score', '')})")
     return '; '.join(parts)
 
 
@@ -1198,7 +1523,7 @@ def event_to_row(ev, file_name):
         A('M16HUB', 'area_score', 0), A('M14', 'area_score', 0),
         A('M14B', 'area_score', 0), A('M16A', 'area_score', 0),
         A('M16B', 'area_score', 0), A('M16', 'area_score', 0),
-        A('M16_PKT', 'area_score', 0), A('M16_WT', 'area_score', 0),
+        A('M16_WT', 'area_score', 0),
         '+'.join(A('M16HUB', 'area_signals', []) or []),
         '+'.join(A('M14', 'area_signals', []) or []),
         '+'.join(A('M14B', 'area_signals', []) or []),
@@ -1242,6 +1567,8 @@ def event_to_row(ev, file_name):
         ctx.get('sla_score', 0),
         ctx.get('sorter_score', 0),
         ctx.get('mc_score', 0),
+        ctx.get('pio_10min_cnt', 0),
+        ctx.get('pio_score', 0),
         # ─────────────────────────────────────────────────────────
         # ★ B 보강 — 룰 진단 키 (운영자 디버깅 + ML 피처)
         A('M16HUB','ra_count',0), A('M14','ra_count',0), A('M14B','ra_count',0),
@@ -1257,7 +1584,12 @@ def event_to_row(ev, file_name):
         A('M16HUB','area_score_raw',0), A('M14','area_score_raw',0),
         A('M14B','area_score_raw',0), A('M16A','area_score_raw',0),
         A('M16B','area_score_raw',0),
-    ]
+        # ★ OHT 가감점
+        ctx.get('unified_risk_score_orig', ctx.get('unified_risk_score', 0)),
+        ctx.get('oht_all_adj', 0),
+    ] + [A(a, 'oht_adj', 0) for a in OHT_FABS_ALL] \
+      + [A(a, 'area_score_raw_orig', A(a, 'area_score_raw', 0)) for a in OHT_FABS_ALL] \
+      + [ctx.get('oht_signals', '')]
 
 
 def _predict_fault_type_from_incident(c):
@@ -1275,8 +1607,6 @@ def _predict_fault_type_from_incident(c):
         if rev >= TH_RC_REVERSE:                        return 'HUB-리프터역증가'
         fab = am.get('rd_fab', 0) or 0
         if fab >= TH_RD_FABSTORAGE:                     return 'HUB-FAB정체'
-        stb = am.get('hub_stb_util', 0) or 0
-        if stb >= TH_RD_HUB_STB_UTIL:                   return 'HUB-STB정체'
         rb = am.get('rb_diff_30', 0) or 0
         if rb >= TH_RB_30.get('M16HUB', 100):           return 'HUB-큐누적'
         ra = am.get('ra_value', 0) or 0
@@ -1297,7 +1627,7 @@ def incident_to_row(c, file_name):
 
     # 영역별 발동 룰
     tr_parts = []
-    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_PKT', 'M16_WT']:
+    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_WT']:
         rules = c.get('triggered_rules', {}).get(area)
         if rules:
             tr_parts.append(f"{area}:{'+'.join(sorted(rules))}")
@@ -1306,7 +1636,7 @@ def incident_to_row(c, file_name):
     # 핵심 위험요인 (영역별 max값 / 임계값 비교)
     rf_parts = []
     rel_parts = []
-    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16_PKT', 'M16_WT']:
+    for area in ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16_WT']:
         am = c.get('area_max', {}).get(area)
         if not am:
             continue
@@ -1329,10 +1659,6 @@ def incident_to_row(c, file_name):
             if rdf >= TH_RD_FABSTORAGE:
                 rf_parts.append(f"M16HUB.FABSTORAGERATIO={rdf:.1f}%(>={TH_RD_FABSTORAGE}%)")
                 rel_parts.append(f"[M16HUB R-D] FABSTORAGERATIO={rdf:.1f}% (기준 {TH_RD_FABSTORAGE}%)")
-            stb = am.get('hub_stb_util') or 0
-            if stb >= TH_RD_HUB_STB_UTIL:
-                rf_parts.append(f"M16HUB.STB_STORAGE_UTIL={stb:.1f}%(>={TH_RD_HUB_STB_UTIL}%)")
-                rel_parts.append(f"[M16HUB R-D] STB.3F_STORAGE_UTIL={stb:.1f}% (기준 {TH_RD_HUB_STB_UTIL}%)")
         else:
             oht = am.get('rd_oht') or 0
             if oht >= TH_RD_OHT_UTIL:
@@ -1441,7 +1767,8 @@ def append_incident_row(out_dir, incident, file_name):
 # ============================================================
 # Predictor
 # ============================================================
-AREAS_ALL = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_PKT', 'M16_WT']
+# M16_PKT 제외 (2026-08 고객 요청) — 8영역 → 7영역
+AREAS_ALL = ['M16HUB', 'M14', 'M14B', 'M16A', 'M16B', 'M16', 'M16_WT']
 
 
 
@@ -1456,6 +1783,8 @@ class Predictor:
         self.flow_history = deque(maxlen=WINDOW_MIN)
         self.propagation_history = deque(maxlen=PREDICT_LOOKBACK_MIN * 2)
         self.tracker = IncidentTracker()
+        # ★ PIO 상태파일 — 출력 폴더(predict_tobe)에서 PIO_DATA_MAKE 가 쓴 것을 읽는다
+        self.pio = PioState(self.out_dir)
         self.last_t = None
         self.last_event_count = 0
         self.last_incident_count = 0
@@ -1502,7 +1831,8 @@ class Predictor:
 
                 area_results = {a: eval_area_rules(a, self.area_windows[a]) for a in AREAS_ALL}
                 flow_result = eval_flow_rules(self.flow_history)
-                unified = evaluate_unified(t, area_results, flow_result, self.propagation_history)
+                unified = evaluate_unified(t, area_results, flow_result, self.propagation_history,
+                                           pio=self.pio.term(t), oht=d.get('OHT'))
                 unified['area_results'] = area_results
                 unified['flow_result'] = flow_result
 
@@ -1570,6 +1900,7 @@ def run_once(input_csv: Path, out_dir: Path, logger):
     logger.info(f"  INPUT : {input_csv}")
     logger.info(f"  OUTPUT: {out_dir}")
     logger.info(f"  대상 영역: {', '.join(AREAS_ALL)}")
+    logger.info(f"  {oht_config_text()}")
     logger.info("=" * 70)
     p = Predictor(input_csv, out_dir, logger)
     n = p.tick()
@@ -1583,6 +1914,7 @@ def run_watch(input_csv: Path, out_dir: Path, logger):
     logger.info(f"  INPUT : {input_csv}")
     logger.info(f"  OUTPUT: {out_dir}")
     logger.info(f"  대상 영역: {', '.join(AREAS_ALL)}")
+    logger.info(f"  {oht_config_text()}")
     logger.info("=" * 70)
     if _logpresso is not None:
         _logpresso.start()

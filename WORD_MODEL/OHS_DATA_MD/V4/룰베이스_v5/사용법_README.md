@@ -50,6 +50,35 @@ python hubroom_predictor.py AWS_IDC_DATA_HIS_202605.CSV -o ./predict_tobe
 | `predict_tobe/YYYYMMDD_발동이벤트.csv` | 매분 메트릭 + 등급/지속성/예측유형 (135컬럼) |
 | `predict_tobe/YYYYMMDD_사건단위.csv` | 사건당 1행, 점수 100+ 만 (170컬럼) |
 
+### (C) OHT 가감점 (2026-10) — 오탐 줄이기
+입력 CSV 의 FAB 별 OHT 컬럼 `{FAB}_OHT_report · _missing · _JAM · _HT_STOP` 을 보고 점수를 올리고 내린다.
+
+| 조건 (FAB 하나) | ALL 점수 `unified_risk_score` | FAB 점수 `{FAB}_score_raw` |
+|---|---|---|
+| 미보고 ≥5 **와** JAM ≥10 같이 | +15 | +15 |
+| 미보고 ≤5 **와** JAM ≤10 같이 | −10 | −10 |
+| HT_STOP ≥1 | +10 | +10 |
+| HT_STOP 0 | 그대로 | 그대로 |
+
+- 설정은 전부 `thresholds.json` — 켜기/끄기, 적용 FAB, 기준 숫자, 점수 (수정 후 재시작)
+  ```json
+  "OHT_ADJ_ENABLED": true,                 // false = 예전 점수 그대로
+  "OHT_ADJ_FABS": ["M16HUB"],              // 적용 FAB (M16HUB · M14 · M14B · M16A · M16B)
+  "OHT_ADJ_ALL": {"enabled": true, "plus_missing": 5, "plus_jam": 10, "plus_score": 15,
+                  "minus_missing": 5, "minus_jam": 10, "minus_score": -10,
+                  "ht_min": 1, "ht_score": 10},
+  "OHT_ADJ_FAB": { …같은 키… , "M16A": {"plus_score": 20}}   // FAB 이름 키 = 그 FAB 만 덮어쓰기
+  ```
+- 경계값(미보고 5 · JAM 10 정확히)은 둘 다 해당 → **+ 가 우선**
+- 미보고만 높고 JAM 은 낮은 경우(예: 미보고 20 · JAM 3)는 +/− 둘 다 아님 → 0
+- ALL 은 FAB 여러 개일 때 하나라도 + 면 +15, 모두 − 면 −10, HT 는 하나라도 있으면 +10 (각각 한 번)
+- 보고(`_OHT_report`) 가 비었거나 0 인 FAB 은 가감하지 않는다 → OHT 수집이 멈춰도 감점 안 됨
+- ALL 가감은 0~100 안에서 → **등급 · 사건 시작/종료도 가감된 점수로** 판단
+- FAB 가감은 `{FAB}_score_raw` 에만 (영역 점수 `{FAB}_score` · ALL 합산에는 안 들어감)
+- 발동이벤트 추가 칸: `unified_risk_score_orig`(가감 전), `oht_all_adj`, `{FAB}_oht_adj`,
+  `{FAB}_score_raw_orig`(가감 전), `oht_signals`(근거) · reason 에도 `OHT(…)` 로 남는다
+- 시작 로그에 설정이 한 줄로 찍힌다 (`OHT 가감점: 켬 · FAB M16HUB …`)
+
 ---
 
 ## 2. `운영로그_파서_v2.py` — 메신저 → 정답지
