@@ -985,7 +985,6 @@ def evaluate_unified(t, area_results, flow_result, propagation_history, pio=None
         'unified_risk_score_orig': unified_risk_score_orig,
         'oht_all_adj': oa['all'],
         'oht_signals': oa['signals'],
-        'oht_in': oht or {},              # FAB 별 OHT 입력값 (발동이벤트 {FAB}_OHT_* 칸)
     }
 
 
@@ -1277,9 +1276,7 @@ EVENT_FIELDS = [
     'M16HUB_score_raw_orig', 'M14_score_raw_orig', 'M14B_score_raw_orig',
     'M16A_score_raw_orig', 'M16B_score_raw_orig',
     'oht_signals',
-    # ★ OHT 입력값 (FAB 별, 0 이어도 그대로) — 이름이 {FAB}_ 로 시작해 fab분리 때 그 FAB 파일로 간다
-    #   입력에 컬럼이 없으면 빈칸
-] + [f'{f}_OHT_{k}' for f in OHT_FABS_ALL for k in ('report', 'missing', 'JAM', 'HT_STOP')]
+]
 
 INCIDENT_FIELDS = [
     'file', 'date', 'predict_time', 'start_time', 'end_time',
@@ -1502,12 +1499,6 @@ def _build_reason(ctx):
     return '; '.join(parts)
 
 
-def _oht_val(ctx, fab, key):
-    """발동이벤트 {FAB}_OHT_* 칸 — 0 도 그대로 찍고, 입력에 없으면 빈칸."""
-    v = ((ctx.get('oht_in') or {}).get(fab) or {}).get(key)
-    return '' if v is None else v
-
-
 def event_to_row(ev, file_name):
     t = ev['time']
     ctx = ev.get('ctx', {})
@@ -1598,8 +1589,7 @@ def event_to_row(ev, file_name):
         ctx.get('oht_all_adj', 0),
     ] + [A(a, 'oht_adj', 0) for a in OHT_FABS_ALL] \
       + [A(a, 'area_score_raw_orig', A(a, 'area_score_raw', 0)) for a in OHT_FABS_ALL] \
-      + [ctx.get('oht_signals', '')] \
-      + [_oht_val(ctx, f, k) for f in OHT_FABS_ALL for k in ('report', 'missing', 'jam', 'ht')]
+      + [ctx.get('oht_signals', '')]
 
 
 def _predict_fault_type_from_incident(c):
