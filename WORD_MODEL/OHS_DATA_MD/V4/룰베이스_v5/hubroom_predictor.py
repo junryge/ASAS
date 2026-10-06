@@ -389,8 +389,7 @@ def oht_adjust(oht):
             adj = ((rule['plus_score'] if mj == '+' else rule['minus_score'] if mj == '-' else 0)
                    + (rule['ht_score'] if ht else 0))
             out['fab'][fab] = adj
-            if adj:
-                part += f" FAB{adj:+g}"
+            part += f" FAB{adj:+g}"                  # 0 이어도 남긴다 (FAB+0)
         sig.append(part)
     if n_data and OHT_ADJ_ALL.get('enabled', True):
         r = OHT_ADJ_ALL
@@ -401,7 +400,8 @@ def oht_adjust(oht):
         if all_ht:
             out['all'] += r['ht_score']
     if sig:
-        out['signals'] = ' / '.join(sig) + (f" → ALL{out['all']:+g}" if out['all'] else '')
+        out['signals'] = ' / '.join(sig) + (f" → ALL{out['all']:+g}"
+                                            if OHT_ADJ_ALL.get('enabled', True) else '')
     return out
 
 LIFTER_IDS = [
@@ -1129,7 +1129,9 @@ class IncidentTracker:
         c = self.current
         ar = ctx.get('area_results', {}) or {}
         for area, r in ar.items():
-            if r.get('area_score', 0) == 0:
+            # 영역 점수 0 이어도 OHT 가감으로 {FAB}_score_raw 가 생기면 사건 통계에 넣는다
+            #   (OHT 가 꺼져 있으면 area_score 0 ⇔ score_raw 0 이라 예전과 같다)
+            if r.get('area_score', 0) == 0 and not r.get('area_score_raw', 0):
                 continue
             am = c['area_max'].setdefault(area, {})
             for k in ('ra_value', 'rb_diff_30', 'rev_count',
@@ -1490,10 +1492,8 @@ def _build_reason(ctx):
         ps = ctx.get('pio_score', 0) or 0
         detail = f"{hp}={hc}건" if hp else f"{pc}건"
         parts.append(f"PIO({detail}/10분,합{pc}" + (f",+{ps}" if ps else "") + ")")
-    # ★ OHT 가감점 — 점수가 바뀐 경우만
-    oa = ctx.get('oht_all_adj', 0) or 0
-    fab_adj = any((r or {}).get('oht_adj') for r in ar.values())
-    if oa or fab_adj:
+    # ★ OHT 가감점 — 가감이 0 이어도 OHT 값이 있으면 남긴다
+    if ctx.get('oht_signals'):
         parts.append(f"OHT({ctx.get('oht_signals', '')}; "
                      f"ALL {ctx.get('unified_risk_score_orig', '')}→{ctx.get('unified_risk_score', '')})")
     return '; '.join(parts)
