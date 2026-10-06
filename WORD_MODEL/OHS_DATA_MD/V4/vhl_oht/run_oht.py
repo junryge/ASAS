@@ -61,6 +61,53 @@ def _rename_alarm_en():
     HID.log.info(f"  영문 등급: " + " · ".join(f"{k} {v}" for k, v in ALARM_EN_NEW.items())
                  + (f"  ({', '.join(done)})" if done else "  (⚠ 바꿀 사전을 못 찾음 — 예전 이름 그대로)"))
 
+
+# ★ HID 구역만 쓰기 (2026-10) — 마스터의 Vehicle_Max > 0 인 구역만 HID 구역
+#   M16A_BR 마스터: 1~37 (37개, 최대 대수 있음) = 진짜 HID
+#                  4001~ · 5001~ · 10001~ (161개, Vehicle_Max 0) = HID 아님 → 구역 계산에서 뺀다
+#   HID_ZONE · HID_ZONE_2/3 · ZONE_STOP · ZONE_VHL · VHL_MAX · ZONE_OCC 가 모두 HID 구역 기준이 된다
+#   (미보고 · JAM · HT 는 FAB 전체라 그대로)
+def _hid_only(st):
+    zo, info = getattr(st, "zone_of", None), getattr(st, "info", None) or {}
+    if not zo or getattr(st, "_hid_only_src", None) is zo:
+        return
+    def vmax(z):
+        try:
+            return float(info.get(z, ("", "", "", 0))[3] or 0)
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+    keep = {z for z in set(zo.values()) if vmax(z) > 0}
+    if not keep:                                     # 최대 대수를 못 읽으면 건드리지 않는다
+        HID.log.warning(f"  {getattr(st, 'fab', '')}: Vehicle_Max 를 못 읽어 구역 거르기 안 함")
+        st._hid_only_src = zo
+        return
+    drop = sorted({z for z in zo.values() if z not in keep}, key=lambda z: (len(str(z)), str(z)))
+    new = {a: z for a, z in zo.items() if z in keep}
+    st.zone_of = new
+    st._hid_only_src = new
+    HID.log.info(f"  {getattr(st, 'fab', '')}: HID 구역 {len(keep)}개만 사용 (Vehicle_Max > 0)"
+                 + (f" · {len(drop)}개 제외 ({', '.join(map(str, drop[:4]))}{' …' if len(drop) > 4 else ''})"
+                    if drop else ""))
+
+
+def _hook_hid_only():
+    """FabState 가 판정(ingest) 하기 전에 한 번 구역을 거른다 — 다시 읽으면 다시 거른다."""
+    cls = getattr(HID, "FabState", None)
+    if cls is None or not hasattr(cls, "ingest"):
+        HID.log.warning("  HID 구역 거르기: FabState.ingest 를 못 찾음 — 예전대로 전체 구역")
+        return
+    orig = cls.ingest
+
+    def ingest(self, *a, **kw):
+        try:
+            _hid_only(self)
+        except Exception as e:
+            HID.log.warning(f"  HID 구역 거르기 실패 — 전체 구역으로 진행: {e}")
+        return orig(self, *a, **kw)
+
+    cls.ingest = ingest
+
+
 try:
     import OHT_MAP_INDEX as MAP_INDEX
 except Exception as _e:                               # 없거나 깨져도 본 기능은 그대로 돈다
@@ -151,6 +198,7 @@ def main():
         _rename_alarm_en()
     except Exception as e:                            # 이름 바꾸기 때문에 멈추는 일은 없게
         HID.log.warning(f"  영문 등급 바꾸기 실패 — 예전 이름으로 진행: {e}")
+    _hook_hid_only()
     Rule_hid.start()
     _hook_upload()
     _hook_map_index()
