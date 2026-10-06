@@ -538,10 +538,11 @@
      걸린 줄은 성격이 다르다 — 훑을 때 눈에 걸리게 한다. */
   table.cases td.rcol .many .rln{color:var(--many)}
   table.cases td .mcell.many, table.cases td .mcell.many .dim{color:var(--many)}
-  /* 실제지표 — 시안 mono 12.5px --txb. 크기를 metricCell 인라인에서 여기로 옮겼다
-     (10.5px 는 raw 컬럼명이 길어 줄이던 값인데, 시안 행 높이 54px 면 12.5px 가 들어간다) */
-  table.cases td .mcell{font-size:12.5px;line-height:1.45;color:var(--txb)}
-  table.cases td .mcell .dim{font-size:11px}
+  /* 실제지표 — 시안 mono --txb. 크기를 metricCell 인라인에서 여기로 옮겼다
+     (10.5px 는 raw 컬럼명이 길어 줄이던 값인데, 시안 행 높이 54px 면 12.5px 가 들어간다)
+     ★2026-10-06 고객: "실제지표 글자 크기 줄이자" — 12.5 → 11px (머리글과 같은 크기) */
+  table.cases td .mcell{font-size:11px;line-height:1.45;color:var(--txb)}
+  table.cases td .mcell .dim{font-size:10px}
   /* ★raw 컬럼명(M16HUB.QUE.TIME.AVGTOTALTIME1MIN)은 띄어쓰기가 없어 줄바꿈 지점이
      없다. 예전엔 한 줄로 자르고 전문은 title(호버)에만 뒀는데, 이 칸은 판단 근거라
      호버해야 보이면 안 된다 — overflow-wrap:anywhere 로 아무 데서나 접어서 **전부**
