@@ -592,14 +592,16 @@ class 서버_한_벌(unittest.TestCase):
         cls.lport, cls.gport = _free_port(), _free_port()
         cls.lp = _spawn("mock_logpresso.py", cls.lport)
         cls.gw = _spawn("mock_gwanje.py", cls.gport)
-        r = subprocess.run([sys.executable, os.path.join(HERE, "main_harness.py"), cls.tmp, str(cls.lport),
-                            str(cls.gport)], capture_output=True, text=True, timeout=240,
-                           env=dict(os.environ, PYTHONIOENCODING="utf-8"))
-        cls.log = (r.stdout or "") + (r.stderr or "")
+        # ★여기서 예외가 나면 tearDownClass 가 안 불려 가짜 서버 둘이 남는다 — 실패도 결과로 받는다
+        cls.R, cls.log = None, ""
         try:
+            r = subprocess.run([sys.executable, os.path.join(HERE, "main_harness.py"), cls.tmp, str(cls.lport),
+                                str(cls.gport)], capture_output=True, text=True, timeout=240,
+                               env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+            cls.log = (r.stdout or "") + (r.stderr or "")
             cls.R = json.loads(r.stdout.strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            cls.R = None
+        except (subprocess.TimeoutExpired, ValueError, IndexError) as e:
+            cls.log += f"\n{type(e).__name__}: {e}"
 
     @classmethod
     def tearDownClass(cls):
