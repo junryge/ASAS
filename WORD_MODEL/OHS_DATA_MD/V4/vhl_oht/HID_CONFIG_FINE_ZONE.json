@@ -1,0 +1,39 @@
+{
+  "_설명": [
+    "★ FAB 마다 따로 설정해야 합니다 — M14 · M14B · M16A · M16B · M16HUB 는 차량 수와 평소 수준이 달라서 같은 숫자를 쓰면 안 맞습니다.",
+    "FAB 마다 경계 / 위험 / 초위험 기준 (그 50초 구간 값). 넷 중 하나라도 맞으면 그 단계:",
+    "  1. missing + JAM : 같은 50초 구간에 missing 이상 AND JAM 이상 — 2개가 같이 발생해야 함",
+    "  2. missing_ONLY  : missing 이상 — 미보고 1개만 발생해도 됨",
+    "  3. HT_STOP       : HT_STOP 이상 — 1개만 발생해도 됨",
+    "  4. ZONE_STOP     : HID 구역 하나 안에 멈춘 차(미보고 + JAM + HT)가 이 숫자 이상 — 1개만 발생해도 됨",
+    "초위험 -> 위험 -> 경계 순으로 본다. 숫자 0 = 그 조건 끔.",
+    "고치면 프로그램을 다시 켜지 않아도 다음 50초 구간부터 적용됩니다.",
+    "RUN_FABS = 돌릴 FAB (실시간 · --test). 예) [\"M16HUB\"] · 다섯 다 [\"M14\", \"M14B\", \"M16A\", \"M16B\", \"M16HUB\"] — 이것만은 프로그램을 다시 켜야 적용됩니다."
+  ],
+  "RUN_FABS": ["M16HUB"],
+  "M14": {
+    "경계":   {"missing": 6, "JAM": 10, "missing_ONLY": 0, "HT_STOP": 0, "ZONE_STOP": 10},
+    "위험":   {"missing": 0, "JAM": 0, "missing_ONLY": 15, "HT_STOP": 5, "ZONE_STOP": 20},
+    "초위험": {"missing": 0, "JAM": 0, "missing_ONLY": 50, "HT_STOP": 20, "ZONE_STOP": 0}
+  },
+  "M14B": {
+    "경계":   {"missing": 6, "JAM": 10, "missing_ONLY": 0, "HT_STOP": 0, "ZONE_STOP": 10},
+    "위험":   {"missing": 0, "JAM": 0, "missing_ONLY": 15, "HT_STOP": 5, "ZONE_STOP": 20},
+    "초위험": {"missing": 0, "JAM": 0, "missing_ONLY": 50, "HT_STOP": 20, "ZONE_STOP": 0}
+  },
+  "M16A": {
+    "경계":   {"missing": 6, "JAM": 10, "missing_ONLY": 0, "HT_STOP": 0, "ZONE_STOP": 10},
+    "위험":   {"missing": 0, "JAM": 0, "missing_ONLY": 15, "HT_STOP": 5, "ZONE_STOP": 20},
+    "초위험": {"missing": 0, "JAM": 0, "missing_ONLY": 50, "HT_STOP": 20, "ZONE_STOP": 0}
+  },
+  "M16B": {
+    "경계":   {"missing": 6, "JAM": 10, "missing_ONLY": 0, "HT_STOP": 0, "ZONE_STOP": 10},
+    "위험":   {"missing": 0, "JAM": 0, "missing_ONLY": 15, "HT_STOP": 5, "ZONE_STOP": 20},
+    "초위험": {"missing": 0, "JAM": 0, "missing_ONLY": 50, "HT_STOP": 20, "ZONE_STOP": 0}
+  },
+  "M16HUB": {
+    "경계":   {"missing": 6, "JAM": 10, "missing_ONLY": 0, "HT_STOP": 0, "ZONE_STOP": 10},
+    "위험":   {"missing": 0, "JAM": 0, "missing_ONLY": 15, "HT_STOP": 5, "ZONE_STOP": 20},
+    "초위험": {"missing": 0, "JAM": 0, "missing_ONLY": 50, "HT_STOP": 20, "ZONE_STOP": 0}
+  }
+}

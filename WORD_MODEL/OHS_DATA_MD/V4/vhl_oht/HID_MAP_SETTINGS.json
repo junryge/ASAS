@@ -1,0 +1,23 @@
+{
+  "_설명": "지도 표시 기본값 — 월드모델파생 ⚙ 설정과 같은 이름. 지도 오른쪽 위 ⚙ 에서 바꾸면 그 브라우저에만 저장되고, 여기를 고치면 앞으로 만드는 지도 전부의 기본값이 됩니다. vehicleRadius = OHT 크기.",
+  "mapTheme": "hmi",
+  "vehicleRadius": 3,
+  "railScale": 1.0,
+  "zoneScale": 1.0,
+  "labelScale": 1.0,
+  "colorEmpty": "#22c55e",
+  "colorLoaded": "#22d3ee",
+  "colorObs": "#f59e0b",
+  "colorStop": "#9ca3af",
+  "colorJam": "#ef4444",
+  "colorMiss": "#111827",
+  "carryDot": "on",
+  "dotLoaded": "#000000",
+  "dotAssign": "#ffffff",
+  "dotSize": 0.55,
+  "heat": "off",
+  "jamMinJam": 1,
+  "jamMinObs": 0,
+  "jamMinStop": 0,
+  "jamMinMiss": 3
+}

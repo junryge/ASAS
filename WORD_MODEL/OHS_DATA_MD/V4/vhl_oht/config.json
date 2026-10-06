@@ -1,0 +1,18 @@
+{
+  "_comment": "운영 — HID_VHL_OHT CSV 1분 줄을 쓰자마자 로그프레소 AMHS_VHL_OHT 에 바로 적재 (Rule_hid.py). Rule_LO 운영 config 와 같은 서버 · 같은 키 파일",
+  "enabled": true,
+  "logpresso_base": "http://10.40.42.167:8888/logpresso",
+  "api_key_file": "api_key.txt",
+  "fail_silent": true,
+  "_endpoints": {
+    "insert": "/httpexport/query.csv"
+  },
+
+  "_comment_hid": "CSV 새 1분 줄 + fab_name → AMHS_VHL_OHT, 1분에 한 줄 (FAB 마다). hid_only_alarm=true 면 경계 · 위험 · 초위험 줄만",
+  "hid_enabled": true,
+  "hid_table_name": "AMHS_VHL_OHT",
+  "hid_only_alarm": false,
+  "hid_async_upload": false,
+  "hid_http_timeout": 10,
+  "hid_retry_on_fail": 2
+}
