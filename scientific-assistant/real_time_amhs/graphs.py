@@ -18,6 +18,7 @@ AMHS Sentinel_M16BR — 구간 그래프 (독립 SVG 렌더러)
 from __future__ import annotations
 
 import html
+import math
 import re
 from datetime import timedelta
 
@@ -633,6 +634,12 @@ def metric_value(m: dict, r) -> float | None:
       컬럼이 없는 파일(원본 이름으로만 싣는 곳)에서는 원본 이름으로 읽는다.
     """
     r = r or {}
+    if m.get("lid"):
+        # 리프터 호기 — CSV 에 대기량 값이 없어 역증가 호기 목록에 들었는지(1/0)
+        v = r.get(m.get("lids_col") or "")
+        if v is None:
+            return None
+        return 1.0 if m["lid"] in {x.strip() for x in str(v).split(",")} else 0.0
     if m.get("pio_stack"):
         # ★경로 묶음은 _pio_val 로 읽는다 — 1분 컬럼이 창 내내 0 이면 _pio_fill 이
         #   reason 에서 읽는 칸으로 바꿔 끼우는데, CSV 만 보면 그 칸이 통째로 0 이 된다.
@@ -655,6 +662,36 @@ def _is_pio(m: dict) -> bool:
     return (bool(m.get("pio_stack")) or col.endswith(_PIO_SUF) or col in _PIO_ROW_COLS
             or col.endswith(("_PIO_SCORE", "_PIO_WSUM10", "_PIO_WSUM1"))
             or raw.startswith("PIO."))
+
+
+# M16HUB.LFT.6ABL6011.TOTAL_CURRENTQCNT → (M16HUB, 6ABL6011)
+_LFT_RE = re.compile(r"^([A-Z0-9]+)\.LFT\.([0-9A-Z]+)\.TOTAL_CURRENTQCNT$")
+
+
+def _norm(s) -> str:
+    return re.sub(r"[^0-9A-Z]", "", str(s).upper())
+
+
+def _find_col(name: str, keys) -> str | None:
+    """CSV 에 그 이름 그대로가 없을 때 — **구분자·대소문자만 다른** 컬럼을 찾는다.
+
+    예) M16HUB.LFT.6ABL6011.TOTAL_CURRENTQCNT ↔ M16HUB_LFT_6ABL6011_TOTAL_CURRENTQCNT
+    ★후보가 딱 하나일 때만 쓴다. 둘 이상이면 어느 쪽인지 모르니 안 고른다.
+    ★리프터는 호기 번호(6ABL6011)가 FAB 안에서 하나뿐이라 앞뒤가 달라도
+      그 번호 · 같은 끝말(TOTAL_CURRENTQCNT)이면 같은 컬럼으로 본다.
+      다른 지표는 FAB 이름이 빠지면 남의 FAB 컬럼을 집을 수 있어 안 넓힌다.
+    """
+    want = _norm(name)
+    hits = [k for k in keys if _norm(k) == want]
+    if len(hits) == 1:
+        return hits[0]
+    lm = _LFT_RE.match(str(name))
+    if lm:
+        hits = [k for k in keys if lm.group(2) in str(k).upper()
+                and _norm(k).endswith("TOTALCURRENTQCNT")]
+        if len(hits) == 1:
+            return hits[0]
+    return None
 
 
 def row_metrics(row, fab: str = "") -> list[dict]:
@@ -747,6 +784,12 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
         for m in parse_reason_metrics(sel_row.get("reason") or "", fabc):
             if is_new_metric(m.get("col")) and not _is_pio(m):
                 add_new(m)
+                if str(m.get("col")) == "M16HUB_rev_count":
+                    # ★R-C'(리프터 정체)는 '역증가 호기 수' 와 '10대 합의 20분 변화(음수)'
+                    #   둘을 같이 본다. 호기별 대기량은 CSV 에 없어서(위 리프터 주석)
+                    #   리프터 대기량을 **값으로** 볼 수 있는 건 이 합 하나뿐이다.
+                    add_new({"col": "M16HUB_rc_trend", "raw": "M16HUB_rc_trend",
+                             "label": "M16HUB 리프터 10대 합 20분 변화", "unit": "대"})
 
     # PIO — 대표 한 칸
     stack = None
@@ -764,6 +807,30 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
         else:
             stack["name"] = (names[0] + _PIO_SUF) if len(names) == 1 else _PIO_NAME
         stack["src"] = [x["col"] for x in stack.get("cols") or []]
+
+    # ★CSV 에 그 이름 그대로가 없는 칸 — 구분자만 다른 컬럼을 찾아 읽는다 (_find_col).
+    # ★리프터 호기(M16HUB.LFT.{호기}.TOTAL_CURRENTQCNT)는 주피터 발동이벤트 CSV 에
+    #   **값 컬럼 자체가 없다** (예측기 EVENT_FIELDS 에 호기별 대기량이 없고, 역증가로
+    #   걸린 호기 이름만 {FAB}_rev_lids 에 실린다). 고객(2026-10-07): "리프터 데이터는
+    #   왜 안 나오는데 — 2개는 나오는데". 값이 없다고 칸을 지우면 표의 실제지표와
+    #   그래프가 또 어긋난다 — 칸은 세우고 **그 호기가 역증가로 걸린 분**을 막대로
+    #   그린다. 대기량 값이 아니라는 것은 이름 아랫줄에 적는다.
+    #   예측기 CSV 에 호기별 컬럼이 생기면 위의 이름 찾기가 먼저 걸려 값으로 바뀐다.
+    keys = set()
+    for _t, r in pts:
+        keys.update((r or {}).keys())
+    for m in real.values():
+        if any(c in keys for c in m["src"]):
+            continue
+        alt = _find_col(m["name"], keys)
+        if alt:
+            m["src"].append(alt)
+            continue
+        lm = _LFT_RE.match(str(m["name"]))
+        if lm and f"{lm.group(1)}_rev_lids" in keys:
+            base = re.sub(r"\s*대기량$", "", str(m.get("label") or f"{lm.group(1)} 리프터 {lm.group(2)}"))
+            m.update(lid=lm.group(2), lids_col=f"{lm.group(1)}_rev_lids", bar=True, unit="",
+                     label=f"{base} — 역증가로 걸린 분 (대기량 값은 CSV에 없음)")
 
     # ★누적 건수(4분 초과 건수 등) — 하루 동안 계속 커지는 값이라 선 높이는
     #   '지금 심하다' 가 아니다(룰은 10분 증가를 본다). 이름에 적어 둔다.
@@ -930,10 +997,40 @@ HEAD_H = 30          # 제목 줄
 LBL_H = 18           # 섹션 라벨 줄 — 제목과 겹치지 않게 자리를 따로 준다
 SCORE_H = 170        # 스코어 패널
 AXIS_H = 16          # 시간축 글자 줄
-CELL_H = 124
-COLS = 3
 PAD = 16
 GAP = 10
+# ══ 지표 가로줄 — 스코어처럼 한 줄에 하나 ══════════════════════════════
+# ★고객(2026-10-07): "실제지표 더블클릭하면 데이터 표시가 되야지 — 가로줄 스코어 처럼" ·
+#   "신규 지표도 마찬가지" · "거기 실제지표 가로줄 검은색줄로 표시가 되야지 — 그게
+#   없으니까 헷갈리네". 예전엔 3열 작은 칸(스파크라인)이라 시각이 스코어와 안 맞고,
+#   더블클릭한 분이 어디인지 표시가 없었다.
+#   이제 지표마다 스코어처럼 **가로 전체 폭** 한 줄 — 스코어와 **같은 시간축**이라
+#   위아래로 같은 분이 같은 자리에 온다. 더블클릭한 분은 스코어처럼 세로선을 긋고,
+#   그 분 값 높이에 **가로줄**(흰 배경이면 검정 — 스코어의 고른 분 색)을 긋고,
+#   오른쪽 위에 그 분 값을 적는다.
+PANEL_H = 112        # 지표 한 줄 높이
+PANEL_TOP = 46       # 그 안에서 그림이 시작하는 자리 (위 두 줄은 이름)
+PANEL_BOT = 10       # 그림 아래 여백
+PANEL_GAP = 8
+
+
+def _nice_ceil(v: float) -> float:
+    """눈금 맨 위 — 23.62 같은 값 대신 25 처럼 읽기 쉬운 수로 올린다."""
+    if v <= 0:
+        return 1.0
+    e = 10 ** math.floor(math.log10(v))
+    for f in (1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10):
+        if v <= f * e * (1 + 1e-9):
+            return f * e
+    return 10 * e
+
+
+def _tick_txt(v) -> str:
+    """왼쪽 눈금 글자 — 자리가 좁다(테두리~그림 사이). 1000 이 넘으면 k 로 줄인다."""
+    v = float(v)
+    if abs(v) >= 1000:
+        return _fmt(round(v / 1000, 1)) + "k"
+    return _fmt(round(v, 2))
 
 
 def _badge(o, x, y, ratio, color, dim):
@@ -951,132 +1048,145 @@ def _badge(o, x, y, ratio, color, dim):
     return w
 
 
-def _cell(o, x, y, w, h, m, pts, P, X0):
-    """지표 한 칸 — 배지 · 이름 · 값/임계 · 스파크라인 + 임계선."""
-    col, thr, op = m["col"], m.get("thr"), m.get("op", ">=")
+def _hpanel(o, x, y, w, h, m, pts, P, X, L, R, si):
+    """지표 가로줄 하나 — 이름 두 줄 · 배수 · 최고/임계 · 스코어와 같은 시간축 그림 ·
+    더블클릭한 분 (세로선 + 그 분 값 높이의 가로줄 + 값)."""
+    thr = m.get("thr")
     _PATH_COLORS = P["path"]
     unit = m.get("unit") or ""
-    vals = [(t, metric_value(m, r)) for t, r in pts]
-    vals = [(t, v) for t, v in vals if v is not None]
-    if not vals:
+    # ★pts 와 같은 번호로 읽는다 — 그래야 X 가 스코어 패널과 같은 분을 가리킨다
+    vals = [metric_value(m, r) for _t, r in pts]
+    have = [(i, v) for i, v in enumerate(vals) if v is not None]
+    if not have:
         return
-    # ★배지(배수)는 구간 최악값으로 재는데 값만 마지막 것을 적으면 서로
-    #   어긋난다 ("7.7배 / 20개"). 같은 값을 보여 준다 — 최악값과 그 시각.
+    # 리프터 호기 칸(값 대신 '역증가로 걸린 분' — metric_sets 주석)은 1/0 을 말로 적는다
+    lid = bool(m.get("lid"))
+    fv = (lambda v: "걸림" if v else "안 걸림") if lid else (lambda v: f"{_fmt(v)}{unit}")
+    # ★배지(배수)는 구간 최악값으로 잰다 — 같은 값을 '최고' 로 적어 서로 맞춘다
     ratio = m.get("ratio")
-    cur = m.get("worst", vals[-1][1])
-    at = next((t for t, v in vals if v == cur), None)
+    worst = m.get("worst")
+    if worst is None:
+        worst = have[-1][1]
+    at = next((pts[i][0] for i, v in have if v == worst), None)
     over = ratio is not None and ratio >= 1.0
-    # ★색은 '넘었다' 는 뜻으로만. 안 넘은 칸은 회색으로 죽인다 —
-    #   지금 화면이 전부 빨간 이유가 이걸 안 해서다.
+    nhit = sum(1 for _i, v in have if v) if lid else 0
+    if lid:
+        over = nhit > 0                  # 그 룰이 이 호기를 짚었다 — 넘은 것과 같이 칠한다
+    # ★색은 '넘었다' 는 뜻으로만. 안 넘은 줄은 회색으로 죽인다
     color = (P["crit"] if (ratio or 0) >= 2 else P["evt"]) if over else P["tx3"]
-    band = ""
-    if m.get("pio_score"):
-        # PIO 점수는 임계가 없다 (구간표가 잠정이라 선을 안 긋는다). 대신
-        # 명세 6장의 여섯 칸을 색으로 쓴다 — 0 회색 → 10 빨강.
-        band, bi = _pio_band(cur)
-        color = (P["tx3"], P["tx2"], P["palette"][2], P["evt"], P["evt"],
-                 P["crit"])[bi]
-        over = bi >= 3          # 5점(상위 10%) 부터는 눈에 띄어야 한다
     o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="10" '
              f'fill="{P["bg2"]}" stroke="{P["line"]}"/>')
     if over:
         o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="3" height="{h:.1f}" '
                  f'rx="1.5" fill="{color}"/>')
-    # ── 칸 제목 두 줄 ──────────────────────────────────────────────────
-    # ★고객(2026-10-06): "M16HUB 리프터 정체 하고 밑에 실제 컬럼이 있는데 반대로
-    #   해라 — 실제지표를 하고 밑에 M16HUB 리프터 정체". 윗줄(굵게)은 **컬럼
-    #   이름** — 실시간 표 '실제지표' 칸에 뜨는 그 이름이다. 아랫줄이 한글 이름.
-    # ★컬럼 이름이 윗줄을 **혼자 다 쓴다**. 배수 배지를 앞에 두면 3열 칸에서
-    #   'M16B.SORTER.ABN.SORTERWAITCOUNTOVER' 가 '…6B.SORTER…' 로 잘려 어느 FAB
-    #   인지가 사라졌다. 배지는 아랫줄 한글 이름 앞으로 내린다.
-    # ★그래도 넘치면 컬럼 이름의 **앞**을 자른다 — 뒤(무엇을 재는지)가 남아야
-    #   현장이 원 지표를 찾아간다.
-    # ★<title> 은 **잘렸을 때만** 붙인다. 늘 붙이면 안 잘린 칸에도 말풍선이
-    #   하나 더 생겨, 글자를 찾는 쪽(시험·검색)이 본문 대신 말풍선을 집는다.
-    # ★긴 이름(M16HUB.QUE.ALL.M16HUBTOM14MANUAL_CURRENTQCNT)은 글자를 10px 까지
-    #   줄여서라도 **다** 보여 준다 — 자르면 'M1' 이 날아가 어느 FAB 인지가 흐려진다.
-    # ★폭은 5% 넉넉히 잰다 — 브라우저에서 재 보니 고정폭 굵은 글자가 _text_w 보다
-    #   4% 넓었다 (가장 긴 이름이 칸 끝에 딱 붙었다).
-    name = str(m.get("name") or m.get("raw") or col)
+
+    # ── 1줄: 컬럼 이름(굵게) ············ 더블클릭한 분 · 그 값 ──────────
+    # ★윗줄 = 실시간 표 '실제지표' 칸에 뜨는 그 이름, 아랫줄 = 한글 이름 (2026-10-06)
+    name = str(m.get("name") or m.get("raw") or m["col"])
+    sv = vals[si] if 0 <= si < len(vals) else None
+    sel_txt = f"{pts[si][0]:%H:%M} · " + (fv(sv) if sv is not None else "값 없음")
+    sel_w = _text_w(sel_txt, 12) * 1.05
+    room = (w - 24) - sel_w - 16
     fs = 11.5
-    while fs > 10 and _text_w(name, fs) * 1.05 > w - 24:
+    while fs > 10 and _text_w(name, fs) * 1.05 > room:
         fs -= 0.5
     shown = name
-    while shown and _text_w(shown, fs) * 1.05 > w - 24:
+    while shown and _text_w(shown, fs) * 1.05 > room:
         shown = shown[1:]
     if shown != name:
         shown = "…" + shown[1:]
     tip = f'<title>{_e(name)}</title>' if shown != name else ""
-    # class="mname" — 칸을 컬럼 이름으로 찾는 쪽(시험·화면 검색)이 이걸로 집는다
-    o.append(f'<text class="mname" x="{x + 12:.1f}" y="{y + 20.5:.1f}" font-size="{fs:g}" '
+    # class="mname" — 줄을 컬럼 이름으로 찾는 쪽(시험·화면 검색)이 이걸로 집는다
+    o.append(f'<text class="mname" x="{x + 12:.1f}" y="{y + 19:.1f}" font-size="{fs:g}" '
              f'font-weight="700" fill="{P["tx"] if over else P["tx2"]}" '
              f'font-family="Consolas,monospace">{_e(shown)}{tip}</text>')
-    if band:
-        bw = _text_w(band, 9) + 12
-        o.append(f'<rect x="{x + 12:.1f}" y="{y + 26:.1f}" width="{bw:.1f}" '
-                 f'height="15" rx="7.5" fill="{color}" '
-                 f'opacity="{0.20 if over else 0.13}"/>')
-        o.append(f'<text x="{x + 12 + bw / 2:.1f}" y="{y + 37:.1f}" font-size="9" '
-                 f'text-anchor="middle" font-weight="700" fill="{color}">'
-                 f'{_e(band)}</text>')
+    # 더블클릭한 분의 값 — 스코어 패널의 '고른 분' 과 같은 색. 마우스를 대면 같은
+    # 자리에 그 분 값이 덮어 뜬다 (호버 글자에 바탕이 깔린다)
+    # ★12px — 칸 제목(11.5/700)과 같은 모양이면 제목을 세는 쪽(시험)이 둘로 센다
+    o.append(f'<text class="msel" x="{x + w - 12:.1f}" y="{y + 19:.1f}" font-size="12" '
+             f'font-weight="700" text-anchor="end" fill="{P["sel"]}" '
+             f'font-family="Consolas,monospace">{_e(sel_txt)}</text>')
+
+    # ── 2줄: 배수 · 한글 이름 · (PIO 범례) ········ 최고값 @시각 · 임계 ─────
+    bw = _badge(o, x + 12, y + 25, ratio, color, P["tx3"]) or 0
+    right = []                                   # (글자, 크기, 굵기, 색) — 오른쪽부터
+    if lid:
+        first = next((pts[i][0] for i, v in have if v), None)
+        if first is not None:
+            right.append((f" 처음 @{first:%H:%M}", 9.5, 400, P["tx3"]))
+        right.append((f"{nhit}분 걸림" if nhit else "이 구간 안 걸림", 14, 800,
+                      color if over else P["tx2"]))
     else:
-        bw = _badge(o, x + 12, y + 25, ratio, color, P["tx3"]) or 0
+        if thr:
+            right.append((f" · 임계 {_fmt(thr)}{unit}", 10, 400, P["tx3"]))
+        if at is not None:
+            right.append((f" 최고 @{at:%H:%M}", 9.5, 400, P["tx3"]))
+        right.append((f"{_fmt(worst)}{unit}", 14, 800, color if over else P["tx2"]))
+    rx_ = x + w - 12
+    for txt, size, wt, cc in right:
+        o.append(f'<text x="{rx_:.1f}" y="{y + 38:.1f}" font-size="{size:g}" '
+                 f'font-weight="{wt}" text-anchor="end" fill="{cc}" '
+                 f'font-family="Consolas,monospace">{_e(txt)}</text>')
+        rx_ -= _text_w(txt, size) * 1.05
     lb = str(m.get("label") or "")
-    stk0 = m.get("cols") if m.get("pio_stack") else None
-    if stk0:
-        # 경로 목록은 범례가 맡는다 — 괄호만 떼고 뒤는 남긴다.
-        # ★split(" (")[0] 로 자르면 뒤에 붙은 '· 10분 누적' 까지 날아간다.
-        #   그건 단위 표시라 없으면 1분 개수로 읽혀 열 배로 잘못 본다.
+    stack = m.get("cols") if m.get("pio_stack") else None
+    if stack:
+        # 경로 목록은 범례가 맡는다 — 괄호만 떼고 뒤('· 10분 누적' 같은 단위)는 남긴다
         lb = re.sub(r"\s*\([^)]*\)", "", lb)
     lbx = x + 12 + (bw + 7 if bw else 0)
     full = lb
-    # ★범례 자리를 미리 빼 두면 경로가 넷일 때 이름표가 통째로 잘린다.
-    #   이름표를 먼저 온전히 두고, 범례가 들어갈 만큼만 들어가게 한다
-    #   (아래 범례 루프가 이름표를 만나면 멈춘다).
-    while lb and _text_w(lb, 10.5) * 1.08 > (x + w - 12) - lbx:
+    while lb and lbx + _text_w(lb, 10.5) * 1.08 > rx_ - 12:
         lb = lb[:-1]
     ltip = f'<title>{_e(full)}</title>' if lb != full else ""
-    # class="mlbl" — 칸을 한글 이름으로 찾는 쪽(시험·화면 검색)이 이걸로 집는다
+    # class="mlbl" — 줄을 한글 이름으로 찾는 쪽(시험·화면 검색)이 이걸로 집는다
     o.append(f'<text class="mlbl" x="{lbx:.1f}" y="{y + 37.5:.1f}" '
              f'font-size="10.5" fill="{P["tx2"]}">{_e(lb)}{ltip}</text>')
-    o.append(f'<text x="{x + 12:.1f}" y="{y + 56:.1f}" font-size="14" '
-             f'font-weight="800" fill="{color if over else P["tx2"]}" '
-             f'font-family="Consolas,monospace">{_e(_fmt(cur))}{_e(unit)}</text>')
-    if at is not None:
-        o.append(f'<text x="{x + 12 + _text_w(_fmt(cur) + unit, 14) + 7:.1f}" '
-                 f'y="{y + 56:.1f}" font-size="9.5" fill="{P["tx3"]}" '
-                 f'font-family="Consolas,monospace">최고 @{at:%H:%M}</text>')
-    if thr:
-        o.append(f'<text x="{x + w - 12:.1f}" y="{y + 56:.1f}" font-size="10" '
-                 f'text-anchor="end" fill="{P["tx3"]}" '
-                 f'font-family="Consolas,monospace">임계 {_e(_fmt(thr))}{_e(unit)}</text>')
 
-    # 스파크라인 — 0 과 임계×2 사이로 **모든 칸이 같은 자로** 잰다.
-    # ★여기가 현행과 갈리는 자리다. 칸마다 자기 min~max 로 재면 정상인 값도
-    #   꽉 차 보인다. 임계를 기준으로 재야 칸끼리 비교가 된다.
-    pt, pb = y + 66, y + h - 12
-    lo, hi = 0.0, (float(thr) * 2 if thr else max(v for _t, v in vals) or 1.0)
-    hi = max(hi, max(v for _t, v in vals) * 1.05, 1e-9)
-    Y = lambda v: pb - (pb - pt) * ((min(max(v, lo), hi) - lo) / (hi - lo))
-    n = len(vals)
-    X = lambda i: x + 12 + (w - 24) * (i / max(1, n - 1))
+    # ── 그림 — 0 과 임계×2 사이로 **모든 줄이 같은 자로** 잰다 ──────────
+    # ★줄마다 자기 min~max 로 재면 정상인 값도 꽉 차 보인다. 임계를 기준으로 재야
+    #   위아래 줄끼리 비교가 된다.
+    pt, pb = y + PANEL_TOP, y + h - PANEL_BOT
+    vmax = max(v for _i, v in have)
+    vmin = min(v for _i, v in have)
+    if lid:
+        lo, hi = 0.0, 1.0
+    else:
+        hi = float(thr) * 2 if thr else 0.0
+        if vmax * 1.05 > hi:
+            # 맨 위 눈금이 23.62 처럼 읽히지 않게 둥근 수로 올린다
+            hi = _nice_ceil(vmax * 1.05)
+        # ★음수도 그린다 — 리프터 합 20분 변화(rc_trend)·증가량(rb_diff)은 줄면 음수다.
+        #   0 아래를 바닥에 붙여 버리면 '줄었다' 가 '0 이다' 로 읽힌다.
+        lo = -_nice_ceil(-vmin * 1.05) if vmin < 0 else 0.0
+        hi = hi or 1.0
+    Y = lambda v: pb - (pb - pt) * ((min(max(v, lo), hi) - lo) / (hi - lo))  # noqa: E731
+    y0 = Y(0.0)                                   # 0 의 높이 (음수가 없으면 바닥)
+    # 눈금 — 스코어 패널처럼 왼쪽에 (맨 위 값 · 임계 · 0 · 맨 아래 음수)
+    tick = lambda v, yy: o.append(  # noqa: E731
+        f'<text x="{L - 5:.1f}" y="{yy + 3.5:.1f}" font-size="9" text-anchor="end" '
+        f'fill="{P["tx3"]}" font-family="Consolas,monospace">{_e(v)}</text>')
+    if not lid:
+        tick(_tick_txt(hi), pt)
+        if (thr and lo <= float(thr) <= hi and abs(Y(float(thr)) - pt) > 10
+                and abs(Y(float(thr)) - y0) > 10):
+            tick(_tick_txt(thr), Y(float(thr)))
+        if abs(y0 - pt) > 10:
+            tick("0", y0)
+        if lo < 0 and abs(pb - y0) > 10:
+            tick(_tick_txt(lo), pb)
+    n = len(pts)
     if m.get("bar"):
-        bwd = max(1.4, min(7.0, (w - 24) / max(1, n) - 0.8))
-        stack = m.get("cols") if m.get("pio_stack") else None
+        bwd = max(1.4, min(7.0, (R - L) / max(1, n) - 0.8))
         if stack:
-            # ★경로마다 색을 달리해 쌓는다. 합쳐 한 색으로 그리면 **어느
-            #   경로에서 실패했는지**가 사라지는데, 그게 조치 지점이다.
-            cmap = {x["name"]: _PATH_COLORS[k % len(_PATH_COLORS)]
-                    for k, x in enumerate(stack)}
-            # 범례 글자는 꾸민 이름(×2/×1)이 있으면 그걸 쓴다
-            lmap = {x["name"]: (x.get("legend") or x["name"]) for x in stack}
-            rowof = {t: r for t, r in pts}
-            for i, (t, _tot) in enumerate(vals):
-                # ★vals 는 값이 있는 분만 남긴 목록이라 pts 와 번호가 어긋난다 —
-                #   시각으로 그 분의 행을 찾는다
-                r = rowof.get(t) or {}
+            # ★경로마다 색을 달리해 쌓는다 — 합쳐 한 색으로 그리면 **어느 경로에서
+            #   실패했는지**(조치 지점)가 사라진다. 막대 높이가 그 분의 총 개수다.
+            cmap = {sp["name"]: _PATH_COLORS[k % len(_PATH_COLORS)]
+                    for k, sp in enumerate(stack)}
+            lmap = {sp["name"]: (sp.get("legend") or sp["name"]) for sp in stack}
+            for i, _v in have:
+                r = pts[i][1] or {}
                 base = pb
-                for sp in stack:          # ★x 로 쓰면 칸 좌표를 덮는다
+                for sp in stack:
                     # CSV 가 원칙, reason 은 대체 — _pio_val 이 그 규칙이다
                     v = _pio_val(r, sp) or 0
                     if v <= 0:
@@ -1086,50 +1196,71 @@ def _cell(o, x, y, w, h, m, pts, P, X0):
                              f'width="{bwd:.1f}" height="{hh:.1f}" '
                              f'fill="{cmap[sp["name"]]}" opacity="0.95"/>')
                     base -= hh
-            # 색만으로 경로를 구분하게 두지 않는다 — 이름을 같이 적는다.
-            # ★한글 이름 줄(아랫줄) 오른쪽에 둔다. 윗줄은 컬럼 이름이 길어서
-            #   범례가 들어갈 자리가 없다.
-            lx = x + w - 12
-            for nm, cc in reversed(list(cmap.items())):
+            # 색만으로 경로를 구분하게 두지 않는다 — 한글 이름 뒤에 이름을 같이 적는다.
+            # ★굵은 대문자(M16HUB<-M14A)는 _text_w 보다 1.27배 넓다 (브라우저에서 잰 값)
+            lx = lbx + _text_w(lb, 10.5) * 1.08 + 14
+            for nm, cc in cmap.items():
                 nm = lmap.get(nm, nm)
-                # ★굵은 대문자(M16HUB<-M14A)는 _text_w 의 라틴 평균보다 넓다 —
-                #   그대로 재면 범례가 칸 오른쪽 밖으로 삐져나갔다. 브라우저에서 재 보니
-                #   1.27배였다 (2026-10-06, 눈으로 보고 잰 값)
                 tw = _text_w(nm, 8.5) * 1.3 + 13
-                if lx - tw < lbx + _text_w(lb, 10.5) * 1.08 + 8:
-                    break               # 이름표를 침범하느니 범례를 줄인다
-                lx -= tw
+                if lx + tw > rx_ - 12:
+                    break               # 오른쪽 숫자를 침범하느니 범례를 줄인다
                 o.append(f'<rect x="{lx:.1f}" y="{y + 30.5:.1f}" width="7" height="7" '
                          f'rx="1.5" fill="{cc}"/>')
                 o.append(f'<text x="{lx + 10:.1f}" y="{y + 37.5:.1f}" font-size="8.5" '
                          f'fill="{cc}" font-weight="700">{_e(nm)}</text>')
-                lx -= 4
+                lx += tw + 4
         else:
-            for i, (_t, v) in enumerate(vals):
-                if v <= 0:
+            for i, v in have:
+                if v == 0:
                     continue
-                hh = max(1.0, pb - Y(v))
-                o.append(f'<rect x="{X(i) - bwd / 2:.1f}" y="{pb - hh:.1f}" '
+                hh = max(1.0, abs(y0 - Y(v)))
+                o.append(f'<rect x="{X(i) - bwd / 2:.1f}" y="{min(y0, Y(v)) if v < 0 else y0 - hh:.1f}" '
                          f'width="{bwd:.1f}" height="{hh:.1f}" rx="1.2" fill="{color}" '
                          f'opacity="{0.95 if over else 0.5}"/>')
     else:
-        d = " ".join(f"{'M' if i == 0 else 'L'}{X(i):.1f},{Y(v):.1f}"
-                     for i, (_t, v) in enumerate(vals))
-        # 면적은 10% 워시 — 현행 20% 는 칸을 덩어리로 만들어 선이 안 보인다
-        o.append(f'<path d="{d} L{X(n - 1):.1f},{pb:.1f} L{X(0):.1f},{pb:.1f} Z" '
-                 f'fill="{color}" opacity="{0.10 if over else 0.06}"/>')
-        o.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2" '
-                 f'stroke-linejoin="round" stroke-linecap="round" '
-                 f'opacity="{1 if over else 0.65}"/>')
-        o.append(f'<circle cx="{X(n - 1):.1f}" cy="{Y(vals[-1][1]):.1f}" r="4" '
-                 f'fill="{color}" stroke="{P["bg2"]}" stroke-width="2"/>')
+        # 값이 빈 분은 선을 끊는다 — 없는 값을 잇지 않는다
+        segs, cur = [], []
+        for i, v in enumerate(vals):
+            if v is None:
+                if cur:
+                    segs.append(cur)
+                cur = []
+            else:
+                cur.append((i, v))
+        if cur:
+            segs.append(cur)
+        for seg in segs:
+            d = " ".join(f"{'M' if k == 0 else 'L'}{X(i):.1f},{Y(v):.1f}"
+                         for k, (i, v) in enumerate(seg))
+            if len(seg) > 1:
+                # 면적은 10% 워시 — 진하게 채우면 선이 안 보인다
+                o.append(f'<path d="{d} L{X(seg[-1][0]):.1f},{y0:.1f} '
+                         f'L{X(seg[0][0]):.1f},{y0:.1f} Z" '
+                         f'fill="{color}" opacity="{0.10 if over else 0.06}"/>')
+            o.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="2" '
+                     f'stroke-linejoin="round" stroke-linecap="round" '
+                     f'opacity="{1 if over else 0.65}"/>')
     if thr and lo <= float(thr) <= hi:
         ty = Y(float(thr))
-        o.append(f'<line x1="{x + 12:.1f}" y1="{ty:.1f}" x2="{x + w - 12:.1f}" '
+        o.append(f'<line x1="{L:.1f}" y1="{ty:.1f}" x2="{R:.1f}" '
                  f'y2="{ty:.1f}" stroke="{P["crit"]}" stroke-width="1" opacity=".55"/>')
-    o.append(f'<line x1="{x + 12:.1f}" y1="{pb:.1f}" x2="{x + w - 12:.1f}" '
+    o.append(f'<line x1="{L:.1f}" y1="{pb:.1f}" x2="{R:.1f}" '
              f'y2="{pb:.1f}" stroke="{P["line"]}" stroke-width="1"/>')
-    _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, color)
+    if lo < 0:
+        o.append(f'<line x1="{L:.1f}" y1="{y0:.1f}" x2="{R:.1f}" y2="{y0:.1f}" '
+                 f'stroke="{P["tx3"]}" stroke-width=".8" stroke-dasharray="2 3" opacity=".7"/>')
+    # ── 더블클릭한 분 — 스코어 패널과 같은 세로선 + 그 분 값 높이의 가로줄 ──
+    sx = X(si)
+    o.append(f'<line class="gsel" x1="{sx:.1f}" y1="{pt - 4:.1f}" x2="{sx:.1f}" '
+             f'y2="{pb:.1f}" stroke="{P["sel"]}" stroke-width="1.4"/>')
+    if sv is not None:
+        sy = Y(sv)
+        if not lid:      # 걸림/안 걸림 칸은 높이가 값이 아니다 — 세로선과 점만
+            o.append(f'<line class="gsel" x1="{L:.1f}" y1="{sy:.1f}" x2="{R:.1f}" y2="{sy:.1f}" '
+                     f'stroke="{P["sel"]}" stroke-width="1.1" stroke-dasharray="6 3" opacity=".9"/>')
+        o.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="4" fill="{P["bg"]}" '
+                 f'stroke="{P["sel"]}" stroke-width="2.2"/>')
+    _hpanel_hover(o, x, y, w, h, m, vals, pts, X, L, R, unit, P, color, fv)
 
 
 # 한 띠가 이보다 좁으면 마우스로 집을 수가 없다 — 분을 묶는다.
@@ -1155,70 +1286,56 @@ def _readout(o, rx, ry, txt):
                  f'{_e(line)}</text>')
 
 
-def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, color=None):
-    """칸 위에 분마다 투명한 띠를 깔고 그 분의 값을 말풍선으로 붙인다.
+def _hpanel_hover(o, x, y, w, h, m, vals, pts, X, L, R, unit, P, color=None, fv=None):
+    """줄 위에 분마다 투명한 띠를 깔고, 마우스를 대면 그 분 값을 오른쪽 위에 띄운다.
 
-    ★칸에는 '구간 최고값' 만 적혀 있었다. 그래서 아래 작은 그래프를 보고
-      "그럼 지금 이 시각엔 얼마였나" 를 물으면 화면에 답이 없었다.
-    ★자바스크립트를 안 쓴다. 서버가 그려 보내는 SVG 라 <title> 하나로 끝나고,
-      과거 조회·리포트에 그대로 붙어 나가도 똑같이 동작한다.
-    ★분이 많으면 띠를 묶는다. 180분 창이면 1.8px 짜리 띠가 180개 생겨서
-      집을 수가 없고 파일만 세 배가 된다. 묶은 띠는 그 구간의 **최고값**을
-      말한다 (칸의 배지가 최고값으로 재는 것과 같은 자다).
+    ★자바스크립트를 안 쓴다 — 서버가 그려 보내는 SVG 라 과거 조회·리포트에 그대로
+      붙어 나가도 똑같이 돈다. 말풍선(<title>)도 안 쓴다 (1초 늦고 금방 사라진다).
+    ★띠가 HIT_MIN_W 보다 좁아지면 분을 묶는다 (180분 창). 묶은 띠는 그 구간의
+      **최고값**을 말한다 — 배지가 최고값으로 재는 것과 같은 자다.
+    ★data-at 을 실어 **누르면 그 분이 고정**된다 — 스코어 패널과 같은 동작.
     """
-    n = len(vals)
+    n = len(pts)
     if n < 2:
         return
     stk = m.get("cols") if m.get("pio_stack") else None
-    rowof = {t: r for t, r in pts}
     op = m.get("op", ">=")
     thr = m.get("thr")
     hi = op in (">=", ">")
-    step = max(1, int(round(n / max(1.0, (w - 24) / HIT_MIN_W))))
-    x0, x1 = x + 12, x + w - 12
+    step = max(1, math.ceil(n / max(1.0, (R - L) / HIT_MIN_W)))
     for i in range(0, n, step):
-        grp = vals[i:i + step]
+        grp = [(pts[j][0], vals[j], pts[j][1]) for j in range(i, min(i + step, n))
+               if vals[j] is not None]
         if not grp:
             continue
-        best = max(grp, key=lambda tv: tv[1]) if hi else min(grp, key=lambda tv: tv[1])
-        lx = x0 if i == 0 else (X(i) + X(i - 1)) / 2
-        rx = x1 if i + step >= n else (X(i + step - 1) + X(min(i + step, n - 1))) / 2
+        best = max(grp, key=lambda g: g[1]) if hi else min(grp, key=lambda g: g[1])
+        lx = L if i == 0 else (X(i) + X(i - 1)) / 2
+        rx = R if i + step >= n else (X(i + step - 1) + X(min(i + step, n - 1))) / 2
         when = (f"{grp[0][0]:%H:%M}" if len(grp) == 1
                 else f"{grp[0][0]:%H:%M}~{grp[-1][0]:%H:%M} 최고")
-        # ★임계값을 말풍선마다 다시 적지 않는다 — 칸에 이미 적혀 있고,
-        #   띠가 수백 개라 같은 글자를 수백 번 실어 보내게 된다. 넘었는지만
-        #   ▲ 한 글자로 남긴다.
+        # ★임계값을 띠마다 다시 적지 않는다 — 넘었는지만 ▲ 한 글자로
         over = thr and ((best[1] >= float(thr)) if hi else (best[1] <= float(thr)))
-        tip = f"{when} · {_fmt(best[1])}{unit}{' ▲' if over else ''}"
+        val = fv(best[1]) if fv else f"{_fmt(best[1])}{unit}"
+        tip = f"{when} · {val}{' ▲' if over else ''}"
         if stk:
-            # 쌓은 칸은 합만 보여 주면 '어느 경로냐' 가 안 남는다 — 조치 지점이다
-            r = rowof.get(best[0]) or {}
-            part = [(sp.get("legend") or sp["name"], _pio_val(r, sp) or 0)
+            # 쌓은 줄은 합만 보여 주면 '어느 경로냐' 가 안 남는다 — 조치 지점이다
+            part = [(sp.get("legend") or sp["name"], _pio_val(best[2] or {}, sp) or 0)
                     for sp in stk]
             part = [f"{nm} {_fmt(v)}" for nm, v in part if v]
             if part:
                 tip += "\n" + " · ".join(part)
-        # data-at 을 같이 실어 **누르면 그 분이 고정**되게 한다 — 스코어
-        # 패널과 같은 동작이다. 묶인 띠는 그 구간 최고값이 난 분을 가리킨다.
-        # <g> 로 묶어야 CSS 가 '이 칸에 마우스가 왔을 때 이 글자' 를 고른다.
-        # fill 은 여기서 한 번만 적고 글자가 물려받는다 (히트 rect 는 .ghit
-        # 규칙이 직접 칠하므로 안 물든다).
         o.append(f'<g class="hv" fill="{color}"><rect class="ghit" '
                  f'data-at="{_e(best[0].isoformat())}" '
-                 f'x="{lx:.0f}" y="{y + 60:.0f}" '
-                 f'width="{max(1.0, rx - lx):.0f}" height="{h - 66:.0f}"/>')
-        # ★값 줄의 오른쪽 — 평소엔 '임계 3.3분' 이 있는 자리다. 호버하는
-        #   동안만 그 위를 덮는다(글자 테두리가 배경색이라 깨끗이 덮인다).
-        #   그래프 안(y+76)에 두면 선 위에 글자가 얹혀 둘 다 안 읽힌다.
-        _readout(o, x + w - 12, y + 56, tip)
+                 f'x="{lx:.0f}" y="{y + PANEL_TOP - 6:.0f}" '
+                 f'width="{max(1.0, rx - lx):.0f}" height="{h - PANEL_TOP - PANEL_BOT + 6:.0f}"/>')
+        # 오른쪽 위 — 평소엔 '더블클릭한 분 값' 이 있는 자리. 호버하는 동안만 덮는다
+        _readout(o, x + w - 12, y + 19, tip)
         o.append("</g>")
-
-
 
 
 def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
            theme="dark") -> str:
-    """구간 그래프 — 스코어 패널 + 지표 격자.
+    """구간 그래프 — 스코어 패널 + 지표 줄 (스코어처럼 가로 전체 폭, 같은 시간축).
 
     fabs 를 주면 그 FAB 의 영역점수를 스코어 패널에 겹쳐 그린다. 화면의 추이
     그래프에서 체크한 것이 그대로 넘어온다 — 추이에서 켜 놓고 더블클릭했는데
@@ -1264,22 +1381,21 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
 
     # ── 자리 잡기 ─────────────────────────────────────────────────────
     incs = _incidents(pts, floor=grade_cuts(cfg)[1])
-    # ★지표가 한둘인데 3열로 깔면 오른쪽 3분의 2 가 빈 자리로 남는다.
-    #   열 수를 지표 수에 맞춰 줄여 칸을 넓게 쓴다. 두 묶음이 **같은 열 수**를
-    #   쓴다 — 위아래 칸 폭이 다르면 같은 자로 잰 그래프로 안 읽힌다.
-    ncol = max(1, min(COLS, max((len(s[2]) for s in sections), default=1) or 1))
-    cw = (width - PAD * 2 - GAP * (ncol - 1)) / ncol
     chip_h = 17 if incs else 0
     y_slbl = HEAD_H + LBL_H
     top_s = y_slbl + 6 + chip_h
     y_axis = top_s + SCORE_H + AXIS_H
+    # ★지표는 스코어처럼 **한 줄에 하나, 가로 전체 폭** (PANEL_* 주석). 예전 3열
+    #   작은 칸은 시간축이 스코어와 달라 '그 분' 을 위아래로 맞춰 볼 수가 없었다.
     lay, y = [], y_axis + 22
     for title, sub, ms in sections:
-        rowsn = (len(ms) + ncol - 1) // ncol
         lay.append((y, y + 10, title, sub, ms))
-        # 칸이 없으면 '없다' 한 줄 자리만 (30px)
-        y = y + 10 + (rowsn * (CELL_H + GAP) - GAP if rowsn else 30) + 22
-    height = y - 22 + PAD + (14 if empty else 0)
+        # 줄이 없으면 '없다' 한 줄 자리만 (30px)
+        y = y + 10 + (len(ms) * (PANEL_H + PANEL_GAP) - PANEL_GAP if ms else 30) + 22
+    y_end = y - 22
+    # 맨 아래 시간축 — 줄이 여럿이면 스코어 밑 시간축은 스크롤 위로 사라진다
+    y_bax = y_end + AXIS_H if any(s[4] for s in lay) else None
+    height = (y_bax or y_end) + PAD + (14 if empty else 0)
 
     o = [f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
          f'style="display:block" role="img" xmlns="http://www.w3.org/2000/svg">',
@@ -1333,7 +1449,9 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
                  f'{_e(sub2)}</tspan></text>')
 
     # ── 스코어 패널 ───────────────────────────────────────────────────
-    L, R = PAD + 30, width - PAD
+    # ★지표 줄도 **이 L · R · X 를 그대로** 쓴다 — 위아래로 같은 분이 같은 자리.
+    #   R 을 테두리(width-PAD)에서 조금 들인다. 끝 분이 테두리 위에 겹쳐 안 보였다.
+    L, R = PAD + 40, width - PAD - 12
     pw = R - L
     SY = lambda v: top_s + SCORE_H * (1 - max(0.0, min(100.0, v)) / 100.0)
     n = len(pts)
@@ -1447,18 +1565,22 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
     #   칸 밖으로 안 나가게 그쪽 끝에 맞춘다.
     sx = X(si)
     near_l, near_r = sx - L < 44, R - sx < 44
-    if not near_l:
-        o.append(f'<text x="{L}" y="{y_axis:.1f}" font-size="9.5" fill="{P["tx3"]}" '
-                 f'font-family="Consolas,monospace">{_e(pts[0][0].strftime("%H:%M"))}</text>')
     anchor, ax = (("start", L) if sx - L < 16 else ("end", R) if R - sx < 16
                   else ("middle", sx))
-    o.append(f'<text x="{ax:.1f}" y="{y_axis:.1f}" font-size="9.5" '
-             f'text-anchor="{anchor}" fill="{P["sel"]}" font-weight="700" '
-             f'font-family="Consolas,monospace">{_e(sel[0].strftime("%H:%M"))}</text>')
-    if not near_r:
-        o.append(f'<text x="{R}" y="{y_axis:.1f}" font-size="9.5" text-anchor="end" '
-                 f'fill="{P["tx3"]}" font-family="Consolas,monospace">'
-                 f'{_e(pts[-1][0].strftime("%H:%M"))}</text>')
+
+    def time_axis(ya):
+        """시작 · 고른 분 · 끝 — 스코어 밑과 맨 아래(지표 줄 밑) 두 곳에 같은 모양으로."""
+        if not near_l:
+            o.append(f'<text x="{L}" y="{ya:.1f}" font-size="9.5" fill="{P["tx3"]}" '
+                     f'font-family="Consolas,monospace">{_e(pts[0][0].strftime("%H:%M"))}</text>')
+        o.append(f'<text x="{ax:.1f}" y="{ya:.1f}" font-size="9.5" '
+                 f'text-anchor="{anchor}" fill="{P["sel"]}" font-weight="700" '
+                 f'font-family="Consolas,monospace">{_e(sel[0].strftime("%H:%M"))}</text>')
+        if not near_r:
+            o.append(f'<text x="{R}" y="{ya:.1f}" font-size="9.5" text-anchor="end" '
+                     f'fill="{P["tx3"]}" font-family="Consolas,monospace">'
+                     f'{_e(pts[-1][0].strftime("%H:%M"))}</text>')
+    time_axis(y_axis)
 
     # FAB 범례 — 색만으로 구분하게 두지 않는다
     if fab_lines:
@@ -1477,9 +1599,9 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
         o.append(f'<text x="{lx + 2:.1f}" y="{ly:.1f}" font-size="9" '
                  f'fill="{P["tx3"]}" font-family="Consolas,monospace">area_score</text>')
 
-    # ── 지표 격자 — 실제지표 / 신규 지표 ─────────────────────────────
-    # ★고객(2026-10-06): "실제지표로 따로 신규지표로 따로". 같은 열 수 · 같은 칸
-    #   모양으로 두 묶음을 위아래로 깐다. 묶음마다 '임계 넘은 것부터'.
+    # ── 지표 줄 — 실제지표 / 신규 지표 ───────────────────────────────
+    # ★고객(2026-10-06): "실제지표로 따로 신규지표로 따로". 두 묶음을 위아래로,
+    #   묶음마다 '임계 넘은 것부터'. 줄마다 스코어와 같은 시간축(PANEL_* 주석).
     # ★예전 ALL 화면은 '발동 지표' 라고 불렀다. 이제 ALL 도 실시간 표 '실제지표'
     #   칸의 컬럼을 그대로 세우므로 이름도 같다.
     for y_lbl, y_grid, title, sub, ms in lay:
@@ -1492,9 +1614,10 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
             o.append(f'<text x="{PAD}" y="{y_grid + 20:.1f}" font-size="12" '
                      f'fill="{P["tx3"]}">이 구간에 그릴 {title}가 없습니다</text>')
         for k, m in enumerate(ms):
-            cx = PAD + (k % ncol) * (cw + GAP)
-            cy = y_grid + (k // ncol) * (CELL_H + GAP)
-            _cell(o, cx, cy, cw, CELL_H, m, pts, P, X)
+            _hpanel(o, PAD, y_grid + k * (PANEL_H + PANEL_GAP), width - PAD * 2,
+                    PANEL_H, m, pts, P, X, L, R, si)
+    if y_bax:
+        time_axis(y_bax)
     if empty:
         # ★컬럼 이름으로 적는다 — 칸 윗줄과 같은 이름이라야 "그 칸이 왜 없나" 가
         #   바로 이어진다. 한글 이름은 괄호로. 한 줄을 넘으면 '외 N개' 로 접고,

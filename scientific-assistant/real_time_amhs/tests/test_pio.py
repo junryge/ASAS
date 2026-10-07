@@ -836,8 +836,13 @@ class 마우스를_대면_그_자리에_뜬다(unittest.TestCase):
         self.assertFalse([t for t in tips if "\n" in t], "줄바꿈이 글자 안에 남았다")
 
     def test_창이_길면_띠를_묶는다(self):
-        """180분이면 1.8px 짜리 띠가 180개 — 마우스로 집을 수가 없다."""
-        svg = _G.render(_rows("M14", n=200), self.C, minutes=180, width=1040)
+        """띠가 HIT_MIN_W 보다 좁으면 마우스로 집을 수가 없다 — 분을 묶는다.
+
+        ★2026-10-07 지표가 가로 전체 폭이 되어 180분(자료 121분)이면 띠가 8px 로
+          넉넉하다. 6시간 창(361분)으로 묶이는지 본다.
+        """
+        svg = _G.render(_rows("M14", n=400), _dt.datetime(2026, 9, 16, 17, 0),
+                        minutes=360, width=1040)
         self.assertTrue(any("최고" in t for t in self._tips(svg)))
 
     def test_눌러서_고정할_수_있다(self):
