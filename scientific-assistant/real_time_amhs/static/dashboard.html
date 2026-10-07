@@ -5647,6 +5647,8 @@ function graphFabs(){
 }
 
 let GAT = null;
+/* 그래프 안에서 크게 본 칸 이름 — null 이면 전체 그래프 (drawOne 주석) */
+let GONE = null;
 /* ── 그 1분 OHT 재생 ────────────────────────────────────────────────
    구간 그래프에서 FAB 을 누르면 월드모델(별도 프로세스 · 10005)이 그
    1분만 로그프레소에서 조회해 재생한다.
@@ -5709,6 +5711,7 @@ function fillHid(r){
 
 async function openGraph(at){
   GAT = at;
+  GONE = null;              // 새 줄을 열면 늘 전체 그래프부터
   document.querySelector('.gbox').classList.remove('wide');
   $('#gmin').classList.remove('hidden');
   const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
@@ -5723,8 +5726,13 @@ async function openGraph(at){
   await drawGraph();
 }
 window.drawGraph = drawGraph;
-async function drawGraph(){
+/* 테마를 바꾸거나 분 단위를 바꾸면 **보던 그대로** 다시 그린다 (크게 본 칸이면 그 칸).
+   ★window.drawGraph 에 다른 함수를 넣으면 안 된다 — 맨 위 function 은 window 의 것이라
+     덮어쓰면 자기 자신을 끝없이 부른다 (실제로 'Maximum call stack' 이 났다). */
+function drawGraph(){ return GONE ? drawOne(GONE) : drawGraphAll(); }
+async function drawGraphAll(){
   if(!GAT) return;
+  GONE = null;
   const m = $('#gmin').value;
   $('#gbody').innerHTML = '<div class="empty">그리는 중…</div>';
   try{
@@ -5737,6 +5745,42 @@ async function drawGraph(){
           )).then(r=>r.text());
     $('#gbody').innerHTML = svg + `<div id="gpin"></div>`;
     bindGraphPin();
+    bindCellZoom();
+    pinAt(GAT);             // 더블클릭한 그 분의 원인부터 보여 준다
+  }catch(e){ $('#gbody').innerHTML = '<div class="empty">그래프를 불러오지 못했습니다</div>'; }
+}
+/* ── 칸 하나 크게 ──────────────────────────────────────────────────
+   ★고객(2026-10-07): "그래프 더블클릭하고 그래프가 나오는데, 다시 여기서 그래프
+     더블클릭하면 1개 크게 확대해서 볼 수 있게". 칸 테두리에 서버가 data-m(칸 윗줄
+     이름)을 달아 보낸다. 그 이름으로 /api/graph1 을 받아 그 자리에 띄운다.
+     큰 그림에서 다시 더블클릭하거나 '← 전체 그래프' 를 누르면 돌아간다. */
+function bindCellZoom(){
+  const svg = $('#gbody svg');
+  if(!svg) return;
+  svg.addEventListener('dblclick', e => {
+    const hit = [...svg.querySelectorAll('rect[data-m]')].find(r => {
+      const b = r.getBoundingClientRect();
+      return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
+    });
+    if(hit) drawOne(hit.getAttribute('data-m'));
+  });
+}
+async function drawOne(name){
+  if(!GAT || !name) return;
+  GONE = name;
+  const m = $('#gmin').value;
+  $('#gbody').innerHTML = '<div class="empty">그리는 중…</div>';
+  try{
+    const svg = await fetch(withSys(`/api/graph1?at=${encodeURIComponent(GAT)}&minutes=${m}`
+          + `&name=${encodeURIComponent(name)}`
+          + `&theme=${document.documentElement.getAttribute('data-theme')||'dark'}`)).then(r=>r.text());
+    $('#gbody').innerHTML = `<div style="margin-bottom:8px"><button class="act" id="gback">← 전체 그래프</button>`
+      + ` <span class="dim">그림을 다시 더블클릭해도 돌아갑니다</span></div>` + svg + `<div id="gpin"></div>`;
+    $('#gback').onclick = () => drawGraphAll();
+    const big = $('#gbody svg');
+    if(big) big.addEventListener('dblclick', () => drawGraphAll());
+    bindGraphPin();
+    pinAt(GAT);
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">그래프를 불러오지 못했습니다</div>'; }
 }
 /* ── 그래프를 눌러 그 분을 **고정**한다 ────────────────────────────────
@@ -5746,46 +5790,59 @@ async function drawGraph(){
    ★서버가 그린 SVG 의 히트 영역에 data-at 이 실려 온다. 그 시각의 행은
      이미 FEED/PFEED 에 있으니 다시 받지 않는다. */
 function bindGraphPin(){
-  const box = $('#gpin');
-  if(!box) return;
   document.querySelectorAll('#gbody svg .ghit').forEach(el => {
-    el.onclick = () => {
-      const at = el.dataset.at;
-      const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
-      if(!r){ box.innerHTML = ''; return; }
-      const g = gradeOf(+r.score||0);
-      /* 발동 룰은 요약(한글 한 줄)을 룰 단위로 끊어 칩으로 — 원문(reason_raw)은
-         안 넣는다. 기계 글자를 통째로 뿌리면 읽을 것이 아니라 덮는 것이 된다. */
-      const rules = String(r.reason||'').split(/\s*·\s*|\r?\n/)
-          .map(x=>x.trim()).filter(Boolean);
-      const rchip = rules.length
-        ? rules.map(x=>`<span class="zchip">${esc(x)}</span>`).join(' ')
-        : '<span class="dim">—</span>';
-      const met = (r.metrics||[]).map(m=>`<span class="zchip mono" title="${
-          esc(m.label||'')}">${esc(m.raw)}</span>`).join(' ') || '<span class="dim">—</span>';
-      const fab = FABS.map(f=>{
-        const v = (r.fab||{})[f];
-        if(v===undefined || v===null) return '';
-        const lv = fabLv(v, FCUTS[f]);
-        return `<span class="zchip" style="color:${fabTx(lv)}">${esc(f)} ${v}</span>`;
-      }).join(' ') || '<span class="dim">—</span>';
-      box.innerHTML = `<div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line2);
-          border-radius:10px;background:var(--panel)">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <b class="mono">${esc((r.datetime||at).slice(0,16))}</b>
-          <span class="chip lv${esc(r.level)}">${esc(r.level)}</span>
-          <b class="mono" style="font-size:15px;color:${g.c}">${Math.round(r.score)}점</b>
-          <span class="dim">주 영역 ${esc(r.area||'—')}</span>
-          <button class="act" id="gpinx" style="margin-left:auto">닫기</button>
-        </div>
-        <table style="width:100%;font-size:12px">
-          <tr><td class="dim" style="width:88px">발동 룰</td><td>${rchip}</td></tr>
-          <tr><td class="dim">실제지표</td><td>${met}</td></tr>
-          <tr><td class="dim">FAB 점수</td><td>${fab}</td></tr>
-        </table></div>`;
-      const x = $('#gpinx'); if(x) x.onclick = () => { box.innerHTML = ''; };
-    };
+    el.onclick = () => pinAt(el.dataset.at);
   });
+}
+/* 그 분 고정 칸 — 발동 룰 · **원인** · 실제지표 · FAB 점수.
+   ★원인 = 룰마다 '무엇이 얼마였고 기준이 얼마라 걸렸나' 한 줄 (서버 /api/cause).
+     고객(2026-10-07): "원인 내용 좀 적어 주라 — 룰이잖아 · 그래프 클릭하면 원인 내용". */
+function pinAt(at){
+  const box = $('#gpin');
+  if(!box || !at) return;
+  const r = FEED.find(x=>x.at===at) || PFEED.find(x=>x.at===at);
+  if(!r){ box.innerHTML = ''; return; }
+  const g = gradeOf(+r.score||0);
+  /* 발동 룰은 요약(한글 한 줄)을 룰 단위로 끊어 칩으로 — 원문(reason_raw)은
+     안 넣는다. 기계 글자를 통째로 뿌리면 읽을 것이 아니라 덮는 것이 된다. */
+  const rules = String(r.reason||'').split(/\s*·\s*|\r?\n/)
+      .map(x=>x.trim()).filter(Boolean);
+  const rchip = rules.length
+    ? rules.map(x=>`<span class="zchip">${esc(x)}</span>`).join(' ')
+    : '<span class="dim">—</span>';
+  const met = (r.metrics||[]).map(m=>`<span class="zchip mono" title="${
+      esc(m.label||'')}">${esc(m.raw)}</span>`).join(' ') || '<span class="dim">—</span>';
+  const fab = FABS.map(f=>{
+    const v = (r.fab||{})[f];
+    if(v===undefined || v===null) return '';
+    const lv = fabLv(v, FCUTS[f]);
+    return `<span class="zchip" style="color:${fabTx(lv)}">${esc(f)} ${v}</span>`;
+  }).join(' ') || '<span class="dim">—</span>';
+  box.innerHTML = `<div style="margin-top:12px;padding:12px 14px;border:1px solid var(--line2);
+      border-radius:10px;background:var(--panel)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <b class="mono">${esc((r.datetime||at).slice(0,16))}</b>
+      <span class="chip lv${esc(r.level)}">${esc(r.level)}</span>
+      <b class="mono" style="font-size:15px;color:${g.c}">${Math.round(r.score)}점</b>
+      <span class="dim">주 영역 ${esc(r.area||'—')}</span>
+      <button class="act" id="gpinx" style="margin-left:auto">닫기</button>
+    </div>
+    <table style="width:100%;font-size:12px">
+      <tr><td class="dim" style="width:88px">발동 룰</td><td>${rchip}</td></tr>
+      <tr><td class="dim" style="vertical-align:top">원인</td><td id="gcause"><span class="dim">불러오는 중…</span></td></tr>
+      <tr><td class="dim">실제지표</td><td>${met}</td></tr>
+      <tr><td class="dim">FAB 점수</td><td>${fab}</td></tr>
+    </table></div>`;
+  const x = $('#gpinx'); if(x) x.onclick = () => { box.innerHTML = ''; };
+  box.dataset.at = at;
+  fetch(withSys(`/api/cause?at=${encodeURIComponent(at)}`)).then(q=>q.json()).then(d => {
+    const el = $('#gcause');
+    if(!el || box.dataset.at !== at) return;      // 그새 다른 분을 눌렀다
+    const cs = d.causes || [];
+    el.innerHTML = cs.length
+      ? cs.map(c => `<div style="margin:2px 0"><span class="zchip">${esc(c.rule)}</span> ${esc(c.text)}</div>`).join('')
+      : '<span class="dim">—</span>';
+  }).catch(() => { const el = $('#gcause'); if(el) el.innerHTML = '<span class="dim">불러오지 못했습니다</span>'; });
 }
 
 $('#gmin').onchange = drawGraph;

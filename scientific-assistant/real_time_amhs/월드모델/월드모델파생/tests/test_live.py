@@ -545,6 +545,24 @@ class 관제_스코어(unittest.TestCase):
         self.assertEqual(st, 200)
         self.assertIn("attachment", extra.get("Content-Disposition", ""), "내려받기로 온다")
 
+    def test_칸_하나_크게_원인(self):
+        """그래프 칸 더블클릭 → 그 칸 하나 크게(graph1) · 그래프 누르면 원인(cause) — 관제 것 그대로.
+        고객(2026-10-07): "다시 여기서 그래프 더블클릭하면 1개 크게" · "그래프 클릭하면 원인 내용"."""
+        at = "2026-10-06T10:24:00"
+        st, ct, body, _x = GS.passthrough("M16A", "BR", "graph1",
+                                          {"at": at, "minutes": "60", "theme": "light",
+                                           "name": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN"})
+        self.assertEqual(st, 200)
+        self.assertTrue(ct.startswith("image/svg+xml"))
+        self.assertIn('data-one="M16HUB.QUE.TIME.AVGTOTALTIME1MIN"', body.decode("utf-8"))
+        last = self._last()
+        self.assertEqual((last["path"], last["q"]["sys"]), ("/api/graph1", "M16HUB"))
+        st, ct, body, _x = GS.passthrough("M16A", "BR", "cause", {"at": at})
+        self.assertEqual(st, 200)
+        d = json.loads(body)
+        self.assertEqual(d["causes"][0]["rule"], "반송지연")
+        self.assertEqual(self._last()["path"], "/api/cause")
+
     def test_짝이_없는_지도(self):
         d = GS.feed("M16A", "E", 10)
         self.assertFalse(d["ok"])
@@ -666,8 +684,13 @@ class 서버_연결(unittest.TestCase):
     def test_길이_있다(self):
         for r in ('@app.get("/api/live/snapshot")', '@app.get("/api/live/status")', '@app.post("/api/live/cmd")',
                   '@app.get("/api/score/feed")', '@app.get("/api/score/graph")',
+                  '@app.get("/api/score/graph1")', '@app.get("/api/score/cause")',
                   '@app.get("/api/score/report")'):
             self.assertIn(r, self.m)
+        # 칸 더블클릭 → 크게 · 그래프 누르면 원인 (2026-10-07) — 화면이 그 길을 부른다
+        js = _read("static", "js", "live_mode.js")
+        for need in ("/api/score/graph1", "/api/score/cause", "rect[data-m]", "← 전체 그래프"):
+            self.assertIn(need, js)
         # 기여도 중계는 뺐다 (2026-10-07) — 화면도 더는 안 부른다
         self.assertNotIn('"/api/score/contrib"', self.m)
         self.assertNotIn("/api/score/contrib", _read("static", "js", "live_mode.js"))

@@ -2520,6 +2520,77 @@ def api_graph():
         ctype="image/svg+xml; charset=utf-8")
 
 
+@app.route("/api/graph1")
+def api_graph1():
+    """구간 그래프의 **칸 하나만 크게** — 그래프 안에서 칸을 더블클릭하면 부른다.
+
+    /api/graph1?at=2026-10-06T21:00:00&minutes=60&name=M16HUB.QUE.TIME.AVGTOTALTIME1MIN
+    ★고객(2026-10-07): "그래프 더블클릭하고 … 다시 여기서 그래프 더블클릭하면 1개 크게
+      확대해서 볼 수 있게". 칸 고르기는 /api/graph 와 같다(graphs.metric_sets).
+    """
+    C = rctx()
+    from store_csv import read_day
+    import graphs
+    if not hasattr(graphs, "render_one"):
+        # ★배포가 파일 단위다 — server.py 만 새것이고 graphs.py 가 옛것이면 길이 없다
+        return Response("<div class='empty'>graphs.py 가 옛 판입니다 — 같이 바꿔 주세요</div>",
+                        mimetype="text/html")
+    at = parse_dt(request.args.get("at")) or datetime.now()
+    try:
+        minutes = max(5, min(1440, int(request.args.get("minutes", 60))))
+    except ValueError:
+        minutes = 60
+    name = (request.args.get("name") or "").strip()
+    days = {(at - timedelta(minutes=minutes)).strftime("%Y%m%d"),
+            at.strftime("%Y%m%d"), (at + timedelta(minutes=minutes)).strftime("%Y%m%d")}
+    rows = []
+    for d in days:
+        rows.extend(read_day(d, C["cfg"]))
+    if not rows:
+        rows = C["state"].get("last_rows") or []
+    theme = (request.args.get("theme") or "dark").strip().lower()
+    theme = theme if theme in graphs.THEMES else "dark"
+    key = f'{C["sys"]}|{at.isoformat()}|{minutes}|one:{name}|{theme}'
+    return _cached_json(
+        GRAPH_CACHE, key, _days_sig(days, C["cfg"]),
+        lambda: graphs.render_one(rows, at, name, minutes, cfg=C["cfg"],
+                                  theme=theme).encode("utf-8"),
+        ctype="image/svg+xml; charset=utf-8")
+
+
+@app.route("/api/cause")
+def api_cause():
+    """그 분 발동 룰마다 원인 한 줄 — 그래프를 눌렀을 때 고정 칸에 '원인' 으로 뜬다.
+
+    /api/cause?at=2026-10-06T21:00:00&sys=M16HUB
+    → {"at": "...", "causes": [{"rule": "반송지연", "area": "M16HUB",
+                                "text": "M16HUB 반송시간 10.4분 — 기준 9분 넘음"}, …]}
+    ★고객(2026-10-07): "원인 내용 좀 적어 주라 — 룰이잖아 · 그래프 클릭하면 원인 내용".
+      값은 그 분 reason · 그 행 CSV 에서, 기준은 컬럼흐름 상세도(fab_score.WATCH)에서.
+    ★FAB 화면이면 그 FAB 블록만 — 표 '발동 룰' 칸(fab_reason)과 같은 기준이다.
+    """
+    C = rctx()
+    from sentinel import _row_dt, rule_causes
+    from store_csv import read_day
+    at = parse_dt(request.args.get("at"))
+    if not at:
+        return jsonify({"at": "", "causes": [], "error": "at 이 없습니다"})
+    at = at.replace(second=0, microsecond=0)
+    row = None
+    for r in read_day(at.strftime("%Y%m%d"), C["cfg"]):
+        d = _row_dt(r)
+        if d is not None and d.replace(second=0, microsecond=0) == at:
+            row = r
+            break
+    if row is None:
+        return jsonify({"at": at.isoformat(), "causes": [], "error": "그 분 자료가 없습니다"})
+    fab = str(C.get("sys") or "").upper()
+    fab = "" if fab in ("", "ALL") else fab
+    causes = rule_causes((row.get("reason") or "").strip(), fab, row,
+                         area=(row.get("hot_area") or "").strip())
+    return jsonify({"at": at.isoformat(), "causes": causes})
+
+
 @app.route("/api/contrib")
 def api_contrib():
     """스코어 기여도 추정 — **화면에서 뺐다** (2026-10-07 고객: "기여도 추정 삭제해라 필요없어").

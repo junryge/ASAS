@@ -14,8 +14,9 @@
        + '시각 · 값' 꼬리표. 칸 안 시간축은 분 번호로 잡아 빈 분이 있어도 안 밀린다.
     ③ 막대가 없다 — 모두 선. PIO 는 경로마다 선 하나, 리프터 걸림/안 걸림은 계단 선.
     ④ 글자는 본문색(흰 배경이면 검정). 노랑·주황은 선 · 띠 · 점에만.
-    ⑤ 리프터 호기 칸 — 주피터 CSV 에 호기별 대기량이 없으면 역증가로 걸린 분
-       (M16HUB_rev_lids)을 그린다. 이름만 다른 컬럼이 있으면 그 값을 쓴다.
+    ⑤ 리프터 호기 칸 — 주피터 CSV 에 호기별 대기량이 없으면 리프터 정체 룰이 그 호기를
+       지목한 분(M16HUB_rev_lids)을 그린다. 이름만 다른 컬럼이 있으면 그 값을 쓴다.
+       화면에 '역증가' 라는 말은 안 쓴다 (고객: "역증가 → 감소 — 역증가 같은 거는 없어").
 """
 import datetime as dt
 import re
@@ -36,7 +37,7 @@ LFT_REASON = ("발동: M16HUB[R-A'(AVGTOTALTIME1MIN=12분/기준9.0),"
 
 
 def _lids(i):
-    """분마다 역증가로 걸린 호기 — 6011 은 짝수 분, 6012 는 3의 배수 분."""
+    """분마다 지목된 호기 — 6011 은 짝수 분, 6012 는 3의 배수 분."""
     got = []
     if i % 2 == 0:
         got.append("6ABL6011")
@@ -196,7 +197,7 @@ class 글자는_검정(unittest.TestCase):
 
 class 리프터_호기(unittest.TestCase):
     """주피터 발동이벤트 CSV(예측기 EVENT_FIELDS)에는 호기별 대기량 컬럼이 없다 —
-    역증가로 걸린 호기 이름만 M16HUB_rev_lids 에 실린다."""
+    룰이 지목한 호기 이름만 M16HUB_rev_lids 에 실린다 (원문 표기는 '역증가')."""
 
     def _svg(self, **cols):
         rows = _rows("M16HUB", LFT_REASON, M16HUB_ra=lambda i: 8 + i % 5,
@@ -213,12 +214,13 @@ class 리프터_호기(unittest.TestCase):
     def test_걸린_분을_그린다고_밝힌다(self):
         svg = self._svg(M16HUB_rev_lids=_lids)
         nm, lb, c, _y = _cell(svg, "M16HUB.LFT.6ABL6011.TOTAL_CURRENTQCNT")
-        self.assertIn("역증가 걸린 분", lb)
+        self.assertIn("감소 지목 분", lb)
+        self.assertNotIn("역증가", c, "화면에 '역증가' 를 쓰지 않는다")
         self.assertIn("대기량 값은 CSV에 없음", c)
         self.assertIn("22분 걸림", c)               # 창 09:15~09:59 중 짝수 분
         self.assertRegex(c, r'class="gtag"[^>]*>09:45 · 안 걸림<')
 
-    def test_값은_역증가_목록에서(self):
+    def test_값은_지목_목록에서(self):
         m = {"lid": "6ABL6012", "lids_col": "M16HUB_rev_lids"}
         self.assertEqual(G.metric_value(m, {"M16HUB_rev_lids": "6ABL6011,6ABL6012"}), 1.0)
         self.assertEqual(G.metric_value(m, {"M16HUB_rev_lids": "6ABL6011"}), 0.0)
@@ -235,11 +237,11 @@ class 리프터_호기(unittest.TestCase):
         svg = self._svg(M16HUB_rev_lids=_lids,
                         M16HUB_LFT_6ABL6011_TOTAL_CURRENTQCNT=lambda i: 3 + i % 4)
         nm, lb, c, _y = _cell(svg, "M16HUB.LFT.6ABL6011.TOTAL_CURRENTQCNT")
-        self.assertNotIn("역증가", lb)
+        self.assertNotIn("감소 지목", lb)
         self.assertRegex(c, r'class="gtag"[^>]*>09:45 · 4대<')       # 3 + 45 % 4
 
     def test_리프터_합_변화도_신규_지표로(self):
-        """R-C' 는 역증가 호기 수와 10대 합의 20분 변화를 같이 본다 — 음수도 그린다."""
+        """R-C' 는 지목 호기 수와 10대 합의 20분 변화(감소)를 같이 본다 — 음수도 그린다."""
         svg = self._svg(M16HUB_rev_lids=_lids,
                         M16HUB_rev_count=lambda i: len([x for x in _lids(i).split(",") if x]),
                         M16HUB_rc_trend=lambda i: (i % 15) - 10)

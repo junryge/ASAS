@@ -558,7 +558,7 @@ def _fab_real_cells(metrics: list[dict], pts, fab: str) -> list[dict]:
 #             개수. CSV 가 원본 값을 다른 이름으로 옮겨 싣는 것(M16HUB_ra ←
 #             AVGTOTALTIME1MIN)도 값은 원본 그대로라 여기다 — 칸 제목은 원본 이름.
 #   신규 지표 = 원본에서 **새로 계산해 만든** CSV 컬럼 — 증가량(rb_diff)·편중·
-#             역증가 호기 수·추세·PIO 점수/가중합/10분 합. AMOS 에는 없는 이름이다.
+#             지목 호기 수·추세·PIO 점수/가중합/10분 합. AMOS 에는 없는 이름이다.
 _NEW_SUF = ("_rb_diff30", "_rb_diff10", "_cnv_skew", "_rev_count", "_rc_trend",
             "_ra_count", "_PIO_SCORE", "_PIO_WSUM10", "_PIO_WSUM1")
 _NEW_COLS = frozenset(("pio_10min_cnt", "pio_score", "area_pio_score",
@@ -634,7 +634,7 @@ def metric_value(m: dict, r) -> float | None:
     """
     r = r or {}
     if m.get("lid"):
-        # 리프터 호기 — CSV 에 대기량 값이 없어 역증가 호기 목록에 들었는지(1/0)
+        # 리프터 호기 — CSV 에 대기량 값이 없어 감소 룰이 지목한 호기 목록에 들었는지(1/0)
         v = r.get(m.get("lids_col") or "")
         if v is None:
             return None
@@ -753,6 +753,9 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
             real[name] = dict(m, kind="real", name=name, src=list(dict.fromkeys(src)))
         else:
             got["src"] = list(dict.fromkeys(got["src"] + src))
+            for a in m.get("alts") or []:          # R-B · R-B_fast 가 같은 원본을 본다
+                if a not in (got.get("alts") or []):
+                    got["alts"] = (got.get("alts") or []) + [a]
 
     def add_new(m):
         col = str(m.get("col") or "")
@@ -773,7 +776,10 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
             #   신규 지표로 따로. 한 칸에 두면 '증가량' 선 위에 '대기 물량' 이름이 붙는다.
             lb, un = lab.get(raw, (re.sub(r"\s*\d+분\s*증가$", "", str(m.get("label") or raw)),
                                    m.get("unit") or ""))
-            m = {"col": raw, "raw": raw, "label": lb, "unit": un}
+            # alts — 원본 값이 CSV 에 없을 때 대신 그릴 '룰이 본 값' (아래 주석)
+            m = {"col": raw, "raw": raw, "label": lb, "unit": un,
+                 "alts": [{"col": col, "label": str(m.get("label") or col),
+                           "unit": m.get("unit") or ""}]}
             col = raw
         name = raw if _amos_name(raw) else col
         add_real(m, name, [c for c in (col, copy.get(name), raw) if c])
@@ -784,7 +790,7 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
             if is_new_metric(m.get("col")) and not _is_pio(m):
                 add_new(m)
                 if str(m.get("col")) == "M16HUB_rev_count":
-                    # ★R-C'(리프터 정체)는 '역증가 호기 수' 와 '10대 합의 20분 변화(음수)'
+                    # ★R-C'(리프터 정체)는 '지목 호기 수' 와 '10대 합의 20분 변화(감소)'
                     #   둘을 같이 본다. 호기별 대기량은 CSV 에 없어서(위 리프터 주석)
                     #   리프터 대기량을 **값으로** 볼 수 있는 건 이 합 하나뿐이다.
                     add_new({"col": "M16HUB_rc_trend", "raw": "M16HUB_rc_trend",
@@ -809,12 +815,13 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
 
     # ★CSV 에 그 이름 그대로가 없는 칸 — 구분자만 다른 컬럼을 찾아 읽는다 (_find_col).
     # ★리프터 호기(M16HUB.LFT.{호기}.TOTAL_CURRENTQCNT)는 주피터 발동이벤트 CSV 에
-    #   **값 컬럼 자체가 없다** (예측기 EVENT_FIELDS 에 호기별 대기량이 없고, 역증가로
-    #   걸린 호기 이름만 {FAB}_rev_lids 에 실린다). 고객(2026-10-07): "리프터 데이터는
+    #   **값 컬럼 자체가 없다** (예측기 EVENT_FIELDS 에 호기별 대기량이 없고, 룰이
+    #   지목한 호기 이름만 {FAB}_rev_lids 에 실린다). 고객(2026-10-07): "리프터 데이터는
     #   왜 안 나오는데 — 2개는 나오는데". 값이 없다고 칸을 지우면 표의 실제지표와
-    #   그래프가 또 어긋난다 — 칸은 세우고 **그 호기가 역증가로 걸린 분**을 계단
-    #   선으로 그린다 (고객: "왜 막대로 주냐 — 선으로 주라"). 대기량 값이 아니라는
-    #   것은 칸에 적는다.
+    #   그래프가 또 어긋난다 — 칸은 세우고 **리프터 정체(감소) 룰이 그 호기를 지목한
+    #   분**을 계단 선으로 그린다 (고객: "왜 막대로 주냐 — 선으로 주라"). 대기량 값이
+    #   아니라는 것은 칸에 적는다. ★'역증가' 라는 말은 화면에 쓰지 않는다 (고객:
+    #   "역증가 → 감소 라고 하고 — 역증가 같은 거는 없어").
     #   예측기 CSV 에 호기별 컬럼이 생기면 위의 이름 찾기가 먼저 걸려 값으로 바뀐다.
     keys = set()
     for _t, r in pts:
@@ -826,12 +833,24 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
         if alt:
             m["src"].append(alt)
             continue
+        # ★원본 값은 없는데 **그 룰이 본 값**은 있다 — R-B 의 대기 물량
+        #   (M16HUB.QUE.M14TOM16.MESCURRENTQCNT)은 CSV 에 없고 30분 증가(rb_diff30)만
+        #   있다. 고객(2026-10-07): "실제지표에 M16HUB.QUE.M14TOM16.MESCURRENTQCNT 이것도
+        #   있는데 이거는 왜 그래프에 안 나오냐". 칸을 지우지 않고 룰이 본 값으로 그리고,
+        #   원본 값이 아니라는 것을 이름 아랫줄에 적는다.
+        got = [a for a in (m.get("alts") or []) if a["col"] in keys]
+        if got:
+            a = got[0]
+            m["src"].append(a["col"])
+            # '원본 값 없음' 은 칸 값 줄 오른쪽에 적는다 (_cell) — 이름 줄에 붙이면 잘린다
+            m.update(via=a["col"], label=a["label"], unit=a["unit"] or m.get("unit") or "")
+            continue
         lm = _LFT_RE.match(str(m["name"]))
         if lm and f"{lm.group(1)}_rev_lids" in keys:
             base = re.sub(r"\s*대기량$", "", str(m.get("label") or f"{lm.group(1)} 리프터 {lm.group(2)}"))
             # '대기량 값은 CSV에 없음' 은 칸 값 줄 오른쪽에 적는다 (_cell)
             m.update(lid=lm.group(2), lids_col=f"{lm.group(1)}_rev_lids", unit="",
-                     label=f"{base} · 역증가 걸린 분")
+                     label=f"{base} · 감소 지목 분")
 
     # ★누적 건수(4분 초과 건수 등) — 하루 동안 계속 커지는 값이라 선 높이는
     #   '지금 심하다' 가 아니다(룰은 10분 증가를 본다). 이름에 적어 둔다.
@@ -1024,7 +1043,7 @@ def _badge(o, x, y, ratio, color, dim, ink):
     return w
 
 
-def _cell(o, x, y, w, h, m, pts, P, si):
+def _cell(o, x, y, w, h, m, pts, P, si, big=False):
     """지표 한 칸 — 배지 · 이름 · 값/임계 · 추이 선 + 임계선 · 더블클릭한 분.
 
     ★고객(2026-10-07): "기존 하던데로 작은 칸칸으로 하면 되지 — 가로줄 표시 안
@@ -1047,7 +1066,7 @@ def _cell(o, x, y, w, h, m, pts, P, si):
         return
     lid = bool(m.get("lid"))
     stack = m.get("cols") if m.get("pio_stack") else None
-    # 리프터 호기 칸(값 대신 '역증가로 걸린 분' — metric_sets 주석)은 1/0 을 말로 적는다
+    # 리프터 호기 칸(값 대신 '감소 지목 분' — metric_sets 주석)은 1/0 을 말로 적는다
     fv = (lambda v: "걸림" if v else "안 걸림") if lid else (lambda v: f"{_fmt(v)}{unit}")
     # ★배지(배수)는 구간 최악값으로 재는데 값만 마지막 것을 적으면 서로
     #   어긋난다 ("7.7배 / 20개"). 같은 값을 보여 준다 — 최악값과 그 시각.
@@ -1062,7 +1081,9 @@ def _cell(o, x, y, w, h, m, pts, P, si):
         over = nhit > 0                  # 그 룰이 이 호기를 짚었다 — 넘은 것과 같이 칠한다
     # ★색은 '넘었다' 는 뜻으로만, 그리고 **선 · 띠 · 점에만**. 글자는 본문색이다.
     color = (P["crit"] if (ratio or 0) >= 2 else P["evt"]) if over else P["tx3"]
+    # data-m — 화면이 칸을 더블클릭하면 이 이름으로 그 칸 하나를 크게 받아 온다 (render_one)
     o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="10" '
+             f'data-m="{_e(str(m.get("name") or m.get("raw") or m["col"]))}" '
              f'fill="{P["bg2"]}" stroke="{P["line"]}"/>')
     if over:
         o.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="3" height="{h:.1f}" '
@@ -1115,10 +1136,10 @@ def _cell(o, x, y, w, h, m, pts, P, si):
     o.append(f'<text class="mlbl" x="{lbx:.1f}" y="{y + 37.5:.1f}" '
              f'font-size="10.5" fill="{P["tx2"]}">{_e(lb)}{ltip}</text>')
     # 값 줄 — 구간 최악값(배지와 같은 값)과 그 시각 · 오른쪽에 임계
-    big = (f"{nhit}분 걸림" if nhit else "안 걸림") if lid else f"{_fmt(cur)}{unit}"
+    vtxt = (f"{nhit}분 걸림" if nhit else "안 걸림") if lid else f"{_fmt(cur)}{unit}"
     o.append(f'<text x="{x + 12:.1f}" y="{y + 56:.1f}" font-size="14" '
              f'font-weight="800" fill="{P["tx"] if over else P["tx2"]}" '
-             f'font-family="Consolas,monospace">{_e(big)}</text>')
+             f'font-family="Consolas,monospace">{_e(vtxt)}</text>')
     if lid:
         first = next((pts[i][0] for i, v in have if v), None)
         small = f"처음 @{first:%H:%M}" if first is not None else ""
@@ -1126,13 +1147,18 @@ def _cell(o, x, y, w, h, m, pts, P, si):
         small = (("경로 합 " if stack and len(stack) > 1 else "")
                  + (f"최고 @{at:%H:%M}" if at is not None else ""))
     if small:
-        o.append(f'<text x="{x + 12 + _text_w(big, 14) + 7:.1f}" '
+        o.append(f'<text x="{x + 12 + _text_w(vtxt, 14) + 7:.1f}" '
                  f'y="{y + 56:.1f}" font-size="9.5" fill="{P["tx3"]}" '
                  f'font-family="Consolas,monospace">{_e(small)}</text>')
+    # 원본 값이 CSV 에 없어 그 룰이 본 값(예: 30분 증가)으로 그린 칸 — metric_sets 주석
+    note = "원본 값 없음" if m.get("via") else ""
     if thr:
         o.append(f'<text x="{x + w - 12:.1f}" y="{y + 56:.1f}" font-size="10" '
-                 f'text-anchor="end" fill="{P["tx3"]}" '
-                 f'font-family="Consolas,monospace">임계 {_e(_fmt(thr))}{_e(unit)}</text>')
+                 f'text-anchor="end" fill="{P["tx3"]}" font-family="Consolas,monospace">'
+                 f'{_e(note + " · ") if note else ""}임계 {_e(_fmt(thr))}{_e(unit)}</text>')
+    elif note:
+        o.append(f'<text x="{x + w - 12:.1f}" y="{y + 56:.1f}" font-size="9.5" '
+                 f'text-anchor="end" fill="{P["tx3"]}">{_e(note)}</text>')
     elif lid:
         o.append(f'<text x="{x + w - 12:.1f}" y="{y + 56:.1f}" font-size="9.5" '
                  f'text-anchor="end" fill="{P["tx3"]}">대기량 값은 CSV에 없음</text>')
@@ -1140,8 +1166,9 @@ def _cell(o, x, y, w, h, m, pts, P, si):
     # ── 추이 선 — 0 과 임계×2 사이로 **모든 칸이 같은 자로** 잰다 ──────────
     # ★여기가 현행과 갈리는 자리다. 칸마다 자기 min~max 로 재면 정상인 값도
     #   꽉 차 보인다. 임계를 기준으로 재야 칸끼리 비교가 된다.
-    pt, pb = y + 66, y + h - 12
-    x0, x1 = x + 12, x + w - 12
+    pt, pb = y + 66, y + h - (30 if big else 12)
+    # 크게 볼 때는 왼쪽에 눈금 자리를 둔다
+    x0, x1 = (x + 56, x + w - 16) if big else (x + 12, x + w - 12)
     n = len(pts)
     X = lambda i: x0 + (x1 - x0) * (i / max(1, n - 1))  # noqa: E731
     # PIO 는 경로마다 한 줄 — 칸의 자도 경로 값으로 잰다 (합은 값 줄 글자가 말한다)
@@ -1234,6 +1261,8 @@ def _cell(o, x, y, w, h, m, pts, P, si):
     if lo < 0:
         o.append(f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y0:.1f}" '
                  f'stroke="{P["tx3"]}" stroke-width=".8" stroke-dasharray="2 3" opacity=".7"/>')
+    if big:
+        _big_axes(o, pts, X, Y, x0, x1, pt, pb, lo, hi, thr, unit, lid, si, P)
 
     # ── 더블클릭한 분 — 세로선 + 그 분 값 높이의 가로줄 + 점 + '시각 · 값' ──
     # ★색은 스코어 패널의 '고른 분' 과 같다 (흰 배경이면 검정, 어두운 배경이면 흰색).
@@ -1256,17 +1285,60 @@ def _cell(o, x, y, w, h, m, pts, P, si):
                  f'stroke="{P["sel"]}" stroke-width="2"/>')
         # 꼬리표 — 고른 분 반대쪽 끝에, 가로줄 바로 위(위가 좁으면 아래)
         tag = f"{pts[si][0]:%H:%M} · " + (("합 " if stack and len(stack) > 1 else "") + fv(sv))
-        tw = _text_w(tag, 10) * 1.06 + 8
+        fz = 12.5 if big else 10
+        tw = _text_w(tag, fz) * 1.06 + 8
         left = sx > (x0 + x1) / 2
         tx_ = x0 + 2 if left else x1 - 2 - tw
-        ty_ = sy - 5 if sy - pt >= 13 else sy + 13
-        ty_ = max(pt + 9, min(pb - 3, ty_))
-        o.append(f'<rect class="gtag" x="{tx_:.1f}" y="{ty_ - 10:.1f}" width="{tw:.1f}" '
-                 f'height="13" rx="3" fill="{P["bg2"]}" opacity=".88"/>')
-        o.append(f'<text class="gtag" x="{tx_ + 4:.1f}" y="{ty_:.1f}" font-size="10" '
+        ty_ = sy - 5 if sy - pt >= fz + 3 else sy + fz + 3
+        ty_ = max(pt + fz - 1, min(pb - 3, ty_))
+        o.append(f'<rect class="gtag" x="{tx_:.1f}" y="{ty_ - fz:.1f}" width="{tw:.1f}" '
+                 f'height="{fz + 3:g}" rx="3" fill="{P["bg2"]}" opacity=".88"/>')
+        o.append(f'<text class="gtag" x="{tx_ + 4:.1f}" y="{ty_:.1f}" font-size="{fz:g}" '
                  f'font-weight="700" fill="{P["sel"]}" '
                  f'font-family="Consolas,monospace">{_e(tag)}</text>')
-    _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, fv)
+    _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, fv,
+                box=(x0, x1, y + 60, pb) if big else None)
+
+
+def _big_axes(o, pts, X, Y, x0, x1, pt, pb, lo, hi, thr, unit, lid, si, P):
+    """크게 본 칸의 눈금(왼쪽) · 시간축(아래). 작은 칸에는 자리가 없어 안 그린다."""
+    tick = lambda v, yy: o.append(  # noqa: E731
+        f'<text x="{x0 - 7:.1f}" y="{yy + 3.5:.1f}" font-size="10" text-anchor="end" '
+        f'fill="{P["tx3"]}" font-family="Consolas,monospace">{_e(v)}</text>')
+    if lid:
+        tick("걸림", Y(1.0))
+        tick("안 걸림", Y(0.0))
+    else:
+        marks = [hi, 0.0] + ([lo] if lo < 0 else []) + ([float(thr)] if thr else [])
+        done = []
+        for v in marks:
+            if not (lo <= v <= hi):
+                continue
+            yy = Y(v)
+            if any(abs(yy - d) < 12 for d in done):
+                continue
+            done.append(yy)
+            tick(_fmt(round(v, 2)), yy)
+            o.append(f'<line x1="{x0:.1f}" y1="{yy:.1f}" x2="{x1:.1f}" y2="{yy:.1f}" '
+                     f'stroke="{P["grid"]}" stroke-width=".6" opacity=".6"/>')
+    # 시간축 — 라벨 사이가 60px 이상 되는 가장 잘게 (5·10·15·30·60분)
+    n = len(pts)
+    per = (x1 - x0) / max(1, n - 1)
+    step = next((st for st in (5, 10, 15, 20, 30, 60, 120, 240) if per * st >= 60), 240)
+    sx = X(si)
+    for i, (t, _r) in enumerate(pts):
+        if t.minute % step or (step >= 60 and t.hour % (step // 60)):
+            continue
+        xx = X(i)
+        if abs(xx - sx) < 34:
+            continue                       # 더블클릭한 분 글자와 겹치지 않게
+        o.append(f'<line x1="{xx:.1f}" y1="{pb:.1f}" x2="{xx:.1f}" y2="{pb + 4:.1f}" '
+                 f'stroke="{P["line"]}" stroke-width="1"/>')
+        o.append(f'<text x="{xx:.1f}" y="{pb + 16:.1f}" font-size="10" text-anchor="middle" '
+                 f'fill="{P["tx3"]}" font-family="Consolas,monospace">{t:%H:%M}</text>')
+    o.append(f'<text x="{sx:.1f}" y="{pb + 16:.1f}" font-size="10.5" text-anchor="middle" '
+             f'font-weight="700" fill="{P["sel"]}" '
+             f'font-family="Consolas,monospace">{pts[si][0]:%H:%M}</text>')
 
 
 # 한 띠가 이보다 좁으면 마우스로 집을 수가 없다 — 분을 묶는다.
@@ -1294,7 +1366,7 @@ def _readout(o, rx, ry, txt):
                  f'{_e(line)}</text>')
 
 
-def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, fv=None):
+def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, fv=None, box=None):
     """칸 위에 분마다 투명한 띠를 깔고, 마우스를 대면 그 분 값을 값 줄 오른쪽에 띄운다.
 
     ★칸에는 '구간 최고값' 만 적혀 있었다. 그래서 아래 작은 그래프를 보고
@@ -1313,7 +1385,8 @@ def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, fv=None):
     op = m.get("op", ">=")
     thr = m.get("thr")
     hi = op in (">=", ">")
-    x0, x1 = x + 12, x + w - 12
+    # box = (그림 왼쪽, 오른쪽, 띠 위, 띠 아래) — 크게 볼 때(render_one)만 다르다
+    x0, x1, hy0, hy1 = box or (x + 12, x + w - 12, y + 60, y + h - 6)
     step = max(1, int(round(n / max(1.0, (x1 - x0) / HIT_MIN_W))))
     for i in range(0, n, step):
         grp = [(pts[j][0], vals[j], pts[j][1]) for j in range(i, min(i + step, n))
@@ -1342,13 +1415,38 @@ def _cell_hover(o, x, y, w, h, m, vals, pts, X, unit, P, fv=None):
         # <g> 로 묶어야 CSS 가 '이 칸에 마우스가 왔을 때 이 글자' 를 고른다.
         o.append(f'<g class="hv"><rect class="ghit" '
                  f'data-at="{_e(best[0].isoformat())}" '
-                 f'x="{lx:.0f}" y="{y + 60:.0f}" '
-                 f'width="{max(1.0, rx - lx):.0f}" height="{h - 66:.0f}"/>')
+                 f'x="{lx:.0f}" y="{hy0:.0f}" '
+                 f'width="{max(1.0, rx - lx):.0f}" height="{hy1 - hy0:.0f}"/>')
         # ★값 줄의 오른쪽 — 평소엔 '임계 3.3분' 이 있는 자리다. 호버하는
         #   동안만 그 위를 덮는다. 그래프 안에 두면 선 위에 글자가 얹혀 둘 다
         #   안 읽힌다.
         _readout(o, x + w - 12, y + 56, tip)
         o.append("</g>")
+
+
+def _svg_open(width, height, P) -> list:
+    """SVG 머리말 — 바탕 · 마우스를 대면 뜨는 글자 규칙. render · render_one 이 같이 쓴다."""
+    return [f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
+            f'style="display:block" role="img" xmlns="http://www.w3.org/2000/svg">',
+            # ★fill/커서를 인라인으로 적으면 히트 영역 하나당 50자가 더 붙는다.
+            #   칸마다 분 단위 히트를 깔면서 수백 개가 됐다 — 규칙으로 뺀다.
+            # ★말풍선을 안 쓴다. 브라우저 기본 <title> 은 1초쯤 늦게 뜨고 마우스를
+            #   조금만 움직이면 사라졌다 다시 센다 — 지표 그래프를 훑으며 값을
+            #   읽는 데는 못 쓴다. 자바스크립트도 안 쓴다(리포트·저장한 SVG 에서도
+            #   그대로 돌아야 한다). 칸마다 '시각 · 값' 글자를 미리 그려 두고
+            #   **그 칸에 마우스가 오면 그것만 보이게** 한다. CSS 한 줄이면 된다.
+            f'<style>.ghit{{fill:{P["tx"]};fill-opacity:0;cursor:pointer}}'
+            f'.hv:hover .ghit{{fill-opacity:.07}}'
+            f'.hv .hvt,.hv .hvr{{opacity:0}}'
+            f'.hv:hover .hvt{{opacity:1}}.hv:hover .hvr{{opacity:.97}}'
+            # ★글자 모양은 전부 여기 한 줄로 모은다. 히트가 수백 개라 칸마다
+            #   font·색을 적으면 파일이 두 배가 된다 (글자색도 여기 — 본문색 하나).
+            # ★바탕을 깐다. 처음엔 글자에 배경색 테두리만 둘렀는데, 글자 **사이**는
+            #   안 덮여서 밑에 있던 '임계 3.3분' 이 비쳤다 — 눈으로 보고 알았다.
+            # ★글자색은 본문색 하나 — 칸 색(경계=노랑)을 물려받으면 흰 배경에서 안 보였다
+            f'.hvt{{font:700 10.5px Consolas,monospace;text-anchor:end;fill:{P["tx"]}}}'
+            f'.hvr{{fill:{P["bg2"]}}}</style>',
+            f'<rect width="100%" height="100%" fill="{P["bg"]}"/>']
 
 
 def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
@@ -1419,27 +1517,7 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
         y = y + 10 + (rowsn * (CELL_H + GAP) - GAP if rowsn else 30) + 22
     height = y - 22 + PAD + (14 if empty else 0)
 
-    o = [f'<svg viewBox="0 0 {width} {height:.0f}" width="100%" '
-         f'style="display:block" role="img" xmlns="http://www.w3.org/2000/svg">',
-         # ★fill/커서를 인라인으로 적으면 히트 영역 하나당 50자가 더 붙는다.
-         #   칸마다 분 단위 히트를 깔면서 수백 개가 됐다 — 규칙으로 뺀다.
-         # ★말풍선을 안 쓴다. 브라우저 기본 <title> 은 1초쯤 늦게 뜨고 마우스를
-         #   조금만 움직이면 사라졌다 다시 센다 — 지표 그래프를 훑으며 값을
-         #   읽는 데는 못 쓴다. 자바스크립트도 안 쓴다(리포트·저장한 SVG 에서도
-         #   그대로 돌아야 한다). 칸마다 '시각 · 값' 글자를 미리 그려 두고
-         #   **그 칸에 마우스가 오면 그것만 보이게** 한다. CSS 한 줄이면 된다.
-         f'<style>.ghit{{fill:{P["tx"]};fill-opacity:0;cursor:pointer}}'
-         f'.hv:hover .ghit{{fill-opacity:.07}}'
-         f'.hv .hvt,.hv .hvr{{opacity:0}}'
-         f'.hv:hover .hvt{{opacity:1}}.hv:hover .hvr{{opacity:.97}}'
-         # ★글자 모양은 전부 여기 한 줄로 모은다. 히트가 수백 개라 칸마다
-         #   font·색을 적으면 파일이 두 배가 된다 (글자색도 여기 — 본문색 하나).
-         # ★바탕을 깐다. 처음엔 글자에 배경색 테두리만 둘렀는데, 글자 **사이**는
-         #   안 덮여서 밑에 있던 '임계 3.3분' 이 비쳤다 — 눈으로 보고 알았다.
-         # ★글자색은 본문색 하나 — 칸 색(경계=노랑)을 물려받으면 흰 배경에서 안 보였다
-         f'.hvt{{font:700 10.5px Consolas,monospace;text-anchor:end;fill:{P["tx"]}}}'
-         f'.hvr{{fill:{P["bg2"]}}}</style>',
-         f'<rect width="100%" height="100%" fill="{P["bg"]}"/>']
+    o = _svg_open(width, height, P)
 
     # ── 제목 ─────────────────────────────────────────────────────────
     r0 = sel[1]
@@ -1655,6 +1733,53 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
         o.append(f'<text x="{PAD}" y="{height - 8:.1f}" font-size="9.5" '
                  f'fill="{P["tx3"]}">{_e(head + " · ".join(shown))}'
                  f'{_e(f" 외 {more}개") if more else ""}{tip}</text>')
+    o.append("</svg>")
+    return "".join(o)
+
+
+def render_one(rows, center, name, minutes=60, width=1000, cfg=None,
+               theme="dark") -> str:
+    """더블클릭 그래프의 칸 하나를 **크게** — 그 지표만 (2026-10-07).
+
+    ★고객: "그래프 더블클릭하고 그래프가 나오는데, 다시 여기서 그래프 더블클릭하면
+      1개 크게 확대해서 볼 수 있게". 작은 칸은 그대로 두고(격자), 칸을 더블클릭하면
+      화면이 /api/graph1 로 이 그림을 받아 그 자리에 띄운다.
+    ★칸 고르기는 render() 와 **같은 metric_sets** — 칸 윗줄 이름(name)으로 찾는다.
+      그래서 작은 칸과 큰 칸이 같은 값 · 같은 임계 · 같은 '원본 값 없음' 표시다.
+    ★큰 칸에만 왼쪽 눈금 · 아래 시간축을 그린다 (_big_axes).
+    """
+    cfg = cfg or load_config()
+    P = _pal(theme)
+    pts = window_rows(rows, center, minutes, cfg)
+    if not pts:
+        return (f'<div style="padding:28px;color:{P["tx2"]};font-size:13px">'
+                f'이 구간에 자료가 없습니다</div>')
+    sel = min(pts, key=lambda tr: abs((tr[0] - center).total_seconds()))
+    si = next(i for i, (t, _r) in enumerate(pts) if t == sel[0])
+    fabc = row_fab(sel[1])
+    real, new, _empty, _fb = metric_sets(pts, sel[1], fabc)
+    TH, THR = thresholds(), _watch_raw()[2]
+    kind, m = None, None
+    for k, ms in (("실제지표", real), ("신규 지표", new)):
+        m = next((x for x in ms if str(x.get("name") or x.get("raw") or x.get("col")) == name), None)
+        if m is not None:
+            kind = k
+            break
+    if m is None:
+        return (f'<div style="padding:28px;color:{P["tx2"]};font-size:13px">'
+                f'이 구간에서 {_e(name)} 칸을 찾지 못했습니다</div>')
+    m = _measure(m, pts, TH, THR)
+    H = 400
+    height = HEAD_H + 8 + H + PAD
+    o = _svg_open(width, height, P)
+    o.append(f'<text x="{PAD}" y="21" font-size="13.5" font-weight="700" '
+             f'fill="{P["tx"]}">{_e(sel[0].strftime("%Y-%m-%d %H:%M"))}'
+             f'<tspan fill="{P["tx3"]}" font-weight="400"> · </tspan>'
+             f'<tspan fill="{P["tx2"]}">{_e(sel[1].get("hot_area") or "")}</tspan>'
+             f'<tspan fill="{P["tx3"]}" font-weight="400" font-size="11">'
+             f'  {_e(pts[0][0].strftime("%H:%M"))}~{_e(pts[-1][0].strftime("%H:%M"))}'
+             f' · {kind}</tspan></text>')
+    _cell(o, PAD, HEAD_H + 8, width - PAD * 2, H, m, pts, P, si, big=True)
     o.append("</svg>")
     return "".join(o)
 

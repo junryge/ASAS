@@ -105,9 +105,11 @@ def feed(fab: str, prefix: str, limit: int) -> dict:
 
 
 def passthrough(fab: str, prefix: str, which: str, q: dict):
-    """관제가 그린 것을 그대로 — which: graph(구간 그래프 SVG) · report(RET 내려받기).
-    → (상태, Content-Type, 본문, 덧붙일 헤더).
-    ★기여도(contrib)는 뺐다 (2026-10-07 고객: "기여도 추정 삭제해라 필요없어")."""
+    """관제가 그린 것을 그대로 — which: graph(구간 그래프 SVG) · graph1(그 칸 하나 크게)
+    · cause(그 분 룰 원인) · report(RET 내려받기). → (상태, Content-Type, 본문, 덧붙일 헤더).
+    ★기여도(contrib)는 뺐다 (2026-10-07 고객: "기여도 추정 삭제해라 필요없어").
+    ★graph1 · cause (2026-10-07 고객: "그래프 더블클릭하면 1개 크게" · "그래프 클릭하면
+      원인 내용 적어 주라") — 관제 화면과 같은 것을 그대로 넘긴다."""
     sysname = sys_for(fab, prefix)
     if not sysname:
         return 404, "application/json", json.dumps(
@@ -116,6 +118,12 @@ def passthrough(fab: str, prefix: str, which: str, q: dict):
     if which == "graph":
         src, params, ttl = "/api/graph", {"at": one("at"), "minutes": one("minutes") or "60",
                                           "theme": one("theme") or "dark"}, 30
+    elif which == "graph1":
+        src, params, ttl = "/api/graph1", {"at": one("at"), "minutes": one("minutes") or "60",
+                                           "theme": one("theme") or "dark",
+                                           "name": one("name")}, 30
+    elif which == "cause":
+        src, params, ttl = "/api/cause", {"at": one("at")}, 30
     elif which == "report":
         src, params, ttl = "/api/oht_map/report", {"day": one("day"), "name": one("name")}, 0
     else:

@@ -1241,7 +1241,7 @@ function updateUI(d) {
   const rc = rules['R-C_prime'] || {};
   setText('ew-ra-val', ra.value != null ? ra.value.toFixed(2)+'분'+(ra.count?` (${ra.count}회)`:'') : '-');
   setText('ew-rb-val', rb.diff_30min != null ? (rb.diff_30min>=0?'+':'')+rb.diff_30min : '-');
-  setText('ew-rc-val', rc.reverse_count != null ? `역증가 ${rc.reverse_count}개`+(rc.trend!=null?` (합${rc.trend>0?'+':''}${rc.trend})`:'') : '-');
+  setText('ew-rc-val', rc.reverse_count != null ? `감소 지목 ${rc.reverse_count}개`+(rc.trend!=null?` (합${rc.trend>0?'+':''}${rc.trend})`:'') : '-');
 
   const guideEl = document.getElementById('ew-guide');
   if (guideEl) {
@@ -4211,11 +4211,11 @@ function openEarlyWarningModal() {
     </div>
     <div style="padding:6px;background:#0f172a;border-radius:4px;">
       <div style="font-weight:bold;color:${rc.triggered?'#ef4444':'#6b7280'};">
-        ${rc.triggered?'●':'○'} R-C' 리프터 역증가 (경로 병목)
+        ${rc.triggered?'●':'○'} R-C' 리프터 감소 (경로 병목)
       </div>
       <div style="font-size:11px;color:#9ca3af;margin-left:14px;margin-top:3px;">
         전체 추세 (20분): ${rc.trend!=null ? (rc.trend>0?'+':'')+rc.trend : '-'} ·
-        역증가: ${rc.reverse_count||0}개 ${rc.reverse_lids && rc.reverse_lids.length ? '('+rc.reverse_lids.join(', ')+')' : ''} ·
+        감소 지목: ${rc.reverse_count||0}개 ${rc.reverse_lids && rc.reverse_lids.length ? '('+rc.reverse_lids.join(', ')+')' : ''} ·
         기준: ${rc.threshold||'-'}
       </div>
     </div>`;

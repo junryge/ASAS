@@ -537,7 +537,7 @@
   $id('lg-x').onclick = closeGraph;
   modal.onclick = function (e) { if (e.target === modal) closeGraph(); };
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && modal.style.display !== 'none') closeGraph(); });
-  $id('lg-min').onchange = function () { drawGraph(); };
+  $id('lg-min').onchange = function () { if (GONE) drawOne(GONE); else drawGraph(); };
 
   function rowAt(at) { return ((SCORE && SCORE.rows) || []).find(function (r) { return r.at === at; }); }
 
@@ -561,8 +561,14 @@
     drawGraph();
   }
 
+  var GONE = null;   // 그래프 안에서 크게 본 칸 이름 — null 이면 전체 (drawOne)
+  function graphTheme() {
+    var bt = document.body.dataset.theme;
+    return bt === 'hmi' ? 'light' : (bt === 'navy' || bt === 'contrast') ? bt : 'dark';
+  }
   function drawGraph() {
     if (!GAT) return;
+    GONE = null;
     var at = GAT, m = $id('lg-min').value;
     // 관제 그래프도 배경이 넷이다 (관제 graphs.THEMES: dark·light·navy·contrast) —
     // 화이트(hmi)만 이름이 달라 light 로 바꿔 보낸다. 예전엔 네이비·고대비도 dark 로
@@ -578,27 +584,80 @@
       if (GAT !== at) return;
       $id('lg-body').innerHTML = svg.indexOf('<svg') >= 0 ? svg : '<div class="empty">그 구간에 관제 자료가 없습니다</div>';
       bindPin();
+      bindCellZoom();
+      pinAt(at);              // 더블클릭한 그 분의 원인부터
     }).catch(function (e) {
       $id('lg-body').innerHTML = '<div class="empty">그래프를 못 받았습니다 — 관제가 켜져 있는지 보세요 (' + esc(e) + ')</div>';
     });
   }
 
+  // ── 칸 하나 크게 — 관제 화면과 같다 (고객 2026-10-07: "그래프 더블클릭하면 1개 크게") ──
+  function bindCellZoom() {
+    var svg = document.querySelector('#lg-body svg');
+    if (!svg) return;
+    svg.addEventListener('dblclick', function (e) {
+      var hit = Array.prototype.find.call(svg.querySelectorAll('rect[data-m]'), function (r) {
+        var b = r.getBoundingClientRect();
+        return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
+      });
+      if (hit) drawOne(hit.getAttribute('data-m'));
+    });
+  }
+  function drawOne(name) {
+    if (!GAT || !name) return;
+    GONE = name;
+    var at = GAT, m = $id('lg-min').value;
+    $id('lg-body').innerHTML = '<div class="empty">그리는 중…</div>';
+    fetch('/api/score/graph1?at=' + encodeURIComponent(at) + '&minutes=' + m + '&theme=' + graphTheme()
+          + '&name=' + encodeURIComponent(name), { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+      .then(function (svg) {
+        if (GAT !== at || GONE !== name) return;
+        $id('lg-body').innerHTML = '<div style="margin-bottom:8px"><button class="ms-x" id="lg-back">← 전체 그래프</button>'
+          + ' <span class="note">그림을 다시 더블클릭해도 돌아갑니다</span></div>'
+          + (svg.indexOf('<svg') >= 0 ? svg : '<div class="empty">그 칸을 못 그렸습니다</div>');
+        $id('lg-back').onclick = function () { drawGraph(); };
+        var big = document.querySelector('#lg-body svg');
+        if (big) big.addEventListener('dblclick', function () { drawGraph(); });
+        bindPin();
+        pinAt(at);
+      }).catch(function (e) {
+        $id('lg-body').innerHTML = '<div class="empty">그래프를 못 받았습니다 — 관제가 켜져 있는지 보세요 (' + esc(e) + ')</div>';
+      });
+  }
+
   // 그래프를 누르면 그 분을 아래에 고정 (관제와 같은 동작)
   function bindPin() {
-    var box = $id('lg-pin');
     document.querySelectorAll('#lg-body svg .ghit').forEach(function (el) {
-      el.onclick = function () {
-        var r = rowAt(el.dataset.at);
-        if (!r) { box.innerHTML = '<div class="note" style="margin-top:8px">' + esc((el.dataset.at || '').replace('T', ' ').slice(0, 16)) + ' — 최근 90분 목록 밖입니다</div>'; return; }
-        var rules = rulesOf(r), mets = r.metrics || [], hl = hidLine(r);
-        box.innerHTML = '<div class="ms-sec" style="margin-top:12px">'
-          + '<h4>' + esc((r.datetime || '').slice(0, 16)) + ' · ' + Math.round(+r.score || 0) + '점 ' + lvChip(r.level) + ' ' + almChip(r.alm) + '</h4>'
-          + '<div class="note">발동 룰 — ' + (rules.length ? esc(rules.join(' · ')) : '정상 운영') + '</div>'
-          + (mets.length ? '<div class="note mono" style="margin-top:4px">' + mets.map(function (x) { return esc(x.raw); }).join(' · ') + '</div>' : '')
-          + (hl ? '<div class="note" style="margin-top:4px">' + hl + '</div>' : '')
-          + '</div>';
-      };
+      el.onclick = function () { pinAt(el.dataset.at); };
     });
+  }
+  // 그 분 고정 — 발동 룰 · **원인**(룰마다 값 · 기준, 관제 /api/cause) · 실제지표
+  // ★고객(2026-10-07): "원인 내용 좀 적어 주라 — 룰이잖아 · 그래프 클릭하면 원인 내용"
+  function pinAt(at) {
+    var box = $id('lg-pin');
+    if (!box || !at) return;
+    var r = rowAt(at);
+    if (!r) { box.innerHTML = '<div class="note" style="margin-top:8px">' + esc((at || '').replace('T', ' ').slice(0, 16)) + ' — 최근 90분 목록 밖입니다</div>'; return; }
+    var rules = rulesOf(r), mets = r.metrics || [], hl = hidLine(r);
+    box.innerHTML = '<div class="ms-sec" style="margin-top:12px">'
+      + '<h4>' + esc((r.datetime || '').slice(0, 16)) + ' · ' + Math.round(+r.score || 0) + '점 ' + lvChip(r.level) + ' ' + almChip(r.alm) + '</h4>'
+      + '<div class="note">발동 룰 — ' + (rules.length ? esc(rules.join(' · ')) : '정상 운영') + '</div>'
+      + '<div class="note" id="lg-cause" style="margin-top:4px">원인 — 불러오는 중…</div>'
+      + (mets.length ? '<div class="note mono" style="margin-top:4px">' + mets.map(function (x) { return esc(x.raw); }).join(' · ') + '</div>' : '')
+      + (hl ? '<div class="note" style="margin-top:4px">' + hl + '</div>' : '')
+      + '</div>';
+    box.dataset.at = at;
+    fetch('/api/score/cause?at=' + encodeURIComponent(at), { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (q) { return q.ok ? q.json() : Promise.reject(q.status); })
+      .then(function (d) {
+        var el = $id('lg-cause');
+        if (!el || box.dataset.at !== at) return;          // 그새 다른 분을 눌렀다
+        var cs = (d && d.causes) || [];
+        el.innerHTML = cs.length
+          ? cs.map(function (c) { return '<div>원인 · <b style="color:var(--fg)">' + esc(c.rule) + '</b> — ' + esc(c.text) + '</div>'; }).join('')
+          : '원인 — 없음';
+      }).catch(function () { var el = $id('lg-cause'); if (el) el.textContent = '원인 — 관제에서 못 받았습니다'; });
   }
 
   /* ════════════ 6) 밖에서 부르는 것 · 처음 모드 ════════════ */

@@ -269,7 +269,7 @@ class MacroPredictor:
             rb_diff_fast = self.m14_history[-1][1] - self.m14_history[-11][1]
             rb_fast = rb_diff_fast >= 30
 
-        # R-C': 전체 리프터 합 20분 전 대비 감소 AND 역증가 2개+
+        # R-C': 전체 리프터 합 20분 전 대비 감소 AND 늘어난 호기(지목) 2개+
         rc_trend = 0
         reverse_count = 0
         reverse_lids: List[str] = []
@@ -329,7 +329,7 @@ class MacroPredictor:
                     'reverse_count': reverse_count,
                     'reverse_lids': reverse_lids,
                     'trend': rc_trend,
-                    'threshold': '합 감소 + 역증가 2개+',
+                    'threshold': '합 감소 + 지목 2개+',
                 },
             },
             'history': self.full_timeline,  # 사전 계산된 전체 타임라인 (replay 시각과 무관)
@@ -430,7 +430,7 @@ class MacroPredictor:
                     else:
                         reason = '2단계 주의보'
                 elif stage == 3:
-                    reason = f'R-A+R-B+R-C AND 만족 (1MIN {ra_value:.2f}, M14→M16 +{rb_diff}, 역증가 {rev_count}개)'
+                    reason = f'R-A+R-B+R-C AND 만족 (1MIN {ra_value:.2f}, M14→M16 +{rb_diff}, 감소 지목 {rev_count}개)'
                 last_logged_stage = stage
                 if stage == 3:
                     last_s3_time = t
@@ -438,7 +438,7 @@ class MacroPredictor:
                 diff_min = (t - last_s3_time).total_seconds() / 60.0
                 if diff_min >= 10:
                     record = True
-                    reason = f'재발동 (진행 중 재확인, 역증가 {rev_count}개)'
+                    reason = f'재발동 (진행 중 재확인, 감소 지목 {rev_count}개)'
                     last_s3_time = t
             elif stage == 0 and last_logged_stage >= 1:
                 record = True

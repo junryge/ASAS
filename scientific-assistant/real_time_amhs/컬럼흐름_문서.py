@@ -224,7 +224,7 @@ def _kind(node):
 # ─────────────────────────────────────────────────────────────────────
 RULE_KO = {
     "RA": "R-A′ 반송지연", "RA_sus": "R-A′ 지속", "RB": "R-B 반입급증(30분)",
-    "RB_fast": "R-B 반입급증(10분)", "RC": "R-C′ 역증가·쏠림",
+    "RB_fast": "R-B 반입급증(10분)", "RC": "R-C′ 감소·쏠림",
     "RD": "R-D 저장/가동 포화", "SLA": "SLA 4분초과",
     "SORT": "소터 대기/실패", "MAXCAPA": "MAXCAPA 축소",
 }
@@ -269,8 +269,8 @@ COL_EXACT = {
     "mc_score_total": ("MAXCAPA 가산", "영역별 바뀐 컬럼 수 × 배점의 합", "10"),
     "M16HUB_rd_fab": ("M16HUB FAB 저장율(%)", "R-D 가 보는 값", "31.2"),
     "M16HUB_stb_util": ("M16HUB STB 3F 저장율(%)", "R-D 가 보는 또 하나", "99.4"),
-    "M16HUB_rev_count": ("역증가 호기 수", "합은 줄었는데 늘어난 리프터 개수", "3"),
-    "M16HUB_rev_lids": ("역증가 호기 이름", "어느 리프터인지", "6ABL0111,6ABL6012"),
+    "M16HUB_rev_count": ("감소 지목 호기 수", "합은 줄었는데 늘어난 리프터 개수", "3"),
+    "M16HUB_rev_lids": ("감소 지목 호기 이름", "어느 리프터인지", "6ABL0111,6ABL6012"),
     "M16HUB_rc_trend": ("리프터 합 변화",
                         "20분 전 대비 합계 증감 (음수여야 R-C′)",
                         "-14"),
@@ -408,7 +408,7 @@ RULE_NAME = {
                 "임계만큼 늘었다"),
     "rb_fast": ("R-B 반입 급증(10분)", "같은 것을 10분 창으로 — 빠르게 "
                 "차오르는 경우"),
-    "rc_trig": ("R-C′ 리프터 역증가 / CNV 쏠림",
+    "rc_trig": ("R-C′ 리프터 감소 / CNV 쏠림",
                 "M16HUB: 리프터 합은 줄었는데 개별로 늘어난 호기가 임계 이상. "
                 "M14: 북/남 CNV 한쪽 쏠림 비율"),
     "rd_trig": ("R-D 저장 포화", "M16HUB: FAB 저장율 또는 STB 3F 저장율. "
@@ -588,7 +588,7 @@ def area_rules(d, area):
                          "  (30분 임계의 {:.0%})".format(C["_TH_RB_10_derived"])
                          if C.get("_TH_RB_10_derived") else ""), "rb_fast_pts"))
     if area == "M16HUB":
-        rows.append(("R-C′ 리프터 역증가",
+        rows.append(("R-C′ 리프터 감소",
                      ["M16HUB.LFT.{{호기}}.TOTAL_CURRENTQCNT  ×{}대".format(
                          len(C.get("LIFTER_IDS") or []))],
                      "합은 감소 + 개별 증가 {}대 이상".format(
@@ -1030,7 +1030,7 @@ def render(d):
     a("<h4>그 밖</h4><table><tr><th>이름</th><th class=n>값</th><th>뜻</th></tr>")
     for name, what in (("TH_RA_SUSTAINED_RATIO", "지속 판정에 쓰는 임계 비율"),
                        ("TH_RA_SUSTAINED_COUNT", "최근 5분 중 몇 회 이상"),
-                       ("TH_RC_REVERSE", "리프터 역증가 호기 수"),
+                       ("TH_RC_REVERSE", "리프터 감소 호기 수"),
                        ("TH_RD_FABSTORAGE", "FAB 저장율 (%)"),
                        ("TH_RD_HUB_STB_UTIL", "HUB STB 3F 저장율 (%)"),
                        ("TH_RD_OHT_UTIL", "OHT 가동률 (%)"),
@@ -1602,7 +1602,7 @@ def wiki_pages(d):
     b.append("## 배점\n\n")
     rows = [("R-A′ 반송지연", "ra_pts"), ("R-A′ 지속", "ra_sus_pts"),
             ("R-B 반입급증(30분)", "rb_pts"), ("R-B 반입급증(10분)", "rb_fast_pts"),
-            ("R-C′ 역증가·쏠림", "rc_pts"), ("R-D 저장/가동 포화", "rd_pts"),
+            ("R-C′ 감소·쏠림", "rc_pts"), ("R-D 저장/가동 포화", "rd_pts"),
             ("SLA 4분초과", "sla_pts"), ("소터 대기/실패", "sort_pts")]
     b.append(_md_table(["룰", "배점"],
                        [[n, "+{}".format((pts.get(v) or {}).get("pts", "?"))]

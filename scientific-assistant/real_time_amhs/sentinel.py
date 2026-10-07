@@ -669,6 +669,206 @@ def fab_metrics(reason: str, fab: str, row: dict | None = None) -> list[dict]:
     return mets
 
 
+# ── 원인 — 그 분 발동 룰마다 '왜 걸렸나' 한 줄 (2026-10-07) ────────────────
+# ★고객: "원인 내용 좀 적어 주라 — 룰이잖아 · 그래프 클릭하면 원인 내용 적어 주라 ·
+#   역증가 → 감소 라고 하고, 역증가 같은 거는 없어". 화면 '발동 룰' 칸은 이름만
+#   ('반송지연 · Queue 누적') 이라, 무엇이 얼마였고 기준이 얼마라 걸렸는지가 없었다.
+# ★룰 코드(R-A′ 등) · 영문 원문 · '역증가' 는 쓰지 않는다 — 한글 룰 이름 + 값 + 기준.
+# ★값은 reason 괄호 안 근거가 먼저(예측기가 그 분 판정에 쓴 값), 없으면 그 행 CSV
+#   컬럼. 기준은 reason 에 적혀 오면 그것, 없으면 fab_score.WATCH (컬럼흐름 상세도).
+# ★점수를 다시 계산하지 않는다 — 적힌 값을 골라 말로 풀 뿐이다.
+def _cnum(v):
+    try:
+        return float(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _cfmt(x) -> str:
+    if x is None:
+        return "?"
+    x = float(x)
+    if abs(x - round(x)) < 1e-9:
+        return str(int(round(x)))
+    return f"{x:.2f}".rstrip("0").rstrip(".")
+
+
+def _watch(f: str, code: str, i: int = 0) -> dict:
+    try:
+        import fab_score as F
+        specs = (F.WATCH.get(f) or {}).get(code) or []
+        return specs[i] if len(specs) > i else {}
+    except Exception:                                   # noqa: BLE001
+        return {}
+
+
+def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
+    """룰 하나 → 원인 한 줄 (값 · 기준). 못 읽으면 ""."""
+    tok = tok or ""
+    if code in ("RA", "RA_sus"):
+        w = _watch(f, "RA")
+        lab = re.sub(r"\s*지속$", "", w.get("label") or "반송시간")
+        m = re.search(r"=\s*([\d.]+)\s*분?\s*/\s*기준\s*([\d.]+)", tok)
+        v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
+        thr = float(m.group(2)) if m else w.get("thr")
+        if code == "RA":
+            return f"{f} {lab} {_cfmt(v)}분 — 기준 {_cfmt(thr)}분 넘음"
+        ws = _watch(f, "RA_sus")
+        out = f"{f} {lab} 높은 상태 지속 — 기준 {_cfmt(ws.get('thr') or thr)}분 넘는 분이 이어짐"
+        if v is not None:
+            out += f" · 지금 {_cfmt(v)}분"
+        cnt = _cnum(row.get(f"{f}_ra_count"))
+        if cnt is not None and thr is not None:
+            out += f" · 최근 10분 중 {_cfmt(cnt)}분이 {_cfmt(thr)}분 넘음"
+        return out
+    if code in ("RB", "RB_fast"):
+        w = _watch(f, code)
+        q = re.sub(r"\s*\d+분\s*증가$", "", _watch(f, "RB").get("label") or "대기")
+        mins = 30 if code == "RB" else 10
+        m = re.search(r"\+\s*(-?[\d.]+)", tok)
+        d = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
+        mt = re.search(r"기준\s*\+?\s*([\d.]+)", tok)
+        thr = float(mt.group(1)) if mt else w.get("thr")
+        if d is None:
+            return f"{f} {q} {mins}분 동안 늘어남 — 기준 +{_cfmt(thr)}건"
+        return f"{f} {q} {mins}분 동안 {'+' if d >= 0 else ''}{_cfmt(d)}건 — 기준 +{_cfmt(thr)}건 넘음"
+    if code == "RC":
+        if f == "M16HUB":
+            ids = [x for x in _HUB_LIFTERS if x in tok]
+            mn = re.search(r"(\d+)\s*개", tok)
+            n = int(mn.group(1)) if mn else len(ids)
+            parts = []
+            tr = _cnum(row.get("M16HUB_rc_trend"))
+            if tr is not None:
+                parts.append(f"리프터 10대 합이 20분 전보다 {_cfmt(abs(tr))}대 감소" if tr < 0
+                             else f"리프터 10대 합 20분 변화 {'+' if tr > 0 else ''}{_cfmt(tr)}대")
+            who = ", ".join(ids[:5]) + (f" 외 {len(ids) - 5}" if len(ids) > 5 else "")
+            parts.append(f"지목 {n}대" + (f" ({who})" if who else ""))
+            thr = _watch(f, "RC").get("thr")
+            return "M16HUB " + " · ".join(parts) + (f" — 기준 {_cfmt(thr)}대" if thr else "")
+        if f == "M14":
+            w = _watch(f, "RC")
+            m = re.search(r"=\s*([\d.]+)", tok)
+            v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
+            thr = w.get("thr")
+            pct = (lambda x: x * 100 if x is not None and x <= 1.0 else x)
+            if v is None:
+                return "M14 컨베이어 북/남 한쪽으로 쏠림"
+            return (f"M14 컨베이어 북/남 한쪽 쏠림 {_cfmt(round(pct(v)))}%"
+                    + (f" — 기준 {_cfmt(round(pct(thr)))}% 넘음" if thr else ""))
+        return ""
+    if code == "RD":
+        if f == "M16HUB":
+            got = []
+            for nm, val in re.findall(r"([^\s,(=]+)\s*=\s*([\d.]+)", tok):
+                for keys, raw, lb, un in _HUB_RD:
+                    if any(k in nm for k in keys):
+                        spec = next((sp for sp in (_watch_all(f, "RD")) if sp.get("amos") == raw), {})
+                        thr = spec.get("thr")
+                        rec = " (기록용)" if "(기록용)" in lb else ""
+                        lb = lb.replace(" (기록용)", "")
+                        got.append(f"{lb} {_cfmt(float(val))}{un}{rec}"
+                                   + (f" — 기준 {_cfmt(thr)}{un} 넘음" if thr is not None else ""))
+                        break
+            if not got:
+                v = _cnum(row.get("M16HUB_rd_fab"))
+                w = _watch(f, "RD")
+                if v is not None:
+                    got.append(f"FAB 적재율 {_cfmt(v)}% — 기준 {_cfmt(w.get('thr'))}% 넘음")
+            return ("M16HUB " + " · ".join(got)) if got else "M16HUB 저장 공간 꽉 참"
+        w = _watch(f, "RD")
+        m = re.search(r"=\s*([\d.]+)", tok)
+        v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
+        thr = w.get("thr")
+        return (f"{f} OHT 가동률 {_cfmt(v)}%"
+                + (f" — 기준 {_cfmt(thr)}% 넘음" if thr is not None else ""))
+    if code == "SLA":
+        w = _watch(f, "SLA")
+        m = re.search(r"([\d.]+)\s*%", tok)
+        v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
+        thr = w.get("thr")
+        return (f"{f} 4분 넘게 걸린 반송 {_cfmt(v)}%"
+                + (f" — 기준 {_cfmt(thr)}% 넘음" if thr is not None else " (기준 미정)"))
+    if code == "SORT":
+        w = _watch(f, "SORT")
+        m = re.search(r"([\d.]+)", tok)
+        v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
+        thr = w.get("thr")
+        un = " LOT" if "LOT" in tok.upper() else (w.get("unit") or "")
+        return (f"{f} 분류기 대기 {_cfmt(v)}{un}"
+                + (f" — 기준 {_cfmt(thr)} 넘음" if thr is not None else ""))
+    if code == "MAXCAPA":
+        try:
+            import fab_score as F
+            hits = F._maxcapa_hits(row or {}, f)
+        except Exception:                               # noqa: BLE001
+            hits = []
+        said = []
+        for h in hits:
+            m = re.match(r"([A-Za-z0-9_]+)\s*=\s*([\d.]+)\s*\(\s*(<=|>=|<|>)\s*([\d.]+)\s*\)", h)
+            if not m:
+                continue
+            spec = next((sp for sp in _watch_all(f, "MAXCAPA")
+                         if str(sp.get("amos") or "").endswith("." + m.group(1))), {})
+            lb = spec.get("label") or m.group(1)
+            word = "이하" if m.group(3).startswith("<") else "이상"
+            nrm = spec.get("normal")
+            said.append(f"{lb} {m.group(2)} (평소 {nrm} · 기준 {m.group(4)} {word})" if nrm
+                        else f"{lb} {m.group(2)} (기준 {m.group(4)} {word})")
+        if said:
+            return f"{f} 운영자가 용량 상한을 바꿈 — " + " · ".join(said)
+        mn = re.search(r"(\d+)\s*개", tok)
+        return f"{f} 운영자가 용량 상한을 바꿈" + (f" — {mn.group(1)}개" if mn else "")
+    return ""
+
+
+def _watch_all(f: str, code: str) -> list:
+    try:
+        import fab_score as F
+        return list((F.WATCH.get(f) or {}).get(code) or [])
+    except Exception:                                   # noqa: BLE001
+        return []
+
+
+def rule_causes(reason: str, fab: str = "", row: dict | None = None,
+                area: str = "") -> list[dict]:
+    """그 분 발동 룰마다 원인 한 줄 — [{"rule": 한글 룰 이름, "area": 영역, "text": 원인}].
+
+    fab  : FAB 화면이면 그 FAB 코드 — **그 FAB 블록만** (fab_reason 과 같은 기준).
+    area : ALL 화면의 주 영역(hot_area) — 그 블록이 있으면 그것만, 없으면 블록 전부.
+    예) 'M16HUB 반송시간 10.4분 — 기준 9분 넘음'
+        'M16HUB M14→M16 대기 30분 동안 +120건 — 기준 +100건 넘음'
+        'M16HUB 리프터 10대 합이 20분 전보다 7대 감소 · 지목 5대 (6ABL6011, …) — 기준 4대'
+    """
+    row = row or {}
+    txt = reason or ""
+    f = _fab_code(fab)
+    if f:
+        block, _ = _fab_block(txt, f)
+        blocks = [(f, block)] if block else []
+    else:
+        allb = [(a.upper(), b) for a, b in _reason_blocks(txt)]
+        a0 = str(area or "").upper()
+        blocks = [x for x in allb if x[0] == a0] or allb
+    try:
+        import fab_score as F
+        known = set(F.WATCH)
+    except Exception:                                   # noqa: BLE001
+        known = set()
+    out = []
+    for a, block in blocks:
+        if known and a not in known:
+            continue                                  # M16_PKT · M16_WT 는 분석에서 뺐다
+        for code, tok in _fab_rules(block):
+            t = _cause_text(code, tok, a, row)
+            if t:
+                out.append({"rule": _fab_rule_name(code, a), "area": a, "text": t})
+    pio = fab_pio_text(row, f) if f else pio_text(txt)
+    if pio:
+        out.append({"rule": "PIO 반송실패", "area": f, "text": (f"{f} " if f else "") + pio})
+    return out
+
+
 def hid_zones(tokens: str) -> list[str]:
     """HID_32_FROM_SUM_A → HID32 (순서 보존·중복 제거)."""
     out, seen = [], set()

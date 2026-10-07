@@ -856,6 +856,18 @@ async def score_graph(request: Request):
     return await _score_pass(request, "graph")
 
 
+@app.get("/api/score/graph1")
+async def score_graph1(request: Request):
+    """그래프 칸 하나 크게 — 관제 /api/graph1 그대로 (칸을 더블클릭하면 부른다)."""
+    return await _score_pass(request, "graph1")
+
+
+@app.get("/api/score/cause")
+async def score_cause(request: Request):
+    """그 분 발동 룰마다 원인 한 줄 — 관제 /api/cause 그대로 (그래프를 누르면 부른다)."""
+    return await _score_pass(request, "cause")
+
+
 @app.get("/api/score/report")
 async def score_report(request: Request):
     """RET(레포트) 링크 — 관제의 PROBLEM_MAP 파일을 내려받기로."""

@@ -108,7 +108,7 @@ WATCH: dict[str, dict[str, list[dict]]] = {
         "RB_fast": [{"amos": "M16HUB.QUE.M14TOM16.MESCURRENTQCNT", "csv": "M16HUB_rb_diff10",
                      "label": "같은 대기 10분 증가", "unit": "건", "op": ">=", "thr": 30}],
         "RC": [{"amos": "M16HUB.LFT.{6ABL6011…6ABL0122}.TOTAL_CURRENTQCNT",
-                "csv": "M16HUB_rev_count", "label": "역증가 리프터", "unit": "대",
+                "csv": "M16HUB_rev_count", "label": "감소 지목 리프터", "unit": "대",
                 "op": ">=", "thr": 4}],
         "RD": [{"amos": "M16HUB.STRATE.ALL.FABSTORAGERATIO", "csv": "M16HUB_rd_fab",
                 "label": "FAB 저장율", "unit": "%", "op": ">=", "thr": 25.75},

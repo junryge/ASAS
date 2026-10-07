@@ -64,9 +64,14 @@ class 값이_없는_지표는_칸을_안_만든다(unittest.TestCase):
     def _svg(self, rows):
         return graphs.render(rows, self.center, minutes=60, cfg=self.cfg)
 
+    # ★2026-10-07 — 표 '실제지표' 칸의 리프터 정체 원본(M16HUB.QUE.LFT.3F_LFT_REVERSALCNT)은
+    #   CSV 에 값이 없어도 **그 룰이 본 값**(M16HUB_rev_count)으로 칸이 선다 (고객: "실제지표에
+    #   있는데 왜 그래프에 안 나오냐"). 그래서 둘 다 값이 있으면 칸이 셋이다 —
+    #   반송시간 · 리프터 정체(원본 값 없음 — rev_count 로) · 신규 지표 rev_count.
     def test_둘_다_값이_있으면_둘_다_그린다(self):
         svg = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=7))
-        self.assertEqual(_panels(svg), 2)
+        self.assertEqual(_panels(svg), 3)
+        self.assertIn("원본 값 없음", svg)
 
     def test_한쪽이_비면_칸이_하나_준다(self):
         """★예전엔 '데이터 없음' 칸을 그려서 높이가 그대로였다.
@@ -78,14 +83,14 @@ class 값이_없는_지표는_칸을_안_만든다(unittest.TestCase):
         """
         full = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=7))
         half = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=None))
-        self.assertEqual(_panels(full), 2)
+        self.assertEqual(_panels(full), 3)          # 위 주석 — 리프터 정체가 두 칸에 선다
         self.assertEqual(_panels(half), 1)
         self.assertLessEqual(_height(half), _height(full), "높이가 되레 늘었다")
 
     def test_줄이_줄면_높이가_준다(self):
         """격자에서 높이를 먹는 것은 칸 수가 아니라 **줄 수** 다."""
         one = self._svg(_rows(M16HUB_ra=15.9, M16HUB_rev_count=7))
-        self.assertEqual(_panels(one), 2)          # 한 줄(3열까지)
+        self.assertEqual(_panels(one), 3)          # 한 줄(3열까지)
         # 네 칸이면 두 줄이 되어 높이가 늘어야 한다
         rows = _rows(M16HUB_ra=15.9, M16HUB_rev_count=7)
         for r in rows:

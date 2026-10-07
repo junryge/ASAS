@@ -139,8 +139,12 @@ class 화면이_그래프에_배경을_넘긴다(unittest.TestCase):
         self.assertIn('else "dark"', self.server)
 
     def test_배경을_바꾸면_열린_그래프도_다시_그린다(self):
-        """SVG 는 서버가 그린 그림이라 CSS 로 안 바뀐다 — 다시 받아야 한다."""
+        """SVG 는 서버가 그린 그림이라 CSS 로 안 바뀐다 — 다시 받아야 한다.
+
+        ★2026-10-07 칸 하나를 크게 볼 수 있게 되면서(drawOne) '보던 그대로' 다시 그린다 —
+          크게 본 칸이면 그 칸, 아니면 전체 (drawGraphAll)."""
         self.assertIn("window.drawGraph = drawGraph;", self.html)
+        self.assertIn("function drawGraph(){ return GONE ? drawOne(GONE) : drawGraphAll(); }", self.html)
         blk = self.html.split("window.__setTheme = function(t){")[1].split("};")[0]
         self.assertIn("window.drawGraph()", blk)
 
