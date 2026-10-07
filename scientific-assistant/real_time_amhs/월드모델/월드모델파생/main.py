@@ -856,12 +856,6 @@ async def score_graph(request: Request):
     return await _score_pass(request, "graph")
 
 
-@app.get("/api/score/contrib")
-async def score_contrib(request: Request):
-    """그 분의 기여도 (관제가 만든 HTML 조각)."""
-    return await _score_pass(request, "contrib")
-
-
 @app.get("/api/score/report")
 async def score_report(request: Request):
     """RET(레포트) 링크 — 관제의 PROBLEM_MAP 파일을 내려받기로."""

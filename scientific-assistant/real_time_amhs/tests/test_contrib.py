@@ -103,11 +103,16 @@ class Contrib(unittest.TestCase):
     def test_데이터가_없으면_오류(self):
         self.assertFalse(C.explain([], T0, self.cfg)["ok"])
 
-    def test_HTML_에_추정임을_반드시_밝힌다(self):
-        """점수식을 푼 값으로 오해하면 안 된다 — 화면 문구를 고정한다."""
-        h = C.explain_html(make_rows(), T0 + timedelta(minutes=207), self.cfg)
-        self.assertIn("추정", h)
-        self.assertIn("점수식을 푼 값이 아닙니다", h)
+    def test_화면에서는_뺐다(self):
+        """고객(2026-10-07): "기여도 추정 삭제해라 필요없어". 더블클릭 그래프 밑에 붙던
+        HTML 은 없앴다 — 계산(explain)은 ML 비교(ml_why)가 계속 쓴다."""
+        import os
+        self.assertFalse(hasattr(C, "explain_html"))
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(base, "static", "dashboard.html"), encoding="utf-8") as f:
+            h = f.read()
+        i = h.index("async function drawGraph(){")
+        self.assertNotIn("/api/contrib", h[i:i + 1500], "더블클릭 그래프가 아직 기여도를 부른다")
 
 
 class Scale(unittest.TestCase):

@@ -5,14 +5,14 @@ AMHS Sentinel_M16BR — 구간 그래프 (독립 SVG 렌더러)
 발동이벤트_요약 / report_graphs 와 같은 형식으로 그린다:
 
   ┌ 스코어 패널 ─ unified_risk_score, 등급 밴드(60/71/85), 사건 표시
-  ├ 실제지표 ──── 실시간 표 '실제지표' 칸의 원본 컬럼 전부 (2026-10-06)
+  ├ 실제지표 ──── 더블클릭한 그 줄 실시간 표 '실제지표' 칸 그대로 (2026-10-07)
   │   칸 ┌ M16HUB.QUE.TIME.AVGTOTALTIME1MIN   ← 윗줄: 실제 컬럼 이름
   │      ├ ▲1.2배  M16HUB 반송시간           ← 아랫줄: 배수 · 한글 이름
   │      └ 10.41분 최고 @21:08 … 임계 9분 + 추이
-  ├ 신규 지표 ─── 우리가 계산해 만든 컬럼 (rb_diff30 · rev_count · PIO 점수 …)
+  ├ 신규 지표 ─── 그 줄 룰이 본 계산 컬럼 (rb_diff30 · rev_count …)
   └ 값이 안 온 컬럼 한 줄
 
-지표 목록은 metric_sets() 하나가 정한다 — 기여도 추정(contrib.py)도 같은 것을 쓴다.
+지표 목록은 metric_sets() — 더블클릭한 그 줄 실시간 표 '실제지표' 칸과 같은 함수로 고른다.
 데모스를 import 하지 않고 외부 라이브러리도 쓰지 않는다(순수 SVG).
 """
 from __future__ import annotations
@@ -559,8 +559,6 @@ def _fab_real_cells(metrics: list[dict], pts, fab: str) -> list[dict]:
 #             AVGTOTALTIME1MIN)도 값은 원본 그대로라 여기다 — 칸 제목은 원본 이름.
 #   신규 지표 = 원본에서 **새로 계산해 만든** CSV 컬럼 — 증가량(rb_diff)·편중·
 #             역증가 호기 수·추세·PIO 점수/가중합/10분 합. AMOS 에는 없는 이름이다.
-# ★더블클릭 그래프와 기여도 추정(contrib.py)이 **같은 목록**을 쓴다. 따로 고르면
-#   그래프에는 있는데 기여도에는 없는 지표가 생겨 "왜 그건 안 따지냐" 가 된다.
 _NEW_SUF = ("_rb_diff30", "_rb_diff10", "_cnv_skew", "_rev_count", "_rc_trend",
             "_ra_count", "_PIO_SCORE", "_PIO_WSUM10", "_PIO_WSUM1")
 _NEW_COLS = frozenset(("pio_10min_cnt", "pio_score", "area_pio_score",
@@ -647,133 +645,116 @@ def metric_value(m: dict, r) -> float | None:
     return None
 
 
-def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list]:
-    """구간 그래프 · 기여도 추정이 같이 쓰는 지표 목록 → (실제지표, 신규 지표, 값 없음).
+_PIO_ROW_COLS = frozenset(("pio_10min_cnt", "pio_score", "area_pio_score",
+                           "area_pio_wsum10", "area_pio_wsum1"))
 
-    모으는 곳 (앞에 온 것의 이름표가 남는다 — 늘 보던 칸 이름이 안 바뀐다):
-      ① 고른 분 reason 의 지표 (parse_reason_metrics · PIO 채우기 · FAB 실제지표 칸)
-      ② 실시간 표 '실제지표' 칸 — 서버 /api/feed 와 **같은 함수**
-         (FAB 분리 행이면 sentinel.fab_metrics, ALL 이면 reason_metrics).
-         고른 분 것만이 아니라 **창 안 모든 분** 것을 모은다 — 바로 앞 분에 떴던
-         지표가 그래프에서 사라지면 "방금 그거 어디 갔냐" 가 된다.
-      ③ FAB 화면 — 그 FAB 룰의 원본 컬럼이 CSV 에 실려 오면 늘 세운다.
-    ①②의 고른 분 지표는 fired=True 다 (기여도 추정이 가중을 준다).
 
-    반환 항목 {col, name, label, unit, src, kind('real'|'new'), fired, …}
-      name = 칸 윗줄에 적는 **컬럼 이름** — 실제지표는 원본 AMOS 이름,
-             신규 지표는 CSV 컬럼 이름 (현장이 그 이름으로 원 데이터를 찾아간다).
-    값 없음 = [(name, label), …] — 두 점이 안 되는 것 (칸을 안 세우고 한 줄로 밝힌다).
+def _is_pio(m: dict) -> bool:
+    """PIO 쪽 지표인가 — 경로 컬럼 · 10분 합 · 점수 · 가중합."""
+    col, raw = str(m.get("col") or ""), str(m.get("raw") or "")
+    return (bool(m.get("pio_stack")) or col.endswith(_PIO_SUF) or col in _PIO_ROW_COLS
+            or col.endswith(("_PIO_SCORE", "_PIO_WSUM10", "_PIO_WSUM1"))
+            or raw.startswith("PIO."))
+
+
+def row_metrics(row, fab: str = "") -> list[dict]:
+    """그 줄의 실시간 표 '실제지표' 칸 — 서버 /api/feed 와 **같은 함수 · 같은 인자**.
+
+    FAB 분리 행이면 sentinel.fab_metrics(reason, FAB, 행),
+    ALL 이면 sentinel.reason_metrics(reason, hot_area 또는 'UNKNOWN', 행).
+    """
+    row = row or {}
+    reason = (row.get("reason") or "").strip()
+    try:
+        import sentinel as S
+        f = _fab_ok(fab)
+        if f:
+            return S.fab_metrics(reason, f, row)
+        if not reason:
+            return []
+        return S.reason_metrics(reason, (row.get("hot_area") or "").strip() or "UNKNOWN", row)
+    except Exception:                                   # noqa: BLE001
+        return []
+
+
+def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list, bool]:
+    """더블클릭한 **그 줄의 '실제지표' 칸 그대로** → (실제지표, 신규 지표, 값 없음, 대신 보임).
+
+    고객(2026-10-07): "실제지표에 M16HUB.QUE.M14TOM16.MESCURRENTQCNT ·
+      M16HUB.QUE.TIME.AVGTOTALTIME1MIN · M16HUB.STRATE.ALL.FABSTORAGERATIO 이런게 나오면
+      더블클릭했을 저 그래프들이 나와야지" · "1개는 똑바로 나오고 나머지는 전혀 다른게
+      나와 — 실제지표에 맞게 하라고" · "pio 대표 1개만 표시해라 전부다".
+    ★실제지표 = 그 줄 표 칸과 **같은 함수**(row_metrics)가 낸 컬럼 — 더하지도 빼지도
+      않는다. 예전엔 창 앞뒤 30분 다른 분의 실제지표 · FAB 룰 컬럼까지 끼워 넣어서,
+      표에는 셋인데 그래프에는 엉뚱한 칸이 열몇 개 섰다.
+    ★값은 그 컬럼 이름으로 읽고, CSV 가 다른 이름으로 옮겨 싣는 값(M16HUB_ra ←
+      AVGTOTALTIME1MIN)이 있으면 그것도 읽는다. 둘 다 없으면 칸 대신 맨 아래
+      '값이 안 온 실제지표' 줄에 이름이 남는다 — 말없이 빠지지 않는다.
+    ★PIO 는 **한 칸** — 그 FAB(ALL 이면 전체) 경로 컬럼을 한 칸에 쌓는다. 10분 합 ·
+      점수 · 가중합 칸은 따로 안 세운다.
+    ★신규 지표 = 그 줄 룰이 실제로 본 **계산 컬럼**만 (R-B → rb_diff30/10,
+      R-C → rev_count · cnv_skew). 그 줄과 상관없는 계산 컬럼은 안 세운다.
+    ★그 줄에 실제지표가 하나도 없으면(룰이 안 걸린 분) FAB 화면은 그 FAB 룰 컬럼을
+      대신 보여 준다 — 점수만 뜨면 무엇이 얼마였는지 볼 길이 없다 (2026-09 고객).
+      그때 넷째 값(대신 보임)이 True — 그래프가 제목에 그렇게 적는다.
     """
     fabc = _fab_ok(fab)
     sel_row = sel_row or {}
     lab, copy, _thr, cumul = _watch_raw()
-    real, new, paths = {}, {}, []
-    stack = None
+    table = row_metrics(sel_row, fabc)
+    fallback = False
+    if not table and fabc:
+        # 룰이 안 걸린 분 — 그 FAB 룰 컬럼 (PIO 는 창 안에 실패가 왔으면 한 칸)
+        table = _fab_real_cells([], pts, fabc)
+        fallback = bool(table)
 
-    def put(m, fired, split):
-        nonlocal stack
+    real, new, empty = {}, {}, []
+    has_pio = False
+
+    def add_real(m, name, src):
+        got = real.get(name)
+        if got is None:
+            real[name] = dict(m, kind="real", name=name, src=list(dict.fromkeys(src)))
+        else:
+            got["src"] = list(dict.fromkeys(got["src"] + src))
+
+    def add_new(m):
+        col = str(m.get("col") or "")
+        if col and col not in new:
+            new[col] = dict(m, kind="new", name=col, src=[col])
+
+    for m in table:
+        if _is_pio(m):
+            has_pio = True
+            continue
         col, raw = str(m.get("col") or ""), str(m.get("raw") or "")
-        if m.get("pio_stack"):
-            if stack is None:
-                stack = dict(m, kind="real", fired=fired)
-            elif fired:
-                stack["fired"] = True
-            return
-        if col.endswith(_PIO_SUF):
-            name = col[:-len(_PIO_SUF)]
-            if name not in paths:
-                paths.append(name)
-            if fired:
-                paths_fired.add(name)
-            return
-        if m.get("pio_score") or is_new_metric(col):
-            got = new.get(col)
-            if got is None:
-                new[col] = dict(m, kind="new", name=col, src=[col], fired=fired)
-            elif fired:
-                got["fired"] = True
-            # ★실시간 표의 R-B 는 col=rb_diff30 · raw=대기 물량(AMOS) 으로 온다.
-            #   증가량은 신규 지표로, 그 증가량을 낸 원본(대기 물량)은 실제지표로
-            #   가른다 — 한 칸에 두면 '증가량' 선 위에 '대기 물량' 이름이 붙는다.
-            if not (split and _amos_name(raw) and raw != col):
-                return
-            # ★원본 쪽은 '발동' 이 아니다 — 룰이 본 것은 증가량이지 물량 자체가
-            #   아니다. 발동으로 두면 기여도에 '상시 · 하루 내내' 로 떠서 "물량이
-            #   하루 내내 높았다" 는 없는 말을 한다.
+        if is_new_metric(col):
+            add_new(m)
+            if not (_amos_name(raw) and raw != col):
+                continue
+            # ★실시간 표의 R-B 는 col=rb_diff30 · raw=대기 물량(AMOS) 으로 온다. 표 칸에
+            #   적히는 것은 raw(대기 물량)다 — 그 이름으로 실제지표 칸을 세우고, 증가량은
+            #   신규 지표로 따로. 한 칸에 두면 '증가량' 선 위에 '대기 물량' 이름이 붙는다.
             lb, un = lab.get(raw, (re.sub(r"\s*\d+분\s*증가$", "", str(m.get("label") or raw)),
                                    m.get("unit") or ""))
             m = {"col": raw, "raw": raw, "label": lb, "unit": un}
             col = raw
-            fired = False
         name = raw if _amos_name(raw) else col
-        src = [c for c in (col, copy.get(name), raw) if c]
-        got = real.get(name)
-        if got is None:
-            real[name] = dict(m, kind="real", name=name,
-                              src=list(dict.fromkeys(src)), fired=fired)
-        else:
-            got["src"] = list(dict.fromkeys(got["src"] + src))
-            got["fired"] = got["fired"] or fired
+        add_real(m, name, [c for c in (col, copy.get(name), raw) if c])
 
-    paths_fired: set = set()
-    # ① 고른 분 reason — 지금까지 그래프가 세우던 칸 (이름표·순서가 그대로 남는다)
-    # ★reason 은 그 10분에 **가장 많이 실패한 한 경로**만 적어 온다. 데이터로
-    #   나머지를 채우는 _pio_fill 을 **버리기 전에** 부른다 — 뒤에 부르면
-    #   판단 근거(pio_10min_cnt)가 이미 버려져 칸이 통째로 사라진다.
-    mine = parse_reason_metrics(sel_row.get("reason") or "", fabc)
-    fired_cols = {m.get("col") for m in mine}
-    mets = _pio_fill(mine, pts, fabc)
-    mets = _pio_score_cell(mets, pts, fabc)
-    mets = _fab_real_cells(mets, pts, fabc)     # FAB 화면 — 실제지표 칸을 늘 세운다
-    for m in mets:
-        put(m, m.get("col") in fired_cols or bool(m.get("pio_stack") and fired_cols
-                                                  & {"pio_10min_cnt", "area_pio_wsum10"}),
-            split=False)
+    # 그 줄 룰이 본 계산 컬럼 — FAB 화면만 (ALL 표 칸은 그 블록만 보므로 표에 이미 있다)
+    if fabc and not fallback:
+        for m in parse_reason_metrics(sel_row.get("reason") or "", fabc):
+            if is_new_metric(m.get("col")) and not _is_pio(m):
+                add_new(m)
 
-    # ② 실시간 표 '실제지표' — 고른 분 먼저(발동), 나머지 분은 시간 순
-    try:
-        import sentinel as S
-    except Exception:                                   # noqa: BLE001
-        S = None
-    if S is not None:
-        def table(r):
-            reason = (r.get("reason") or "").strip()
-            if not reason and not fabc:
-                return []
-            try:
-                if fabc:
-                    return S.fab_metrics(reason, fabc, r)
-                return S.reason_metrics(reason, (r.get("hot_area") or "").strip() or "UNKNOWN", r)
-            except Exception:                           # noqa: BLE001
-                return []
-        rows = [sel_row] + [r for _t, r in pts if r is not sel_row]
-        for k, r in enumerate(rows):
-            for m in table(r):
-                put(m, k == 0, split=True)
-
-    # ③ FAB 화면 — 그 FAB 룰의 원본 컬럼이 실려 오면 늘 세운다
-    if fabc:
-        try:
-            import fab_score as F
-            watch = F.WATCH.get(fabc) or {}
-        except Exception:                               # noqa: BLE001
-            watch = {}
-        for code in ("RA", "RB", "RC", "RD", "SLA", "SORT", "MAXCAPA"):
-            for it in watch.get(code) or []:
-                amos = str(it.get("amos") or "")
-                if (not _amos_name(amos) or it.get("record_only")
-                        or (it.get("op") or ">=") == "diff10" or amos in real):
-                    continue
-                if not any(_f((r or {}).get(amos)) is not None for _t, r in pts):
-                    continue
-                lb, un = lab.get(amos, (f"{fabc} {it.get('label') or amos}", it.get("unit") or ""))
-                put({"col": amos, "raw": amos, "label": lb, "unit": un}, False, split=False)
-
-    # PIO 경로 — 한 칸에 쌓는다. ①이 이미 세웠으면 그것을, 아니면 창 데이터로 세운다
-    if stack is None and paths:
+    # PIO — 대표 한 칸
+    stack = None
+    if has_pio:
         got = _pio_fill([{"col": "pio_10min_cnt"}], pts, fabc)
-        stack = next((dict(m, kind="real", fired=bool(paths_fired))
-                      for m in got if m.get("pio_stack")), None)
+        stack = next((dict(m, kind="real") for m in got if m.get("pio_stack")), None)
+        if stack is None:
+            empty.append(("{경로}" + _PIO_SUF, "PIO 반송실패 (창 안에 경로 값이 없음)"))
     if stack is not None:
         names = [x["name"] for x in stack.get("cols") or []]
         if any(x.get("from_reason") for x in stack.get("cols") or []):
@@ -783,32 +764,24 @@ def metric_sets(pts, sel_row, fab: str = "") -> tuple[list, list, list]:
         else:
             stack["name"] = (names[0] + _PIO_SUF) if len(names) == 1 else _PIO_NAME
         stack["src"] = [x["col"] for x in stack.get("cols") or []]
-    # 쌓기에 못 들어간 경로 — 값이 **아예 안 온** 것만 밝힌다. 0 이라도 왔으면
-    # 온 것이고, 값은 왔는데 쌓기 상한(_PIO_STACK_MAX)에 걸린 것은 '안 온' 게 아니다.
-    in_stack = {x["name"] for x in (stack or {}).get("cols") or []}
-    empty = [(p + _PIO_SUF, f"PIO 반송실패 {p}") for p in paths
-             if p not in in_stack
-             and not any(_f((r or {}).get(p + _PIO_SUF)) is not None for _t, r in pts)]
 
     # ★누적 건수(4분 초과 건수 등) — 하루 동안 계속 커지는 값이라 선 높이는
-    #   '지금 심하다' 가 아니다. 룰은 10분 증가를 본다. 이름에 적어 두고, 기여도
-    #   추정은 10분 증가로 잰다 (contrib.py).
+    #   '지금 심하다' 가 아니다(룰은 10분 증가를 본다). 이름에 적어 둔다.
     for m in real.values():
         if any(c in cumul for c in m.get("src") or []):
             m["cumul"] = True
             if "누적" not in str(m.get("label") or ""):
                 m["label"] = f"{m.get('label') or m['name']} (누적)"
     out_r = list(real.values()) + ([stack] if stack is not None else [])
-    out_n = list(new.values())
     keep_r, keep_n = [], []
-    for src, dst in ((out_r, keep_r), (out_n, keep_n)):
+    for src, dst in ((out_r, keep_r), (list(new.values()), keep_n)):
         for m in src:
             n = sum(1 for _t, r in pts if metric_value(m, r) is not None)
             if n < 2:
                 empty.append((m.get("name") or m.get("col"), m.get("label") or ""))
             else:
                 dst.append(m)
-    return keep_r, keep_n, empty
+    return keep_r, keep_n, empty, fallback
 
 
 def _f(v):
@@ -1274,12 +1247,13 @@ def render(rows, center, minutes=60, width=1000, cfg=None, fabs=None,
     #   높이만 먹고 아무 말도 안 한다. 대신 **왜 안 보이는지**는 아래에
     #   한 줄로 남긴다 — 그냥 지우기만 하면 "왜 안 뜨나" 에 답이 없다.
     fabc = row_fab(sel[1])
-    real, new, empty = metric_sets(pts, sel[1], fabc)
+    real, new, empty, fallback = metric_sets(pts, sel[1], fabc)
     TH, THR = thresholds(), _watch_raw()[2]
     sections = []
     for title, sub, ms in (
-            ("실제지표", "원본 컬럼", real),
-            ("신규 지표", "원본에서 계산해 만든 컬럼", new)):
+            ("실제지표", (f"이 분은 발동한 룰이 없어 {fabc} 룰 컬럼" if fallback
+                          else "그 분 실시간 표 '실제지표' 칸 그대로"), real),
+            ("신규 지표", "그 룰이 본 계산 컬럼", new)):
         ms = [_measure(m, pts, TH, THR) for m in ms]
         ms.sort(key=lambda m: -(m["sort"] if m.get("sort") is not None
                                 else (m["ratio"] or 0)))

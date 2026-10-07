@@ -791,7 +791,7 @@ def build(cfg=None) -> str:
   <section>
     <div class="sechead"><span class="step">비교 6</span><h2>왜 '평소 대비 얼마나 튀었나' 로는 비교가 안 되나</h2></div>
     <p class="subtitle">
-      관제 화면의 <b>기여도 추정</b>(<code class="mono">contrib.py</code>)은 그 FAB 의
+      <b>기여도 추정</b>(<code class="mono">contrib.py</code> — 지금은 ML 비교의 룰 근거로만 씀)은 그 FAB 의
       조용한 구간을 기준선으로 잡고 거기서 몇 배 벗어났는지를 잽니다.
       한 FAB 안에서 '무엇이 이 점수를 올렸나' 를 볼 때는 맞는 방법입니다.
       그런데 FAB 끼리 비교할 때 쓰면 정반대로 갑니다.
@@ -833,8 +833,8 @@ def build(cfg=None) -> str:
     {verify_block(cfg)}
     <div class="note">
       <h4>이 숫자들은 추정이 아니라 재현입니다</h4>
-      <p>기여도 추정(<code class="mono">contrib.py</code>)은 점수식을 모른 채 낸 값이라
-        화면에도 '추정'이라고 씁니다. 여기는 다릅니다 — 예측기가 룰별 배점을
+      <p>기여도 추정(<code class="mono">contrib.py</code>)은 점수식을 모른 채 낸
+        '추정'입니다. 여기는 다릅니다 — 예측기가 룰별 배점을
         <span class="mono">{{FAB}}_pts_*</span> 컬럼으로 그대로 떨궈 주기 때문에,
         더하기만 하면 영역점수가 나옵니다. 저장값과 어긋나면
         <code class="mono">fab_score.area_score()</code> 가

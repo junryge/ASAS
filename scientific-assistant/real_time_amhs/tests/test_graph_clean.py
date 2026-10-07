@@ -91,6 +91,7 @@ class 값이_없는_지표는_칸을_안_만든다(unittest.TestCase):
         for r in rows:
             r["reason"] = ("발동: M16HUB[R-A'(x),R-C'(역증가5개),R-D(FAB저장=9%)]; "
                            "M14[R-A_sus]; M16A[R-A_sus]")
+            r["hot_area"] = ""     # 표 칸이 세 블록을 다 보게 (그래프 = 그 줄 실제지표 칸)
             r["M16HUB_rd_fab"], r["M14_ra"], r["M16A_ra"] = "9", "3.1", "3.0"
         four = self._svg(rows)
         self.assertGreater(_panels(four), 3, "네 칸 이상이어야 두 줄이 된다")

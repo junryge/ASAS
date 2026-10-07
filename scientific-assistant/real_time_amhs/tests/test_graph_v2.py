@@ -30,8 +30,12 @@ def _rows(n=40, **cols):
     base = dt.datetime(2026, 9, 12, 15, 0)
     out = []
     for i in range(n):
+        # ★hot_area 를 비워 둔다 — 그래프는 그 줄 실시간 표 '실제지표' 칸 그대로인데
+        #   (2026-10-07), 표 칸은 hot_area 블록만 본다. 비어 있으면(서버는 'UNKNOWN')
+        #   reason 전체를 봐서 M16HUB · M14 두 블록이 다 오른다 — 여기 시험은 여러
+        #   칸의 색 · 정렬 규칙을 보는 것이라 칸이 여럿이어야 한다.
         r = {"datetime": (base + dt.timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M"),
-             "unified_risk_score": "40", "hot_area": "M16HUB",
+             "unified_risk_score": "40", "hot_area": "",
              "reason": "발동: M16HUB[R-A'(AVGTOTALTIME1MIN=22.5분/기준9.0),"
                        "R-D(FAB저장=14.2%)]; M14[R-A_sus]"}
         for k, v in cols.items():

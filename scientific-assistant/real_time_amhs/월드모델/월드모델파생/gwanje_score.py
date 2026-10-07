@@ -105,8 +105,9 @@ def feed(fab: str, prefix: str, limit: int) -> dict:
 
 
 def passthrough(fab: str, prefix: str, which: str, q: dict):
-    """관제가 그린 것을 그대로 — which: graph(구간 그래프 SVG) · contrib(기여도 HTML) · report(RET 내려받기).
-    → (상태, Content-Type, 본문, 덧붙일 헤더)."""
+    """관제가 그린 것을 그대로 — which: graph(구간 그래프 SVG) · report(RET 내려받기).
+    → (상태, Content-Type, 본문, 덧붙일 헤더).
+    ★기여도(contrib)는 뺐다 (2026-10-07 고객: "기여도 추정 삭제해라 필요없어")."""
     sysname = sys_for(fab, prefix)
     if not sysname:
         return 404, "application/json", json.dumps(
@@ -115,10 +116,12 @@ def passthrough(fab: str, prefix: str, which: str, q: dict):
     if which == "graph":
         src, params, ttl = "/api/graph", {"at": one("at"), "minutes": one("minutes") or "60",
                                           "theme": one("theme") or "dark"}, 30
-    elif which == "contrib":
-        src, params, ttl = "/api/contrib", {"at": one("at")}, 30
-    else:
+    elif which == "report":
         src, params, ttl = "/api/oht_map/report", {"day": one("day"), "name": one("name")}, 0
+    else:
+        # 모르는 것은 관제에 묻지 않는다 — 예전엔 나머지가 전부 '레포트' 로 흘러갔다
+        return 404, "application/json", json.dumps(
+            {"error": f"모르는 요청입니다: {which}"}, ensure_ascii=False).encode("utf-8"), {}
     params["sys"] = sysname
     try:
         st, ct, body, cd = get(src, params, ttl=ttl, timeout=20)

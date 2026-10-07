@@ -5728,19 +5728,14 @@ async function drawGraph(){
   const m = $('#gmin').value;
   $('#gbody').innerHTML = '<div class="empty">그리는 중…</div>';
   try{
-    // 그래프 + 기여도 추정을 같이 띄운다 — '왜 이 점수인가' 가 그래프 옆에 있어야
-    // 관제가 다음 행동을 정할 수 있다. 기여도는 실패해도 그래프는 나오게 따로 처리.
-    const [svg, con] = await Promise.all([
-      /* ★배경을 같이 넘긴다. 안 넘기면 흰 화면 한가운데 검은 그래프가
-         박혀서 거기만 눈이 아프다. */
-      fetch(withSys(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}${
-            graphFabs()}&theme=${document.documentElement.getAttribute('data-theme')||'dark'}`
-            )).then(r=>r.text()),
-      fetch(withSys(`/api/contrib?at=${encodeURIComponent(GAT)}`)).then(r=>r.text()).catch(()=>''),
-    ]);
-    $('#gbody').innerHTML = svg
-      + `<div id="gpin"></div>`
-      + (con ? `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">${con}</div>` : '');
+    // ★기여도 추정은 뺐다 (2026-10-07 고객: "기여도 추정 삭제해라 필요없어").
+    //   그래프만 — 스코어 + 그 줄 '실제지표' 칸의 컬럼 그래프.
+    /* ★배경을 같이 넘긴다. 안 넘기면 흰 화면 한가운데 검은 그래프가
+       박혀서 거기만 눈이 아프다. */
+    const svg = await fetch(withSys(`/api/graph?at=${encodeURIComponent(GAT)}&minutes=${m}${
+          graphFabs()}&theme=${document.documentElement.getAttribute('data-theme')||'dark'}`
+          )).then(r=>r.text());
+    $('#gbody').innerHTML = svg + `<div id="gpin"></div>`;
     bindGraphPin();
   }catch(e){ $('#gbody').innerHTML = '<div class="empty">그래프를 불러오지 못했습니다</div>'; }
 }

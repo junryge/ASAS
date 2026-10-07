@@ -455,7 +455,9 @@ class 컬럼이_0만_올_때(unittest.TestCase):
                 "datetime": (base + dt.timedelta(minutes=i)).strftime("%Y-%m-%d %H:%M:%S"),
                 "unified_risk_score": 34 + (24 if i == 27 else 0),
                 "hot_area": "M16HUB",
-                "reason": f"발동: M16HUB[R-A_sus]; PIO({inner},합{a + b})",
+                # ★합은 평소(15)를 넘게 둔다 — 그래야 실시간 표 '실제지표' 칸에 PIO 가
+                #   오르고, 더블클릭 그래프는 그 칸에 있는 것만 그린다 (2026-10-07).
+                "reason": f"발동: M16HUB[R-A_sus]; PIO({inner},합{a + b + 15})",
                 "M14A<-M14B_PIOERROR_DEPOSITED": per_min,
                 "pio_10min_cnt": a + b})
         return base, rows
@@ -744,26 +746,22 @@ class 더블클릭_그래프(unittest.TestCase):
         self.assertIn("M16HUB&lt;-M14A ×2", leg)
         self.assertIn("M14A&lt;-M14B ×1", leg)
 
-    def test_FAB_화면에_PIO_점수_칸이_선다(self):
+    def test_PIO_는_대표_한_칸만(self):
+        """고객(2026-10-07): "pio 대표 1개만 표시해라 전부다" — 경로 전부를 **한 칸**에
+        쌓고, 점수 · 가중합 · 10분 합 칸은 따로 안 세운다."""
+        for rows in (_rows("M14"), _rows()):
+            lb = self._labels(_G.render(rows, self.C, minutes=60))
+            pio = [x for x in lb if "PIO" in x]
+            self.assertEqual(len(pio), 1, lb)
+            self.assertIn("주 경로", pio[0])
         lb = self._labels(_G.render(_rows("M14"), self.C, minutes=60))
-        self.assertIn("PIO 반송실패 점수 (M14)", lb)
-        self.assertIn("PIO 10분 가중합 (직접×2 + 간접×1)", lb)
-
-    def test_FAB_화면은_ALL_십분합을_안_쓴다(self):
-        """pio_10min_cnt 는 12경로 합이라 그 FAB 것이 아니다."""
-        lb = self._labels(_G.render(_rows("M14"), self.C, minutes=60))
-        self.assertNotIn("PIO 반송실패 10분 합", lb)
-        self.assertIn("PIO 반송실패 10분 합",
-                      self._labels(_G.render(_rows(), self.C, minutes=60)))
+        for gone in ("PIO 반송실패 점수 (M14)", "PIO 10분 가중합 (직접×2 + 간접×1)",
+                     "PIO 반송실패 10분 합"):
+            self.assertNotIn(gone, lb)
 
     def test_PIO_점수는_임계선을_안_긋는다(self):
         """구간표가 잠정이다 — 우리가 선을 그으면 예측기와 갈라진다."""
         self.assertNotIn("area_pio_score", _G.thresholds())
-
-    def test_PIO_점수_칸이_맨_아래로_안_밀린다(self):
-        """배수가 없다고 정렬에서 뒤로 보내면 10점(상위 1%)이 화면 밑에 처박힌다."""
-        lb = self._labels(_G.render(_rows("M14"), self.C, minutes=60))
-        self.assertLess(lb.index("PIO 반송실패 점수 (M14)"), len(lb) - 1)
 
     def test_PIO_가_없는_날은_칸을_안_세운다(self):
         rs = [{k: v for k, v in r.items()

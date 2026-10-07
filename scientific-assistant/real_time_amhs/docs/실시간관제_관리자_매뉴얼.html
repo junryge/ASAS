@@ -675,7 +675,7 @@ python3 -m unittest tests.test_iso3d tests.test_layout_parse tests.test_lp_query
 <tr><td><code>GET /api/status</code> · <code>/api/kpi</code></td><td>윗줄 램프 · 컷 · LLM 카드</td></tr>
 <tr><td><code>GET /api/feed</code></td><td>실시간 표(1500행) · 과거 표(<code>?day=&amp;limit=5000</code>)</td></tr>
 <tr><td><code>GET/POST /api/window</code></td><td>수집 주기</td></tr>
-<tr><td><code>GET /api/graph</code> · <code>/api/contrib</code></td><td>구간 그래프 SVG · 기여도</td></tr>
+<tr><td><code>GET /api/graph</code></td><td>구간 그래프 SVG — 스코어 + 그 줄 실제지표 (<code>/api/contrib</code> 는 빈 응답 · 기여도는 2026-10-07 화면에서 뺌)</td></tr>
 <tr><td><code>GET /api/world</code></td><td>그 1분 OHT 재생 주소 5개 + 월드모델 생사</td></tr>
 <tr><td><code>GET /api/fab/compare</code> · <code>/api/fab/trend?minutes=60</code></td><td>UI대쉬보드 패널 · 오른쪽 상황판</td></tr>
 <tr><td><code>GET /api/data/days</code> · <code>/api/data/{day}.csv</code></td><td>과거 날짜 목록 · 내려받기(TOTAL · _LLM · _ML)</td></tr>

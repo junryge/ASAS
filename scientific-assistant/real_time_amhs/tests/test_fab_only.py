@@ -290,7 +290,8 @@ class 더블클릭_그래프는_그_FAB_것만(unittest.TestCase):
         svg = G.render(rows, base + _dt.timedelta(minutes=30), minutes=30)
         self.assertNotIn("M16HUB 반송시간", svg)
         self.assertNotIn("M14 반송시간", svg)
-        self.assertIn("M16B OHT가동률", svg)
+        # 그 줄 실제지표 칸(fab_metrics)의 M16B R-D 원본 컬럼 — 칸 윗줄이 그 이름이다
+        self.assertIn("M16B.QUE.OHT.OHTUTIL", svg)
 
 
 class 실제지표_그래프는_늘_선다(unittest.TestCase):
@@ -360,7 +361,8 @@ class 실제지표_그래프는_늘_선다(unittest.TestCase):
         self.assertFalse([x for x in lb if "OHT 가동률" in x or "소터 대기" in x], lb)
 
     def test_임계는_상세도_값으로_적힌다(self):
-        svg = G.render(self._rows("M16B", "발동: M16B[R-D]"), self.C, 60)
+        # 그래프는 그 줄 실제지표 칸 그대로라 R-A · R-D 둘 다 걸린 줄로 본다
+        svg = G.render(self._rows("M16B", "발동: M16B[R-A_sus,R-D]"), self.C, 60)
         self.assertIn("3.12", svg)      # M16B R-A
         self.assertIn("82.19", svg)     # M16B R-D
 

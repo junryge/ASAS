@@ -530,7 +530,6 @@
     + '<div id="lg-line" class="lg-line"></div>'
     + '<div id="lg-body"><div class="empty">그리는 중…</div></div>'
     + '<div id="lg-pin"></div>'
-    + '<div id="lg-contrib" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)"></div>'
     + '</div>';
   document.body.appendChild(modal);
   var GAT = null;
@@ -571,17 +570,13 @@
     var bt = document.body.dataset.theme;
     var theme = bt === 'hmi' ? 'light' : (bt === 'navy' || bt === 'contrast') ? bt : 'dark';
     $id('lg-body').innerHTML = '<div class="empty">그리는 중…</div>';
-    $id('lg-contrib').innerHTML = '';
-    Promise.all([
-      fetch('/api/score/graph?at=' + encodeURIComponent(at) + '&minutes=' + m + '&theme=' + theme,
-        { cache: 'no-store', credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); }),
-      fetch('/api/score/contrib?at=' + encodeURIComponent(at), { cache: 'no-store', credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; })
-    ]).then(function (res) {
+    // ★기여도 추정은 뺐다 (2026-10-07 고객: "기여도 추정 삭제해라 필요없어") — 그래프만
+    fetch('/api/score/graph?at=' + encodeURIComponent(at) + '&minutes=' + m + '&theme=' + theme,
+      { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+      .then(function (svg) {
       if (GAT !== at) return;
-      $id('lg-body').innerHTML = res[0].indexOf('<svg') >= 0 ? res[0] : '<div class="empty">그 구간에 관제 자료가 없습니다</div>';
-      $id('lg-contrib').innerHTML = res[1] || '';
-      $id('lg-contrib').style.display = res[1] ? '' : 'none';
+      $id('lg-body').innerHTML = svg.indexOf('<svg') >= 0 ? svg : '<div class="empty">그 구간에 관제 자료가 없습니다</div>';
       bindPin();
     }).catch(function (e) {
       $id('lg-body').innerHTML = '<div class="empty">그래프를 못 받았습니다 — 관제가 켜져 있는지 보세요 (' + esc(e) + ')</div>';

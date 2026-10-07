@@ -527,7 +527,7 @@ class 관제_스코어(unittest.TestCase):
             self.assertTrue(GS.feed("M16B", "B", 17)["ok"])
         self.assertEqual(self._last()["n"], n0, "같은 것을 또 물었다")
 
-    def test_그래프_기여도_레포트(self):
+    def test_그래프_레포트(self):
         at = "2026-10-06T10:24:00"
         st, ct, body, extra = GS.passthrough("M14B", "A", "graph", {"at": at, "minutes": "120", "theme": "light"})
         self.assertEqual(st, 200)
@@ -535,8 +535,11 @@ class 관제_스코어(unittest.TestCase):
         svg = body.decode("utf-8")
         for need in ('data-sys="M14B"', 'data-theme="light"', 'data-min="120"', f'data-at="{at}"'):
             self.assertIn(need, svg, "그 FAB 의 관제 시스템 · 고른 폭 · 누르면 그 분을 고정할 자리(ghit)")
-        st, ct, body, extra = GS.passthrough("M14B", "A", "contrib", {"at": at})
-        self.assertIn("기여도", body.decode("utf-8"))
+        # ★기여도는 뺐다 (2026-10-07 고객: "기여도 추정 삭제해라 필요없어") — 중계도 안 한다.
+        #   모르는 요청이 '레포트' 로 흘러가지 않는다.
+        n0 = self._last()["n"]
+        self.assertEqual(GS.passthrough("M14B", "A", "contrib", {"at": at})[0], 404)
+        self.assertEqual(self._last()["n"], n0, "모르는 요청을 관제에 물었다")
         name = "PROBLEM_MAP_M14B_20261006_1024_WARNING.html"
         st, ct, body, extra = GS.passthrough("M14B", "A", "report", {"day": "20261006", "name": name})
         self.assertEqual(st, 200)
@@ -555,7 +558,7 @@ class 관제_스코어(unittest.TestCase):
             self.assertFalse(d["ok"])
             self.assertIn("관제", d["error"])
             self.assertIn("켜져 있는지", d["error"])
-            self.assertEqual(GS.passthrough("M16A", "BR", "contrib", {"at": "x"})[0], 502)
+            self.assertEqual(GS.passthrough("M16A", "BR", "graph", {"at": "x"})[0], 502)
         finally:
             os.environ["GWANJE_URL"] = f"http://127.0.0.1:{self.gport}"
 
@@ -662,9 +665,13 @@ class 서버_연결(unittest.TestCase):
 
     def test_길이_있다(self):
         for r in ('@app.get("/api/live/snapshot")', '@app.get("/api/live/status")', '@app.post("/api/live/cmd")',
-                  '@app.get("/api/score/feed")', '@app.get("/api/score/graph")', '@app.get("/api/score/contrib")',
+                  '@app.get("/api/score/feed")', '@app.get("/api/score/graph")',
                   '@app.get("/api/score/report")'):
             self.assertIn(r, self.m)
+        # 기여도 중계는 뺐다 (2026-10-07) — 화면도 더는 안 부른다
+        self.assertNotIn('"/api/score/contrib"', self.m)
+        self.assertNotIn("/api/score/contrib", _read("static", "js", "live_mode.js"))
+        self.assertNotIn("lg-contrib", _read("static", "js", "live_mode.js"))
 
     def test_오래_걸리는_것은_다른_실에서(self):
         """지도 읽기 · 로그프레소 · 관제 묻기를 그냥 부르면 그동안 서버 전체(남의 웹소켓까지)가 멎는다."""

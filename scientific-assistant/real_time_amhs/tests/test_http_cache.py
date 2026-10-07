@@ -256,14 +256,14 @@ class 서버에_제대로_붙었나(unittest.TestCase):
         i = self.s.index('"caches":')
         line = self.s[i:i + 300]
         for c in ("FEED_CACHE", "CMP_CACHE", "CASES_CACHE",
-                  "GRAPH_CACHE", "CONTRIB_CACHE", "_HTML_CACHE"):
+                  "GRAPH_CACHE", "_HTML_CACHE"):
             self.assertIn(c, line, c)
 
     def test_더블클릭_두_요청도_캐시를_탄다(self):
         """고객: "더블클릭할때 느려져". 구간 그래프(18.8ms·91KB)와
         기여도(17.7ms)를 같은 자리에서 다시 열 때마다 새로 만들었다."""
-        for fn, cache in (("def api_graph():", "GRAPH_CACHE"),
-                          ("def api_contrib():", "CONTRIB_CACHE")):
+        # ★기여도(api_contrib)는 2026-10-07 화면에서 뺐다 — 빈 글만 돌려준다
+        for fn, cache in (("def api_graph():", "GRAPH_CACHE"),):
             body = self._fn(fn)
             self.assertIn("_cached_json(", body, fn)
             self.assertIn(cache, body, fn)

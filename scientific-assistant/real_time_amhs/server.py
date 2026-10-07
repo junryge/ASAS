@@ -112,7 +112,7 @@ def api_slow():
     """최근 느린 요청 목록 — 현장에서 원인을 좁힐 때."""
     return jsonify({"threshold_ms": SLOW_MS, "items": list(reversed(SLOW_LOG)),
                     "caches": [c.stats() for c in (FEED_CACHE, CMP_CACHE, CASES_CACHE,
-                                                   GRAPH_CACHE, CONTRIB_CACHE, _HTML_CACHE)]})
+                                                   GRAPH_CACHE, _HTML_CACHE)]})
 
 
 # ─────────────────────── 무거운 응답 캐시 ───────────────────────
@@ -2128,9 +2128,8 @@ FEED_CACHE = http_cache.JsonCache("feed")
 CASES_CACHE = http_cache.JsonCache("cases")
 # 화면 HTML 한 장 — 파일이 그대로면 다시 읽지도, gzip 하지도 않는다
 _HTML_CACHE = http_cache.JsonCache("dashboard_html")
-# 행 더블클릭 → 구간 그래프(SVG) · 기여도(HTML). 같은 자리를 다시 열면 그대로다
+# 행 더블클릭 → 구간 그래프(SVG). 같은 자리를 다시 열면 그대로다
 GRAPH_CACHE = http_cache.JsonCache("graph")
-CONTRIB_CACHE = http_cache.JsonCache("contrib")   # 지문이 같으면 만든 글자를 그대로
 
 
 # 이름표 → 그 이름표를 띄운 카운트의 키 (화면 almChip 과 같은 규칙)
@@ -2523,29 +2522,14 @@ def api_graph():
 
 @app.route("/api/contrib")
 def api_contrib():
-    """스코어 기여도 추정 — 그 1분의 점수를 어느 지표가 밀어올렸나.
+    """스코어 기여도 추정 — **화면에서 뺐다** (2026-10-07 고객: "기여도 추정 삭제해라 필요없어").
 
-    /api/contrib?at=2026-07-28T08:11:00  → 구간 그래프 모달에 붙일 HTML 조각.
-    점수식을 푼 값이 아니라 '평소 대비 편차' 기반 **추정**이다(화면에도 명시).
+    ★길은 남기고 빈 글을 돌려준다. 관제 화면은 새로고침 없이 며칠씩 떠 있어서, 업데이트
+      전에 연 화면이 더블클릭 때 아직 이 주소를 부른다 — 길을 없애면 그 화면 그래프 밑에
+      'Not Found' 페이지가 통째로 박힌다. 빈 글이면 그 화면에서도 바로 사라진다.
+    ★계산 자체(contrib.explain)는 ML 비교(ml_why)가 계속 쓴다.
     """
-    C = rctx()
-    from contrib import explain_html
-    from store_csv import read_day
-    at = parse_dt(request.args.get("at")) or datetime.now()
-    day = at.strftime("%Y%m%d")
-    rows = read_day(day, C["cfg"]) or C["state"].get("last_rows") or []
-
-    def _build():
-        try:
-            return explain_html(rows, at, C["cfg"]).encode("utf-8")
-        except Exception as e:                          # noqa: BLE001
-            return (f'<div class="empty">기여도 분해 실패 — '
-                    f'{type(e).__name__}: {e}</div>').encode("utf-8")
-
-    # 그래프와 같은 이유로 캐시한다 (17.7ms — 같은 행을 다시 열면 그대로다)
-    return _cached_json(CONTRIB_CACHE, f'{C["sys"]}|{at.isoformat()}',
-                        _days_sig({day}, C["cfg"]), _build,
-                        ctype="text/html; charset=utf-8")
+    return Response(b"", mimetype="text/html")
 
 
 @app.route("/api/accuracy")
