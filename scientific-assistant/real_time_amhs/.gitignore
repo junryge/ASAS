@@ -4,3 +4,5 @@ __pycache__/
 api_key.txt
 token.txt
 jupyter_password.txt
+# 월드모델파생이 묻는 관제 주소 — 서버마다 다르다 (스코어 탭 '관제 주소' 에서 저장, 이 PC 에만)
+관제_주소.json

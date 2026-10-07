@@ -9,8 +9,10 @@ gwanje_score.py — 실시간 모드 오른쪽 '스코어' 탭: 관제(real_time
 ★점수를 여기서 다시 계산하지 않는다 — 다시 계산하면 관제 표와 숫자가 어긋난다. 관제가 매긴 점수 ·
   등급(정책 컷) · 알람 카운터 · 발동 룰 · 실제지표 · HID_JAM · RET 를 그대로 넘긴다.
 ★지도 → 관제 시스템 (관제 world_link.MAP 의 반대 방향). FAB 화면이라 그 FAB 것만 묻는다.
-★관제 주소 — 환경변수 GWANJE_URL, 없으면 이 PC 의 관제 (real_time_amhs/config.json 의 server.port,
-  기본 8989). 관제가 꺼져 있어도 OHT 실시간은 그대로 돈다 — 탭에 "관제에 닿지 않습니다" 만 뜬다.
+★관제 주소 — 환경변수 GWANJE_URL > 화면 스코어 탭에서 저장한 주소(관제_주소.json, 이 PC 에만) >
+  이 PC 의 관제 (real_time_amhs/config.json 의 server.port, 기본 8989). 관제가 다른 서버에 있으면
+  탭의 '관제 주소' 에서 그 서버 주소로 바꾼다. 관제가 꺼져 있어도 OHT 실시간은 그대로 돈다 —
+  탭에 "관제에 닿지 않습니다" 만 뜬다.
 ★관제가 그 FAB 을 '보는 중' 으로 세는 것은 관제 화면을 연 것과 같다 (관제 rctx).
 """
 
@@ -42,11 +44,17 @@ def sys_for(fab: str, prefix: str) -> str:
     return GW_SYS.get((fab, prefix), "")
 
 
-def base() -> str:
-    """관제 주소 — 환경변수 GWANJE_URL, 없으면 이 PC 의 관제(real_time_amhs/config.json 의 포트)."""
-    env = os.environ.get("GWANJE_URL", "").strip()
-    if env:
-        return env.rstrip("/")
+# ★관제 주소는 이 PC 에만 둔다 — 화면 스코어 탭 '관제 주소' 에서 바꾸면 여기 적힌다.
+#   고객(2026-10-07): "실시간관제 외부에서 접속하게 해야지 127.0.0.1 하면 안 되지" ·
+#   "실시간에서 다른 서버에서 접속하는데 경계가 있어야 하는데 없네". 관제가 다른 서버에
+#   떠 있으면 127.0.0.1 로는 그 관제에 닿지 않는다 (이 PC 의 다른 관제 · 빈 관제를 본다).
+#   저장소에는 안 올린다 (.gitignore) — 서버마다 다르다.
+ADDR_FILE = os.path.join(_ROOT, "관제_주소.json")
+_ADDR_RE = __import__("re").compile(r"^https?://[A-Za-z0-9._\-]+(:\d{1,5})?$")
+
+
+def _default_base() -> str:
+    """이 PC 의 관제 (real_time_amhs/config.json 의 server.port, 기본 8989)."""
     port = 8989
     try:
         with open(os.path.join(_ROOT, "..", "..", "config.json"), encoding="utf-8-sig") as f:
@@ -54,6 +62,73 @@ def base() -> str:
     except (OSError, ValueError, TypeError, AttributeError):
         pass
     return f"http://127.0.0.1:{port}"
+
+
+def _saved_base() -> str:
+    try:
+        with open(ADDR_FILE, encoding="utf-8-sig") as f:
+            u = str((json.load(f) or {}).get("url") or "").strip().rstrip("/")
+        return u if _ADDR_RE.match(u) else ""
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+
+
+def addr() -> dict:
+    """지금 묻는 관제 주소와 그 출처 — env(환경변수) · file(화면에서 저장) · default(이 PC)."""
+    env = os.environ.get("GWANJE_URL", "").strip()
+    if env:
+        return {"url": env.rstrip("/"), "src": "env"}
+    saved = _saved_base()
+    if saved:
+        return {"url": saved, "src": "file"}
+    return {"url": _default_base(), "src": "default"}
+
+
+def base() -> str:
+    """관제 주소 — 환경변수 GWANJE_URL > 화면에서 저장한 주소(관제_주소.json) > 이 PC 의 관제."""
+    return addr()["url"]
+
+
+def norm_addr(url: str) -> str:
+    """'10.1.2.3:8989' · 'http://10.1.2.3:8989/' → 'http://10.1.2.3:8989'. 틀리면 ValueError."""
+    u = str(url or "").strip().rstrip("/")
+    if u and "://" not in u:
+        u = "http://" + u
+    if u and not _ADDR_RE.match(u):
+        raise ValueError("관제 주소는 http://주소:포트 모양이어야 합니다 (예: http://10.1.2.3:8989)")
+    return u
+
+
+def set_addr(url: str) -> dict:
+    """화면에서 관제 주소를 바꾼다. 빈 값이면 지우고 이 PC 의 관제로 돌아간다."""
+    u = norm_addr(url)
+    if u:
+        tmp = ADDR_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"url": u}, f, ensure_ascii=False)
+        os.replace(tmp, ADDR_FILE)
+    else:
+        try:
+            os.remove(ADDR_FILE)
+        except OSError:
+            pass
+    with _CL:
+        _CACHE.clear()                     # 옛 주소로 받아 둔 답을 쓰지 않는다
+    return addr()
+
+
+def check() -> dict:
+    """그 주소의 관제가 답하나 — 화면이 주소를 바꾼 뒤 바로 알려 준다."""
+    a = addr()
+    try:
+        # ★/api/ping 은 관제가 로그프레소를 찔러 보는 길이라 느리고, 로그프레소가 죽으면 관제가
+        #   멀쩡해도 실패한다. 관제 자체가 답하는지는 /api/status 로 본다.
+        st, _ct, body, _cd = get("/api/status", {"sys": "ALL"}, timeout=4)
+    except OSError as e:
+        return dict(a, ok=False, error=f"관제({a['url']})에 닿지 않습니다 — {e}")
+    if st != 200:
+        return dict(a, ok=False, error=f"관제({a['url']})가 HTTP {st} 로 답했습니다")
+    return dict(a, ok=True)
 
 
 def get(path: str, params: dict, ttl: float = 0.0, timeout: float = 8.0):
@@ -89,8 +164,9 @@ def feed(fab: str, prefix: str, limit: int) -> dict:
     try:
         st, _ct, body, _cd = get("/api/feed", {"sys": sysname, "limit": limit}, ttl=5)
     except OSError as e:
-        return {"ok": False, "sys": sysname, "gwanje": where,
-                "error": f"관제({where})에 닿지 않습니다 — 관제 서버가 켜져 있는지 보세요 ({e})"}
+        return {"ok": False, "sys": sysname, "gwanje": where, "gwanje_src": addr()["src"],
+                "error": f"관제({where})에 닿지 않습니다 — 관제 서버가 켜져 있는지, "
+                         f"관제 주소가 맞는지 보세요 ({e})"}
     if st != 200:
         return {"ok": False, "sys": sysname, "gwanje": where,
                 "error": f"관제가 HTTP {st} 로 답했습니다 — 관제를 새 판으로 바꿨는지 보세요"}
@@ -99,9 +175,20 @@ def feed(fab: str, prefix: str, limit: int) -> dict:
     except ValueError:
         return {"ok": False, "sys": sysname, "gwanje": where, "error": "관제 답을 못 읽었습니다"}
     rows = [{k: r[k] for k in _ROW_KEYS if k in r} for r in (d.get("rows") or [])[:limit]]
-    return {"ok": True, "sys": sysname, "gwanje": where, "rows": rows,
+    cuts = dict(d.get("fab_cuts") or {})
+    if not (cuts.get(sysname) or {}).get("warn"):
+        # ★FAB 점수표 계산이 실패하면 관제가 fab_cuts 를 비워 보낸다 — 그러면 탭의 경계선 ·
+        #   '경계 60 · 위험 …' 글자가 통째로 사라졌다. 그 시스템 등급 컷(/api/status)으로 채운다.
+        try:
+            st2, _c2, b2, _d2 = get("/api/status", {"sys": sysname}, ttl=60, timeout=4)
+            c2 = (json.loads(b2.decode("utf-8")) or {}).get("cuts") if st2 == 200 else None
+            if c2 and c2.get("warn") is not None:
+                cuts[sysname] = c2
+        except (OSError, ValueError):
+            pass
+    return {"ok": True, "sys": sysname, "gwanje": where, "gwanje_src": addr()["src"], "rows": rows,
             "day": d.get("day"), "fallback": d.get("fallback"), "latest": d.get("latest"),
-            "alarm_now": d.get("alarm_now"), "fab_cuts": d.get("fab_cuts") or {}}
+            "alarm_now": d.get("alarm_now"), "fab_cuts": cuts}
 
 
 def passthrough(fab: str, prefix: str, which: str, q: dict):

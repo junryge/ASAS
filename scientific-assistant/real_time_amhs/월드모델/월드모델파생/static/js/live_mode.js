@@ -346,6 +346,35 @@
     };
   });
 
+  // ── 관제 주소 — 관제가 다른 서버에 있으면 여기서 그 주소로 바꾼다 (이 PC 에만 저장) ──
+  // ★고객(2026-10-07): "실시간관제 외부에서 접속하게 해야지 127.0.0.1 하면 안 되지" · "실시간에서
+  //   다른 서버에서 접속하는데 경계가 있어야 하는데 없네". 127.0.0.1 은 '월드모델파생이 도는 이 PC'
+  //   라서, 관제가 다른 서버에 있으면 그 관제의 경계 · 위험 줄을 못 받는다.
+  function gwLink(S) {
+    var src = S && S.gwanje_src;
+    return '<a href="#" class="sc-gw" style="color:var(--fg2)" title="관제가 떠 있는 서버 주소 — 누르면 바꿉니다">'
+      + '관제 주소 ' + esc((S && S.gwanje) || '?')
+      + (src === 'default' ? ' (이 PC)' : src === 'env' ? ' (환경변수)' : '') + ' · 바꾸기</a>';
+  }
+  function bindGw() {
+    document.querySelectorAll('#sc-sum .sc-gw').forEach(function (a) { a.onclick = gwEdit; });
+  }
+  function gwEdit(e) {
+    if (e) e.preventDefault();
+    var cur = (SCORE && SCORE.gwanje) || '';
+    var v = window.prompt('관제 주소 — 관제가 떠 있는 서버 (예: http://10.1.2.3:8989)\n'
+      + '브라우저로 관제를 열 때 쓰는 주소입니다. 비우면 이 PC 의 관제로 돌아갑니다.', cur);
+    if (v === null) return;
+    fetch('/api/score/gwanje', { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: v }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) window.alert(d.error || '관제에 닿지 않습니다');
+        return scoreLoad();
+      })
+      .catch(function (err) { window.alert('저장하지 못했습니다 — ' + ((err && err.message) || err)); });
+  }
+
   function scoreLoad() {
     if (APP !== 'live') return Promise.resolve();
     return fetch('/api/score/feed?limit=90', { cache: 'no-store', credentials: 'same-origin' })
@@ -400,7 +429,9 @@
     var sum = $id('sc-sum');
     if (!S) { sum.textContent = '관제 스코어를 불러오는 중…'; paintCounts(null); return; }
     if (!S.ok) {
-      sum.innerHTML = '<b style="color:#dc2626">' + esc(S.error || '관제 스코어를 못 받았습니다') + '</b>';
+      sum.innerHTML = '<b style="color:#dc2626">' + esc(S.error || '관제 스코어를 못 받았습니다') + '</b>'
+        + '<div style="margin-top:4px">' + gwLink(S) + '</div>';
+      bindGw();
       ['sc-now', 'sc-spark', 'sc-cur', 'sc-list'].forEach(function (id) { $id(id).innerHTML = ''; });
       paintCounts(null);
       return;
@@ -412,7 +443,9 @@
     sum.innerHTML = '관제 <b>' + esc(S.sys) + '</b> 스코어 <b>' + esc(r ? r.time || '' : '') + '</b> · 1분마다'
       + (S.fallback ? ' · <b style="color:#f59e0b">오늘 수집이 없어 ' + esc(S.day) + ' 자료</b>' : '')
       + (ago != null && ago > 5 && !S.fallback ? ' · <b style="color:#f59e0b">마지막 ' + esc((r.datetime || '').slice(11, 16)) + ' (' + ago + '분 전)</b>' : '')
-      + (rows.length ? '<div id="sc-count" style="margin-top:4px">' + countLine(c) + '</div>' : '');
+      + (rows.length ? '<div id="sc-count" style="margin-top:4px">' + countLine(c) + '</div>' : '')
+      + '<div style="margin-top:2px">' + gwLink(S) + '</div>';
+    bindGw();
     if (!r) {
       $id('sc-now').innerHTML = '<div class="ritem" style="cursor:default">관제 표에 아직 줄이 없습니다</div>';
       ['sc-spark', 'sc-cur', 'sc-list'].forEach(function (id) { $id(id).innerHTML = ''; });

@@ -850,6 +850,31 @@ async def _score_pass(request: Request, which: str):
     return Response(content=body, status_code=st, media_type=ct, headers=extra)
 
 
+@app.get("/api/score/gwanje")
+async def score_gwanje_get(request: Request):
+    """지금 묻는 관제 주소 · 출처(env · file · default) · 답하는지."""
+    return await run_in_threadpool(GS.check)
+
+
+@app.post("/api/score/gwanje")
+async def score_gwanje_set(request: Request):
+    """관제 주소를 바꾼다 — 관제가 다른 서버에 있을 때 (이 PC 의 관제_주소.json 에만 적힌다).
+    {"url": "http://10.1.2.3:8989"} · 빈 값이면 이 PC 의 관제로 돌아간다.
+    ★고객(2026-10-07): "실시간관제 외부에서 접속하게 해야지 127.0.0.1 하면 안 되지"."""
+    try:
+        body = await request.json()
+    except Exception:                                   # noqa: BLE001
+        body = {}
+    if os.environ.get("GWANJE_URL", "").strip():
+        return JSONResponse({"ok": False, "error": "환경변수 GWANJE_URL 이 정해져 있어 그 주소를 씁니다 "
+                                                   "— 바꾸려면 환경변수를 지우고 다시 띄우세요"}, status_code=409)
+    try:
+        await run_in_threadpool(GS.set_addr, str((body or {}).get("url") or ""))
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    return await run_in_threadpool(GS.check)
+
+
 @app.get("/api/score/graph")
 async def score_graph(request: Request):
     """구간 그래프 (관제와 같은 SVG — 누르면 그 분을 고정할 자리(.ghit)까지 그대로)."""
@@ -1018,7 +1043,7 @@ if __name__ == "__main__":
     print("  모드: 화면 위 [리플레이 | 실시간] — 같은 주소 · 같은 포트")
     print(f"  실시간: {LE.POLL_SEC:g}초마다 · 한 번에 {LE.STEP_Q_SEC}초씩 · 화면은 {LE.BUFFER_SEC:g}초 늦춰 부드럽게"
           f" · 로그프레소 키 {LE.key_tail()}")
-    print(f"  관제 스코어: {GS.base()}  (GWANJE_URL 로 바꾼다)")
+    print(f"  관제 스코어: {GS.base()}  (관제가 다른 서버면 화면 스코어 탭 '관제 주소' 에서 바꾼다)")
     print("=" * 60)
 
     # ★일꾼(worker)을 늘리지 마라. 세션은 이 프로세스 메모리에 있다 —
