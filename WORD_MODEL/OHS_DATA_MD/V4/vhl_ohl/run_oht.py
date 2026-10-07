@@ -8,7 +8,7 @@ run_oht.py — HID_VHL_OHT.py + Rule_hid.py (+ OHT_MAP_INDEX.py) 같이 돌리�
 
   50초마다  HID_VHL_OHT 가 로그프레소에서 차량 보고를 받아 판정
   1분 끝나면 그 분 한 줄 → CSV  (HID_BOTTLENECK/{FAB}/HID_BOTTLENECK_{FAB}_YYYYMMDD.csv)
-                          → 같은 줄 + FAB → 로그프레소 AMHS_VHL_OHT  (Rule_hid, 매분 51초에 모아서)
+                          → 같은 줄 + FAB → 로그프레소 AMHS_VHL_OHT  (Rule_hid, 매분 01초에 모아서)
                           → 경계 이상이면 문제맵 (HID_BOTTLENECK/PROBLEM_MAP/…)
                           → 문제맵 경로 → ../m16a_hubroom_event_prediction/oht_map/OHT_MAP_YYYYMMDD.csv
                                           (OHT_MAP_INDEX — 다운로드 화면용 목록)
@@ -26,12 +26,12 @@ import HID_VHL_OHT as HID
 import Rule_hid
 
 # ★ 로그프레소 저장 시각 — 매분 이 초에 그동안 CSV 에 새로 쓴 줄을 한 번에 AMHS_VHL_OHT 로
-#   config.json 의 "hid_upload_at_sec" 로 바꿀 수 있다 (0~59, 기본 51)
+#   config.json 의 "hid_upload_at_sec" 로 바꿀 수 있다 (0~59, 기본 1)
 try:
     _cfg = json.loads((Path(__file__).resolve().parent / "config.json").read_text(encoding="utf-8"))
 except Exception:
     _cfg = {}
-UPLOAD_AT_SEC = int(_cfg.get("hid_upload_at_sec", 51)) % 60
+UPLOAD_AT_SEC = int(_cfg.get("hid_upload_at_sec", 1)) % 60
 
 # ★ 영문 등급 (2026-10 변경) — HID_VHL_OHT.py 는 그대로 두고 여기서 바꿔 끼운다
 #   CSV ALARM_EN · 문제맵 파일 이름 · 로그프레소 alarm_en 이 모두 이 이름으로 나간다
@@ -143,7 +143,7 @@ def _hook_upload():
     if _queue_rows not in HID.SAVE_HOOKS:
         HID.SAVE_HOOKS.append(_queue_rows)            # CSV 에 1분 줄을 쓸 때마다 → 모아 둠
     threading.Thread(target=_uploader, name="AMHS_VHL_OHT", daemon=True).start()
-    HID.log.info(f"  로그프레소 AMHS_VHL_OHT 저장: 매분 {UPLOAD_AT_SEC}초")
+    HID.log.info(f"  로그프레소 AMHS_VHL_OHT 저장: 매분 {UPLOAD_AT_SEC:02d}초")
 
 
 def main():
