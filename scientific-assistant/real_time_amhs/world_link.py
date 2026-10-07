@@ -132,6 +132,12 @@ def link(fab: str, at: str, cfg: dict, host_hint: str = "",
          "fab": t["fab"], "prefix": t["prefix"], "auto": "1"}
     if label:
         q["case"] = str(label)[:120]
+    # ★관제 자기 주소(화면이 보고 있는 host:port)를 같이 싣는다 — 월드모델파생 실시간 스코어 탭이
+    #   관제를 127.0.0.1 에서만 찾아, 관제가 다른 서버면 경계 · 위험 줄을 못 받았다 (고객 2026-10-07:
+    #   "관제 주소를 왜 바꾸는데 — 처음부터 보이게 하면 되지"). 월드모델파생이 이걸로 스스로 찾는다.
+    hh = str(host_hint or "").strip()
+    if hh and "/" not in hh and " " not in hh:
+        q["gw"] = f"http://{hh}"
     return {"fab": fab, "table": t["table"], "wm_fab": t["fab"],
             "prefix": t["prefix"], "from": f_dt, "to": t_dt,
             "label": label,

@@ -5794,7 +5794,7 @@ function bindGraphPin(){
     el.onclick = () => pinAt(el.dataset.at);
   });
 }
-/* 그 분 고정 칸 — 발동 룰 · **원인** · 실제지표 · FAB 점수.
+/* 그 분 고정 칸 — **원인** · 실제지표 · FAB 점수 · 발동 룰(맨 아래).
    ★원인 = 룰마다 '무엇이 얼마였고 기준이 얼마라 걸렸나' 한 줄 (서버 /api/cause).
      고객(2026-10-07): "원인 내용 좀 적어 주라 — 룰이잖아 · 그래프 클릭하면 원인 내용". */
 function pinAt(at){
@@ -5828,10 +5828,10 @@ function pinAt(at){
       <button class="act" id="gpinx" style="margin-left:auto">닫기</button>
     </div>
     <table style="width:100%;font-size:12px">
-      <tr><td class="dim" style="width:88px">발동 룰</td><td>${rchip}</td></tr>
-      <tr><td class="dim" style="vertical-align:top">원인</td><td id="gcause"><span class="dim">불러오는 중…</span></td></tr>
+      <tr><td class="dim" style="width:88px;vertical-align:top;font-size:13px;font-weight:700;color:var(--tx)">원인</td><td id="gcause"><span class="dim">불러오는 중…</span></td></tr>
       <tr><td class="dim">실제지표</td><td>${met}</td></tr>
       <tr><td class="dim">FAB 점수</td><td>${fab}</td></tr>
+      <tr><td class="dim">발동 룰</td><td>${rchip}</td></tr>
     </table></div>`;
   const x = $('#gpinx'); if(x) x.onclick = () => { box.innerHTML = ''; };
   box.dataset.at = at;
@@ -5839,8 +5839,15 @@ function pinAt(at){
     const el = $('#gcause');
     if(!el || box.dataset.at !== at) return;      // 그새 다른 분을 눌렀다
     const cs = d.causes || [];
+    /* ★고객(2026-10-07): "발동 룰을 제일 아래로 · 원인 쪽이 눈에 확 들어오게 — 글자 크게 굵게,
+       강조 임팩트 부분은 빨간색 굵게". 서버가 [보통, 빨강, 보통, …] 으로 끊어 준다
+       (sentinel.rule_causes 의 parts). parts 가 없는 옛 서버면 글자 그대로. */
+    const said = c => Array.isArray(c.parts)
+      ? c.parts.map((p, i) => i % 2 ? `<b style="color:var(--crit);font-weight:800">${esc(p)}</b>` : esc(p)).join('')
+      : esc(c.text);
     el.innerHTML = cs.length
-      ? cs.map(c => `<div style="margin:2px 0"><span class="zchip">${esc(c.rule)}</span> ${esc(c.text)}</div>`).join('')
+      ? cs.map(c => `<div style="margin:3px 0;font-size:14px;font-weight:700;line-height:1.5;color:var(--tx)">`
+          + `<span class="zchip">${esc(c.rule)}</span> ${said(c)}</div>`).join('')
       : '<span class="dim">—</span>';
   }).catch(() => { const el = $('#gcause'); if(el) el.innerHTML = '<span class="dim">불러오지 못했습니다</span>'; });
 }

@@ -386,8 +386,10 @@ class 기여도_추정은_없다(unittest.TestCase):
         import os
         with open(os.path.join(util.BASE, "static", "dashboard.html"), encoding="utf-8") as f:
             h = f.read()
-        i = h.index("async function drawGraph(){")
-        body = h[i:h.index("\n}", i)]
+        # 열기 · 전체 칸(drawGraphAll) · 칸 하나 크게(drawOne) · 그 분 고정(pinAt) 전부
+        i = h.index("async function openGraph(at){")
+        body = h[i:h.index("\n}\n", h.index("function pinAt(at){"))]
+        self.assertIn("async function drawGraphAll(){", body)
         self.assertNotIn("/api/contrib", body)
         self.assertNotIn("${con}", body)
 

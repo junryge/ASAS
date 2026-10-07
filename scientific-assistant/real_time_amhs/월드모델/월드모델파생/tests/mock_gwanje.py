@@ -73,13 +73,18 @@ class H(BaseHTTPRequestHandler):
                    f'data-theme="{q.get("theme", "")}" data-min="{q.get("minutes", "")}">'
                    f'<rect class="ghit" data-at="{at}" x="0" y="0" width="10" height="10"/></svg>')
             return self._send(200, svg, "image/svg+xml; charset=utf-8")
+        if u.path == "/api/status":
+            d = {"sys": s, "systems": ["ALL", "M14", "M14B", "M16A", "M16B", "M16HUB"], "cuts": CUTS}
+            return self._send(200, json.dumps(d, ensure_ascii=False), "application/json")
         if u.path == "/api/graph1":
             svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" data-sys="{s}" '
                    f'data-one="{q.get("name", "")}" data-at="{q.get("at", "")}"></svg>')
             return self._send(200, svg, "image/svg+xml; charset=utf-8")
         if u.path == "/api/cause":
+            parts = [f"{s} 반송시간 ", "10.4분", " — 기준 9분 넘음"]      # [보통, 빨강, 보통]
             d = {"at": q.get("at", ""), "causes": [
-                {"rule": "반송지연", "area": s, "text": f"{s} 반송시간 10.4분 — 기준 9분 넘음"}]}
+                {"rule": "반송지연", "area": s, "text": "".join(parts),
+                 "hot": parts[1::2], "parts": parts}]}
             return self._send(200, json.dumps(d, ensure_ascii=False), "application/json")
         if u.path == "/api/contrib":
             return self._send(200, '<div class="note">기여도 추정 (가짜)</div>', "text/html; charset=utf-8")

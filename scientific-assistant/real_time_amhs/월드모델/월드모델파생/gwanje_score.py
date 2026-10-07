@@ -18,6 +18,7 @@ gwanje_score.py — 실시간 모드 오른쪽 '스코어' 탭: 관제(real_time
 
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -50,18 +51,50 @@ def sys_for(fab: str, prefix: str) -> str:
 #   떠 있으면 127.0.0.1 로는 그 관제에 닿지 않는다 (이 PC 의 다른 관제 · 빈 관제를 본다).
 #   저장소에는 안 올린다 (.gitignore) — 서버마다 다르다.
 ADDR_FILE = os.path.join(_ROOT, "관제_주소.json")
-_ADDR_RE = __import__("re").compile(r"^https?://[A-Za-z0-9._\-]+(:\d{1,5})?$")
+_ADDR_RE = re.compile(r"^https?://[A-Za-z0-9._\-]+(:\d{1,5})?$")
+
+
+# ★관제에 물을 때 **사내 프록시를 타지 않는다**. 그냥 urlopen 은 윈도우 IE 프록시를 타서, 관제
+#   (같은 PC 든 사내 IP 든)에 닿지 못하고 프록시가 대신 답했다 — 관제 쪽도 같은 일을 겪어
+#   config.query.use_proxy=false 가 기본이다. 실시간 스코어 탭에 경계가 안 보인 원인으로 본다.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# 화면이 들어온 길에서 본 관제 후보 — 관제 화면에서 넘어온 주소(?gw= · referrer) · 이 서버 주소
+_HINTS: list = []
+# 마지막으로 찾은 관제 {url, src, ok, at, key}
+_RES: dict = {"url": "", "src": "", "ok": False, "at": 0.0, "key": None}
+_RL = threading.Lock()
+
+
+def _gw_server() -> dict:
+    """관제 설정 real_time_amhs/config.json 의 server 칸 (읽기만 한다)."""
+    try:
+        with open(os.path.join(_ROOT, "..", "..", "config.json"), encoding="utf-8-sig") as f:
+            s = (json.load(f) or {}).get("server") or {}
+        return s if isinstance(s, dict) else {}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def port() -> int:
+    """관제 포트 — real_time_amhs/config.json 의 server.port (기본 8989)."""
+    try:
+        return int(_gw_server().get("port") or 8989)
+    except (ValueError, TypeError):
+        return 8989
 
 
 def _default_base() -> str:
     """이 PC 의 관제 (real_time_amhs/config.json 의 server.port, 기본 8989)."""
-    port = 8989
-    try:
-        with open(os.path.join(_ROOT, "..", "..", "config.json"), encoding="utf-8-sig") as f:
-            port = int(((json.load(f) or {}).get("server") or {}).get("port") or 8989)
-    except (OSError, ValueError, TypeError, AttributeError):
-        pass
-    return f"http://127.0.0.1:{port}"
+    return f"http://127.0.0.1:{port()}"
+
+
+def _conf_base() -> str:
+    """관제 설정이 host 를 사내 IP 하나로 박아 두면(0.0.0.0 이 아니면) 127.0.0.1 로는 안 열린다 —
+    그 IP 도 후보로 (사람이 넣을 것 없이)."""
+    h = str(_gw_server().get("host") or "").strip()
+    if not h or h in ("0.0.0.0", "::", "127.0.0.1", "localhost") or not re.match(r"^[A-Za-z0-9.\-]+$", h):
+        return ""
+    return f"http://{h}:{port()}"
 
 
 def _saved_base() -> str:
@@ -84,9 +117,84 @@ def addr() -> dict:
     return {"url": _default_base(), "src": "default"}
 
 
+def note_hints(*urls) -> None:
+    """화면이 들어온 길에서 본 관제 후보를 적어 둔다 — 관제가 다른 서버에 있어도 스스로 찾게.
+
+    ★고객(2026-10-07): "관제 주소를 왜 바꾸는데 — 처음부터 보이게 하면 되지". 사람이 주소를
+      넣지 않아도 관제 화면에서 넘어온 주소 · 이 서버 주소로 찾아간다 (resolve).
+    """
+    with _RL:
+        added = False
+        for u in urls:
+            try:
+                u = norm_addr(u)
+            except ValueError:
+                continue
+            if u and u not in _HINTS:
+                _HINTS.insert(0, u)
+                added = True
+        del _HINTS[8:]
+        if added and not _RES["ok"]:
+            _RES["at"] = 0.0                   # 못 찾고 있었다 — 새 후보로 바로 다시
+
+
+def _candidates() -> list:
+    """찾아볼 차례 — 정한 주소(환경변수 · 화면 저장) → 이 PC → 관제 설정의 IP → 화면이 들어온 길."""
+    a = addr()
+    out = [(a["url"], a["src"])]
+    if a["src"] == "env":
+        return out                             # 환경변수로 박았으면 그것만 본다
+    with _RL:
+        hints = list(_HINTS)
+    for u in [_default_base(), _conf_base()] + hints:
+        if u and u not in [x for x, _s in out]:
+            out.append((u, "auto"))
+    return out
+
+
+def _probe(u: str, timeout: float = 2.5) -> bool:
+    """그 주소에 **관제**가 답하나 (다른 프로그램이 같은 포트를 쓰는 것과 가른다)."""
+    try:
+        with _OPENER.open(u + "/api/status?sys=ALL", timeout=timeout) as r:
+            if r.status != 200:
+                return False
+            d = json.loads(r.read().decode("utf-8", "replace") or "{}")
+        return isinstance(d, dict) and "systems" in d
+    except Exception:                                   # noqa: BLE001
+        return False
+
+
+def resolve(force: bool = False) -> dict:
+    """지금 답하는 관제 {url, src, ok}. 찾은 것은 5분, 못 찾은 것은 20초 기억한다."""
+    cands = _candidates()
+    key = tuple(u for u, _s in cands)
+    now = time.time()
+    with _RL:
+        r = dict(_RES)
+    if not force and r["key"] == key and r["url"] and now - r["at"] < (300 if r["ok"] else 20):
+        return {"url": r["url"], "src": r["src"], "ok": r["ok"]}
+    found = None
+    for u, src in cands:
+        if _probe(u):
+            found = {"url": u, "src": src, "ok": True}
+            break
+    if found is None:                          # 아무도 답하지 않는다 — 정한 주소로 묻고 오류를 보인다
+        found = {"url": cands[0][0], "src": cands[0][1], "ok": False}
+    elif found["src"] == "auto" and found["url"] != _default_base():
+        # 스스로 찾은 다른 서버의 관제 — 이 PC 에 적어 두면 다시 띄워도 처음부터 그 관제를 본다
+        try:
+            _save_file(found["url"])
+            key = tuple(u for u, _s in _candidates())
+        except OSError:
+            pass
+    with _RL:
+        _RES.update(found, at=now, key=key)
+    return found
+
+
 def base() -> str:
-    """관제 주소 — 환경변수 GWANJE_URL > 화면에서 저장한 주소(관제_주소.json) > 이 PC 의 관제."""
-    return addr()["url"]
+    """관제 주소 — 정한 주소(환경변수 · 화면 저장) · 이 PC · 화면이 들어온 길 중 **답하는 곳**."""
+    return resolve()["url"]
 
 
 def norm_addr(url: str) -> str:
@@ -99,14 +207,18 @@ def norm_addr(url: str) -> str:
     return u
 
 
+def _save_file(u: str) -> None:
+    tmp = ADDR_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"url": u}, f, ensure_ascii=False)
+    os.replace(tmp, ADDR_FILE)
+
+
 def set_addr(url: str) -> dict:
     """화면에서 관제 주소를 바꾼다. 빈 값이면 지우고 이 PC 의 관제로 돌아간다."""
     u = norm_addr(url)
     if u:
-        tmp = ADDR_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"url": u}, f, ensure_ascii=False)
-        os.replace(tmp, ADDR_FILE)
+        _save_file(u)
     else:
         try:
             os.remove(ADDR_FILE)
@@ -114,21 +226,19 @@ def set_addr(url: str) -> dict:
             pass
     with _CL:
         _CACHE.clear()                     # 옛 주소로 받아 둔 답을 쓰지 않는다
+    with _RL:
+        _RES.update(at=0.0, key=None)      # 다시 찾는다
     return addr()
 
 
 def check() -> dict:
-    """그 주소의 관제가 답하나 — 화면이 주소를 바꾼 뒤 바로 알려 준다."""
-    a = addr()
-    try:
-        # ★/api/ping 은 관제가 로그프레소를 찔러 보는 길이라 느리고, 로그프레소가 죽으면 관제가
-        #   멀쩡해도 실패한다. 관제 자체가 답하는지는 /api/status 로 본다.
-        st, _ct, body, _cd = get("/api/status", {"sys": "ALL"}, timeout=4)
-    except OSError as e:
-        return dict(a, ok=False, error=f"관제({a['url']})에 닿지 않습니다 — {e}")
-    if st != 200:
-        return dict(a, ok=False, error=f"관제({a['url']})가 HTTP {st} 로 답했습니다")
-    return dict(a, ok=True)
+    """지금 답하는 관제가 있나 — 화면이 주소를 바꾼 뒤 바로 알려 준다.
+    ★/api/ping 은 관제가 로그프레소를 찔러 보는 길이라 느리고, 로그프레소가 죽으면 관제가 멀쩡해도
+      실패한다. 관제 자체가 답하는지는 /api/status 로 본다 (_probe)."""
+    r = resolve(force=True)
+    if r["ok"]:
+        return r
+    return dict(r, error=f"관제({r['url']})에 닿지 않습니다 — 관제 서버가 켜져 있는지 보세요")
 
 
 def get(path: str, params: dict, ttl: float = 0.0, timeout: float = 8.0):
@@ -142,11 +252,15 @@ def get(path: str, params: dict, ttl: float = 0.0, timeout: float = 8.0):
         if hit and now - hit[0] < ttl:
             return hit[1]
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        with _OPENER.open(url, timeout=timeout) as r:           # 사내 프록시를 타지 않는다
             out = (r.status, r.headers.get("Content-Type") or "", r.read(),
                    r.headers.get("Content-Disposition") or "")
     except urllib.error.HTTPError as e:
         out = (e.code, e.headers.get("Content-Type") or "", e.read(), "")
+    except OSError:
+        with _RL:
+            _RES.update(at=0.0)            # 닿던 관제가 꺼졌다 — 다음에 다시 찾는다
+        raise
     if ttl and out[0] == 200:
         with _CL:
             _CACHE[url] = (now, out)
@@ -164,9 +278,9 @@ def feed(fab: str, prefix: str, limit: int) -> dict:
     try:
         st, _ct, body, _cd = get("/api/feed", {"sys": sysname, "limit": limit}, ttl=5)
     except OSError as e:
-        return {"ok": False, "sys": sysname, "gwanje": where, "gwanje_src": addr()["src"],
-                "error": f"관제({where})에 닿지 않습니다 — 관제 서버가 켜져 있는지, "
-                         f"관제 주소가 맞는지 보세요 ({e})"}
+        return {"ok": False, "sys": sysname, "gwanje": where, "gwanje_src": resolve()["src"],
+                "error": f"관제에 닿지 않습니다 — 이 PC({_default_base()})와 관제 화면에서 넘어온 주소를 "
+                         f"다 찾아봤습니다. 관제 서버가 켜져 있는지 보세요 ({e})"}
     if st != 200:
         return {"ok": False, "sys": sysname, "gwanje": where,
                 "error": f"관제가 HTTP {st} 로 답했습니다 — 관제를 새 판으로 바꿨는지 보세요"}
@@ -186,7 +300,7 @@ def feed(fab: str, prefix: str, limit: int) -> dict:
                 cuts[sysname] = c2
         except (OSError, ValueError):
             pass
-    return {"ok": True, "sys": sysname, "gwanje": where, "gwanje_src": addr()["src"], "rows": rows,
+    return {"ok": True, "sys": sysname, "gwanje": where, "gwanje_src": resolve()["src"], "rows": rows,
             "day": d.get("day"), "fallback": d.get("fallback"), "latest": d.get("latest"),
             "alarm_now": d.get("alarm_now"), "fab_cuts": cuts}
 

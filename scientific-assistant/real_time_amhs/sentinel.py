@@ -712,11 +712,11 @@ def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
         v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
         thr = float(m.group(2)) if m else w.get("thr")
         if code == "RA":
-            return f"{f} {lab} {_cfmt(v)}분 — 기준 {_cfmt(thr)}분 넘음"
+            return f"{f} {lab} ⟦{_cfmt(v)}분⟧ — 기준 {_cfmt(thr)}분 넘음"
         ws = _watch(f, "RA_sus")
         out = f"{f} {lab} 높은 상태 지속 — 기준 {_cfmt(ws.get('thr') or thr)}분 넘는 분이 이어짐"
         if v is not None:
-            out += f" · 지금 {_cfmt(v)}분"
+            out += f" · 지금 ⟦{_cfmt(v)}분⟧"
         cnt = _cnum(row.get(f"{f}_ra_count"))
         if cnt is not None and thr is not None:
             out += f" · 최근 10분 중 {_cfmt(cnt)}분이 {_cfmt(thr)}분 넘음"
@@ -731,7 +731,7 @@ def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
         thr = float(mt.group(1)) if mt else w.get("thr")
         if d is None:
             return f"{f} {q} {mins}분 동안 늘어남 — 기준 +{_cfmt(thr)}건"
-        return f"{f} {q} {mins}분 동안 {'+' if d >= 0 else ''}{_cfmt(d)}건 — 기준 +{_cfmt(thr)}건 넘음"
+        return f"{f} {q} {mins}분 동안 ⟦{'+' if d >= 0 else ''}{_cfmt(d)}건⟧ — 기준 +{_cfmt(thr)}건 넘음"
     if code == "RC":
         if f == "M16HUB":
             ids = [x for x in _HUB_LIFTERS if x in tok]
@@ -740,10 +740,10 @@ def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
             parts = []
             tr = _cnum(row.get("M16HUB_rc_trend"))
             if tr is not None:
-                parts.append(f"리프터 10대 합이 20분 전보다 {_cfmt(abs(tr))}대 감소" if tr < 0
+                parts.append(f"리프터 10대 합이 20분 전보다 ⟦{_cfmt(abs(tr))}대 감소⟧" if tr < 0
                              else f"리프터 10대 합 20분 변화 {'+' if tr > 0 else ''}{_cfmt(tr)}대")
             who = ", ".join(ids[:5]) + (f" 외 {len(ids) - 5}" if len(ids) > 5 else "")
-            parts.append(f"지목 {n}대" + (f" ({who})" if who else ""))
+            parts.append(f"⟦지목 {n}대⟧" + (f" ({who})" if who else ""))
             thr = _watch(f, "RC").get("thr")
             return "M16HUB " + " · ".join(parts) + (f" — 기준 {_cfmt(thr)}대" if thr else "")
         if f == "M14":
@@ -754,7 +754,7 @@ def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
             pct = (lambda x: x * 100 if x is not None and x <= 1.0 else x)
             if v is None:
                 return "M14 컨베이어 북/남 한쪽으로 쏠림"
-            return (f"M14 컨베이어 북/남 한쪽 쏠림 {_cfmt(round(pct(v)))}%"
+            return (f"M14 컨베이어 북/남 한쪽 쏠림 ⟦{_cfmt(round(pct(v)))}%⟧"
                     + (f" — 기준 {_cfmt(round(pct(thr)))}% 넘음" if thr else ""))
         return ""
     if code == "RD":
@@ -767,27 +767,28 @@ def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
                         thr = spec.get("thr")
                         rec = " (기록용)" if "(기록용)" in lb else ""
                         lb = lb.replace(" (기록용)", "")
-                        got.append(f"{lb} {_cfmt(float(val))}{un}{rec}"
+                        vtxt = f"{_cfmt(float(val))}{un}"
+                        got.append(f"{lb} {('⟦' + vtxt + '⟧') if thr is not None else vtxt}{rec}"
                                    + (f" — 기준 {_cfmt(thr)}{un} 넘음" if thr is not None else ""))
                         break
             if not got:
                 v = _cnum(row.get("M16HUB_rd_fab"))
                 w = _watch(f, "RD")
                 if v is not None:
-                    got.append(f"FAB 적재율 {_cfmt(v)}% — 기준 {_cfmt(w.get('thr'))}% 넘음")
+                    got.append(f"FAB 적재율 ⟦{_cfmt(v)}%⟧ — 기준 {_cfmt(w.get('thr'))}% 넘음")
             return ("M16HUB " + " · ".join(got)) if got else "M16HUB 저장 공간 꽉 참"
         w = _watch(f, "RD")
         m = re.search(r"=\s*([\d.]+)", tok)
         v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
         thr = w.get("thr")
-        return (f"{f} OHT 가동률 {_cfmt(v)}%"
+        return (f"{f} OHT 가동률 ⟦{_cfmt(v)}%⟧"
                 + (f" — 기준 {_cfmt(thr)}% 넘음" if thr is not None else ""))
     if code == "SLA":
         w = _watch(f, "SLA")
         m = re.search(r"([\d.]+)\s*%", tok)
         v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
         thr = w.get("thr")
-        return (f"{f} 4분 넘게 걸린 반송 {_cfmt(v)}%"
+        return (f"{f} 4분 넘게 걸린 반송 ⟦{_cfmt(v)}%⟧"
                 + (f" — 기준 {_cfmt(thr)}% 넘음" if thr is not None else " (기준 미정)"))
     if code == "SORT":
         w = _watch(f, "SORT")
@@ -795,7 +796,7 @@ def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
         v = float(m.group(1)) if m else _cnum(row.get(w.get("csv") or ""))
         thr = w.get("thr")
         un = " LOT" if "LOT" in tok.upper() else (w.get("unit") or "")
-        return (f"{f} 분류기 대기 {_cfmt(v)}{un}"
+        return (f"{f} 분류기 대기 ⟦{_cfmt(v)}{un}⟧"
                 + (f" — 기준 {_cfmt(thr)} 넘음" if thr is not None else ""))
     if code == "MAXCAPA":
         try:
@@ -813,8 +814,8 @@ def _cause_text(code: str, tok: str, f: str, row: dict) -> str:
             lb = spec.get("label") or m.group(1)
             word = "이하" if m.group(3).startswith("<") else "이상"
             nrm = spec.get("normal")
-            said.append(f"{lb} {m.group(2)} (평소 {nrm} · 기준 {m.group(4)} {word})" if nrm
-                        else f"{lb} {m.group(2)} (기준 {m.group(4)} {word})")
+            said.append(f"{lb} ⟦{m.group(2)}⟧ (평소 {nrm} · 기준 {m.group(4)} {word})" if nrm
+                        else f"{lb} ⟦{m.group(2)}⟧ (기준 {m.group(4)} {word})")
         if said:
             return f"{f} 운영자가 용량 상한을 바꿈 — " + " · ".join(said)
         mn = re.search(r"(\d+)\s*개", tok)
@@ -856,16 +857,27 @@ def rule_causes(reason: str, fab: str = "", row: dict | None = None,
     except Exception:                                   # noqa: BLE001
         known = set()
     out = []
+
+    def item(rule, area_, t):
+        # ⟦…⟧ = 눈에 확 들어와야 할 값 — 화면이 빨간 굵은 글씨로 칠한다 (고객 2026-10-07:
+        #   "원인 쪽 글자 조금 더 크게 굵게 하고 강조 임팩트 부분은 빨간색 굵게")
+        # parts = [보통, 빨강, 보통, 빨강, …] 차례 — 화면이 글자를 다시 찾지 않는다
+        #   ('16' 같은 짧은 값이 'M16HUB' 안에서 칠해지는 일이 없다).
+        parts = re.split(r"⟦(.+?)⟧", t)
+        return {"rule": rule, "area": area_, "text": "".join(parts),
+                "hot": parts[1::2], "parts": parts}
+
     for a, block in blocks:
         if known and a not in known:
             continue                                  # M16_PKT · M16_WT 는 분석에서 뺐다
         for code, tok in _fab_rules(block):
             t = _cause_text(code, tok, a, row)
             if t:
-                out.append({"rule": _fab_rule_name(code, a), "area": a, "text": t})
+                out.append(item(_fab_rule_name(code, a), a, t))
     pio = fab_pio_text(row, f) if f else pio_text(txt)
     if pio:
-        out.append({"rule": "PIO 반송실패", "area": f, "text": (f"{f} " if f else "") + pio})
+        pio = re.sub(r"(\d+개/(?:1|10)분)", r"⟦\1⟧", pio, count=1)
+        out.append(item("PIO 반송실패", f, (f"{f} " if f else "") + pio))
     return out
 
 

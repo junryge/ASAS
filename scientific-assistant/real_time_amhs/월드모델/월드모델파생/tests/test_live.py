@@ -561,6 +561,7 @@ class 관제_스코어(unittest.TestCase):
         self.assertEqual(st, 200)
         d = json.loads(body)
         self.assertEqual(d["causes"][0]["rule"], "반송지연")
+        self.assertEqual(d["causes"][0]["parts"][1], "10.4분", "빨갛게 칠할 값도 그대로 넘어온다")
         self.assertEqual(self._last()["path"], "/api/cause")
 
     def test_짝이_없는_지도(self):
@@ -691,6 +692,14 @@ class 서버_연결(unittest.TestCase):
         js = _read("static", "js", "live_mode.js")
         for need in ("/api/score/graph1", "/api/score/cause", "rect[data-m]", "← 전체 그래프"):
             self.assertIn(need, js)
+        # 고정 칸 (2026-10-07) — "발동 룰을 제일 아래로 · 원인 쪽 글자 크게 굵게 · 강조 부분은 빨간색 굵게"
+        pin = js[js.index("function pinAt(at) {"):]
+        pin = pin[:pin.index("\n  }\n")]
+        self.assertLess(pin.index('id="lg-cause"'), pin.index("발동 룰 — "), "원인이 위 · 발동 룰은 맨 아래")
+        self.assertLess(pin.index("mets.map"), pin.index("발동 룰 — "))
+        self.assertIn("font-size:14px;font-weight:700", pin)
+        self.assertIn("causeHtml(c)", pin)
+        self.assertIn("color:var(--crit);font-weight:800", js)
         # 기여도 중계는 뺐다 (2026-10-07) — 화면도 더는 안 부른다
         self.assertNotIn('"/api/score/contrib"', self.m)
         self.assertNotIn("/api/score/contrib", _read("static", "js", "live_mode.js"))

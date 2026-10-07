@@ -352,9 +352,10 @@
   //   라서, 관제가 다른 서버에 있으면 그 관제의 경계 · 위험 줄을 못 받는다.
   function gwLink(S) {
     var src = S && S.gwanje_src;
-    return '<a href="#" class="sc-gw" style="color:var(--fg2)" title="관제가 떠 있는 서버 주소 — 누르면 바꿉니다">'
-      + '관제 주소 ' + esc((S && S.gwanje) || '?')
-      + (src === 'default' ? ' (이 PC)' : src === 'env' ? ' (환경변수)' : '') + ' · 바꾸기</a>';
+    return '<a href="#" class="sc-gw" style="color:var(--fg2);text-decoration:none" '
+      + 'title="관제 주소는 스스로 찾습니다 (이 PC → 관제 설정의 IP → 관제 화면에서 넘어온 주소 → 이 서버). 직접 정하려면 누르세요">'
+      + '관제 ' + esc((S && S.gwanje) || '?')
+      + (src === 'default' ? ' (이 PC)' : src === 'auto' ? ' (자동)' : src === 'env' ? ' (환경변수)' : '') + '</a>';
   }
   function bindGw() {
     document.querySelectorAll('#sc-sum .sc-gw').forEach(function (a) { a.onclick = gwEdit; });
@@ -375,9 +376,23 @@
       .catch(function (err) { window.alert('저장하지 못했습니다 — ' + ((err && err.message) || err)); });
   }
 
+  // 관제가 어디 있나 — 관제 화면에서 넘어왔으면 그 주소(?gw= · document.referrer)를 서버에 알려 준다.
+  // ★고객(2026-10-07): "관제 주소를 왜 바꾸는데 — 처음부터 보이게 하면 되지". 서버가 이 PC · 이 주소 ·
+  //   이 서버 주소 순으로 답하는 관제를 스스로 찾는다 (gwanje_score.resolve).
+  var GW_HINT = (function () {
+    var v = '';
+    try { v = new URLSearchParams(location.search).get('gw') || ''; } catch (e) {}
+    if (!v) {
+      try { var u = new URL(document.referrer); if (u.origin !== location.origin) v = u.origin; } catch (e) {}
+    }
+    try { if (v) sessionStorage.setItem('gw_hint', v); else v = sessionStorage.getItem('gw_hint') || ''; } catch (e) {}
+    return v;
+  })();
+  function gwQ() { return GW_HINT ? '&gw=' + encodeURIComponent(GW_HINT) : ''; }
+
   function scoreLoad() {
     if (APP !== 'live') return Promise.resolve();
-    return fetch('/api/score/feed?limit=90', { cache: 'no-store', credentials: 'same-origin' })
+    return fetch('/api/score/feed?limit=90' + gwQ(), { cache: 'no-store', credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (d) { SCORE = d; })
       .catch(function (e) { SCORE = { ok: false, error: '서버에 닿지 않습니다 — ' + ((e && e.message) || e) }; })
@@ -665,8 +680,17 @@
       el.onclick = function () { pinAt(el.dataset.at); };
     });
   }
-  // 그 분 고정 — 발동 룰 · **원인**(룰마다 값 · 기준, 관제 /api/cause) · 실제지표
+  // 그 분 고정 — **원인**(룰마다 값 · 기준, 관제 /api/cause) · 실제지표 · HID · 발동 룰(맨 아래)
   // ★고객(2026-10-07): "원인 내용 좀 적어 주라 — 룰이잖아 · 그래프 클릭하면 원인 내용"
+  // ★고객(2026-10-07): "발동 룰을 제일 아래로 · 원인 쪽 글자 조금 더 크게 굵게 · 강조 임팩트 부분은 빨간색 굵게"
+  //   — 관제 고정 칸과 같은 순서 · 같은 강조. 빨갛게 할 값은 관제가 parts 로 끊어 준다 (sentinel.rule_causes).
+  // 관제가 [보통, 빨강, 보통, …] 으로 끊어 준다 (parts). 없는 옛 관제면 글자 그대로.
+  function causeHtml(c) {
+    if (!Array.isArray(c.parts)) return esc(c.text);
+    return c.parts.map(function (p, i) {
+      return i % 2 ? '<b style="color:var(--crit);font-weight:800">' + esc(p) + '</b>' : esc(p);
+    }).join('');
+  }
   function pinAt(at) {
     var box = $id('lg-pin');
     if (!box || !at) return;
@@ -675,10 +699,10 @@
     var rules = rulesOf(r), mets = r.metrics || [], hl = hidLine(r);
     box.innerHTML = '<div class="ms-sec" style="margin-top:12px">'
       + '<h4>' + esc((r.datetime || '').slice(0, 16)) + ' · ' + Math.round(+r.score || 0) + '점 ' + lvChip(r.level) + ' ' + almChip(r.alm) + '</h4>'
-      + '<div class="note">발동 룰 — ' + (rules.length ? esc(rules.join(' · ')) : '정상 운영') + '</div>'
-      + '<div class="note" id="lg-cause" style="margin-top:4px">원인 — 불러오는 중…</div>'
-      + (mets.length ? '<div class="note mono" style="margin-top:4px">' + mets.map(function (x) { return esc(x.raw); }).join(' · ') + '</div>' : '')
+      + '<div id="lg-cause" style="font-size:14px;font-weight:700;line-height:1.5;color:var(--fg)">원인 — 불러오는 중…</div>'
+      + (mets.length ? '<div class="note mono" style="margin-top:6px">' + mets.map(function (x) { return esc(x.raw); }).join(' · ') + '</div>' : '')
       + (hl ? '<div class="note" style="margin-top:4px">' + hl + '</div>' : '')
+      + '<div class="note" style="margin-top:4px">발동 룰 — ' + (rules.length ? esc(rules.join(' · ')) : '정상 운영') + '</div>'
       + '</div>';
     box.dataset.at = at;
     fetch('/api/score/cause?at=' + encodeURIComponent(at), { cache: 'no-store', credentials: 'same-origin' })
@@ -688,7 +712,7 @@
         if (!el || box.dataset.at !== at) return;          // 그새 다른 분을 눌렀다
         var cs = (d && d.causes) || [];
         el.innerHTML = cs.length
-          ? cs.map(function (c) { return '<div>원인 · <b style="color:var(--fg)">' + esc(c.rule) + '</b> — ' + esc(c.text) + '</div>'; }).join('')
+          ? cs.map(function (c) { return '<div style="margin:3px 0">원인 · ' + esc(c.rule) + ' — ' + causeHtml(c) + '</div>'; }).join('')
           : '원인 — 없음';
       }).catch(function () { var el = $id('lg-cause'); if (el) el.textContent = '원인 — 관제에서 못 받았습니다'; });
   }

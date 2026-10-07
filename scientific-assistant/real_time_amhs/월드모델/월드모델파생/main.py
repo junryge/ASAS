@@ -831,9 +831,24 @@ async def live_cmd(request: Request):
     return await run_in_threadpool(LE.live_info, s.sid, s.fab, s.prefix)
 
 
+def _gw_hints(request: Request) -> None:
+    """관제가 어디 있나 — 화면이 알려 준 주소(?gw= — 관제 화면에서 넘어온 길)와 이 서버에 들어온 주소.
+    ★고객(2026-10-07): "관제 주소를 왜 바꾸는데 — 처음부터 보이게 하면 되지". 사람이 넣지 않아도
+      gwanje_score.resolve 가 이 PC → 이 후보들 순으로 답하는 관제를 찾는다."""
+    try:
+        hints = [str(request.query_params.get("gw") or "")]
+    except Exception:                                   # noqa: BLE001
+        hints = []
+    h = str(getattr(getattr(request, "url", None), "hostname", "") or "")
+    if h and h not in ("127.0.0.1", "localhost"):
+        hints.append(f"http://{h}:{GS.port()}")
+    GS.note_hints(*hints)
+
+
 @app.get("/api/score/feed")
 async def score_feed(request: Request):
     """관제가 매긴 그 FAB 의 스코어 — 최근 limit 분 (최신이 위). 여기서 다시 계산하지 않는다."""
+    _gw_hints(request)
     s = sess(request)
     try:
         n = max(1, min(240, int(request.query_params.get("limit") or 90)))
@@ -844,6 +859,7 @@ async def score_feed(request: Request):
 
 async def _score_pass(request: Request, which: str):
     """관제가 그린 것을 그대로 넘긴다 — 그 FAB 의 관제 시스템으로 묻는다."""
+    _gw_hints(request)
     s = sess(request)
     q = dict(request.query_params)
     st, ct, body, extra = await run_in_threadpool(GS.passthrough, s.fab, s.prefix, which, q)
@@ -852,7 +868,8 @@ async def _score_pass(request: Request, which: str):
 
 @app.get("/api/score/gwanje")
 async def score_gwanje_get(request: Request):
-    """지금 묻는 관제 주소 · 출처(env · file · default) · 답하는지."""
+    """지금 묻는 관제 주소 · 출처(env · file · default · auto) · 답하는지."""
+    _gw_hints(request)
     return await run_in_threadpool(GS.check)
 
 

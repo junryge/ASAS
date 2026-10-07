@@ -111,8 +111,10 @@ class Contrib(unittest.TestCase):
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(base, "static", "dashboard.html"), encoding="utf-8") as f:
             h = f.read()
-        i = h.index("async function drawGraph(){")
-        self.assertNotIn("/api/contrib", h[i:i + 1500], "더블클릭 그래프가 아직 기여도를 부른다")
+        # 더블클릭 그래프 = 열기 · 전체 칸 · 칸 하나 크게 · 그 분 고정(원인) — 어디에서도 기여도를 안 부른다
+        i = h.index("async function openGraph(at){")
+        j = h.index("\n}\n", h.index("function pinAt(at){"))
+        self.assertNotIn("/api/contrib", h[i:j], "더블클릭 그래프가 아직 기여도를 부른다")
 
 
 class Scale(unittest.TestCase):

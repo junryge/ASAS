@@ -129,6 +129,39 @@ class 원인(unittest.TestCase):
         self.assertEqual(S.rule_causes("", "M16HUB", {}), [])
 
 
+class 원인_강조(unittest.TestCase):
+    """고객: "원인 쪽 글자 조금 더 크게 굵게 하고 강조 임팩트 부분은 빨간색 굵게"."""
+
+    def setUp(self):
+        self.cs = S.rule_causes(REAL_REASON, "M16HUB", REAL_ROW)
+        self.by = {c["rule"]: c for c in self.cs}
+
+    def test_빨갛게_할_값(self):
+        want = {"반송지연": ["10.4분"], "Queue 누적": ["+120건"], "Queue 상승": ["+45건"],
+                "리프터 정체": ["7대 감소", "지목 5대"], "Storage FULL": ["26.1%"],
+                "4분초과": ["6.1%"], "운영자 용량변경": ["95"]}
+        for rule, hot in want.items():
+            self.assertEqual(self.by[rule]["hot"], hot, rule)
+
+    def test_기준은_빨갛지_않다(self):
+        for c in self.cs:
+            for h in c["hot"]:
+                self.assertNotIn("기준", h, (c["rule"], h))
+
+    def test_글자는_깨끗하고_끊은_조각을_이으면_글자(self):
+        for c in self.cs + S.rule_causes(REAL_REASON, "M14", REAL_ROW):
+            self.assertNotRegex(c["text"], "[⟦⟧]")
+            self.assertEqual("".join(c["parts"]), c["text"])
+            self.assertEqual(c["parts"][1::2], c["hot"])
+
+    def test_짧은_값도_제자리만(self):
+        """화면이 글자를 다시 찾으면 'M16HUB' 안의 '16' 이 칠해진다 — 서버가 끊어 준다."""
+        c = S.rule_causes("발동: M16HUB[MAXCAPA1개변경]", "M16HUB",
+                          {"maxcapa_signals": "M16HUB:3F_LFT_MAXCAPA=16(<=100)"})[0]
+        self.assertEqual(c["hot"], ["16"])
+        self.assertTrue(c["parts"][0].startswith("M16HUB "), c["parts"])
+
+
 class 칸_하나_크게(unittest.TestCase):
     """고객: "그래프 더블클릭하면 1개 크게 확대해서 볼 수 있게"."""
 
@@ -186,8 +219,19 @@ class 화면과_서버가_잇는다(unittest.TestCase):
 
     def test_화면이_부른다(self):
         for need in ("/api/cause?at=", "/api/graph1?at=", "rect[data-m]", "← 전체 그래프",
-                     "pinAt(GAT)", '<td class="dim" style="vertical-align:top">원인</td>'):
+                     "pinAt(GAT)", 'id="gcause"'):
             self.assertIn(need, self.html)
+
+    def test_원인이_맨_위_발동_룰은_맨_아래(self):
+        """고객: "발동 룰을 제일 아래로 · 원인 쪽 글자 조금 더 크게 굵게 · 강조 부분은 빨간색 굵게"."""
+        body = self.html[self.html.index("function pinAt(at){"):]
+        body = body[:body.index("\n}\n")]
+        rows = re.findall(r"<tr><td[^>]*>([^<]+)</td>", body)
+        self.assertEqual(rows, ["원인", "실제지표", "FAB 점수", "발동 룰"])
+        self.assertRegex(body, r'<td[^>]*font-weight:700[^>]*>원인</td>')
+        self.assertIn("font-size:14px;font-weight:700", body)
+        self.assertIn('color:var(--crit);font-weight:800', body)
+        self.assertIn("c.parts", body)
 
 
 if __name__ == "__main__":
