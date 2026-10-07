@@ -847,13 +847,15 @@ def _gw_hints(request: Request) -> None:
 
 @app.get("/api/score/feed")
 async def score_feed(request: Request):
-    """관제가 매긴 그 FAB 의 스코어 — 최근 limit 분 (최신이 위). 여기서 다시 계산하지 않는다."""
+    """관제가 매긴 그 FAB 의 스코어 — 오늘 것 최대 limit 분 (최신이 위). 여기서 다시 계산하지 않는다.
+    ★기본 · 최대 = 하루(1440분). 예전엔 최근 90분(최대 240)만 받아 그 앞에 난 경계가 탭에 없었다
+      (고객 2026-10-07: "12:40분~현재까지 보여주네 — 오늘 하루 동안 벌어진 것 보여줘야지")."""
     _gw_hints(request)
     s = sess(request)
     try:
-        n = max(1, min(240, int(request.query_params.get("limit") or 90)))
+        n = max(1, min(1440, int(request.query_params.get("limit") or 1440)))
     except ValueError:
-        n = 90
+        n = 1440
     return await run_in_threadpool(GS.feed, s.fab, s.prefix, n)
 
 

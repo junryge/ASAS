@@ -204,6 +204,11 @@ async def scenario():
     await M.select_fab(Req(B, {"fab": "M16A", "prefix": "BR"}))
     st, d, _ = body(await M.score_feed(Req(B, q={"limit": "30"})))
     OUT["score"] = [st, d.get("ok"), d.get("sys"), len(d.get("rows") or [])]
+    # 화면이 limit 없이 / 하루치로 물으면 오늘 하루(1440분)까지 — 예전엔 90분(최대 240)이었다
+    st, d, _ = body(await M.score_feed(Req(B, q={})))
+    OUT["score_day"] = [len(d.get("rows") or [])]
+    st, d, _ = body(await M.score_feed(Req(B, q={"limit": "99999"})))
+    OUT["score_day"].append(len(d.get("rows") or []))
     st, raw, h = body(await M.score_graph(Req(B, q={"at": "2026-10-06T10:24:00", "minutes": "120",
                                                     "theme": "light"})))
     OUT["graph"] = [st, b'data-sys="M16HUB"' in raw if isinstance(raw, bytes) else False]

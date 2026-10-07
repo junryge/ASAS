@@ -23,8 +23,9 @@
        정지      조회를 멈춘다 (저절로 멈추지 않는다 — 고객 2026-10-06)
      · 상태줄: [● 실시간] 테이블 · OHT 시각(지금보다 몇 초 늦은지) · 차 · 조회 · 관제 스코어 칩.
      · 오른쪽 '스코어' 탭 (관제가 매긴 그 FAB 의 점수 — 여기서 다시 계산하지 않는다)
-       지금 점수 · 등급 · 알람 · HI_FAB → 최근 60분 추이 → 지금 걸린 것(발동 룰 · 실제지표 · HID_JAM ·
-       RET) → 최근 목록. 줄을 더블클릭하면 관제와 같은 구간 그래프 + 기여도.
+       지금 점수 · 등급 · 알람 · HI_FAB → 오늘 하루 추이 → 지금 걸린 것(발동 룰 · 실제지표 · HID_JAM ·
+       RET) → 오늘 목록(관제 표처럼 300행씩 · 경계↑ · 위험↑ · HID·RET 는 전부). 줄을 더블클릭하면
+       관제와 같은 구간 그래프.
    ★색은 화면에 있던 것만 쓴다 — 등급은 risk-NORMAL/WARNING/DANGER/CRITICAL 칩, 줄 왼쪽 띠는
      차량 목록과 같은 초록·주황·빨강. 색만으로 말하지 않는다 — 늘 글자(정상·경계·위험·초위험)와 같이. */
 (function () {
@@ -296,12 +297,20 @@
   }
 
   var SCORE = null, SC_FILTER = 'all';
+  // ★오늘 하루 전부를 받는다. 예전엔 최근 90분만 받아서, 그 앞에 난 경계가 목록에 없었다
+  //   (고객 2026-10-07: "12:40분~현재까지 보여주네 — 오늘 하루 동안 벌어진 것 보여줘야지").
+  //   목록은 관제 표처럼 300행씩 그리고 '아래 300행 더 보기' ("실시간 관제처럼 아래 300행 보기").
+  //   경계↑ · 위험↑ · HID·RET 는 상한 없이 전부 ("경계 · 위험 · HID RET 는 전부 다 보여야지").
+  var SC_DAY = 1440, SC_STEP = 300, SC_CAP = SC_STEP;
+  // 1분에 한 번 바뀌는데 15초마다 묻는다 — 받은 글이 같으면 목록을 다시 그리지 않는다
+  var SC_TXT = '', SC_VER = 0, SC_DRAWN = '';
 
   // 경계↑ · 위험↑ · HID·RET 가 몇 개인지 (고객: "경계, 위험, HID RET 몇 개 있는지 탭에 표시해 줘야") —
   // 필터 단추마다 개수, 탭 위 요약에 HID_JAM · RET 를 나눠서. 세는 기준은 필터와 같다 (단추 수 = 누르면 나오는 줄 수).
   var F_NAME = { all: '전체', warn: '경계↑', danger: '위험↑', hid: 'HID·RET' };
   function counts(rows) {
-    var c = { all: rows.length, warn: 0, danger: 0, hid: 0, jam: 0, ret: 0 };
+    var c = { all: rows.length, warn: 0, danger: 0, hid: 0, jam: 0, ret: 0,
+              from: rows.length ? rows[rows.length - 1].time : '', to: rows.length ? rows[0].time : '' };
     rows.forEach(function (r) {
       var hs = r.hid || [];
       if (r.level && r.level !== '정상') c.warn++;
@@ -328,7 +337,9 @@
       : '<span style="color:var(--muted);white-space:nowrap">' + label + ' 0</span>';
   }
   function countLine(c) {
-    return '최근 ' + c.all + '분 · ' + cntChip('경계↑', c.warn, 'risk-WARNING') + ' '
+    // 관제에 오늘 자료가 아직 없어 지난 날을 보여 줄 때는 '오늘' 이 아니라 그 날짜
+    var day = SCORE && SCORE.fallback && SCORE.day ? esc(SCORE.day) : '오늘';
+    return (c.from ? day + ' ' + esc(c.from) + '~' + esc(c.to) : day + ' ' + c.all + '분') + ' · ' + cntChip('경계↑', c.warn, 'risk-WARNING') + ' '
       + cntChip('위험↑', c.danger, 'risk-DANGER') + ' · ' + cntRed('HID_JAM', c.jam) + ' · ' + cntRed('RET', c.ret);
   }
 
@@ -341,6 +352,7 @@
   document.querySelectorAll('#sc-filter button').forEach(function (b) {
     b.onclick = function () {
       SC_FILTER = b.dataset.f;
+      SC_CAP = SC_STEP;
       document.querySelectorAll('#sc-filter button').forEach(function (x) { x.classList.toggle('active', x === b); });
       renderList();
     };
@@ -392,9 +404,12 @@
 
   function scoreLoad() {
     if (APP !== 'live') return Promise.resolve();
-    return fetch('/api/score/feed?limit=90' + gwQ(), { cache: 'no-store', credentials: 'same-origin' })
-      .then(function (r) { return r.json(); })
-      .then(function (d) { SCORE = d; })
+    return fetch('/api/score/feed?limit=' + SC_DAY + gwQ(), { cache: 'no-store', credentials: 'same-origin' })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        if (t !== SC_TXT) { SC_TXT = t; SC_VER++; }
+        SCORE = JSON.parse(t);
+      })
       .catch(function (e) { SCORE = { ok: false, error: '서버에 닿지 않습니다 — ' + ((e && e.message) || e) }; })
       .then(function () { paintScoreChip(); renderScore(); });
   }
@@ -448,6 +463,7 @@
         + '<div style="margin-top:4px">' + gwLink(S) + '</div>';
       bindGw();
       ['sc-now', 'sc-spark', 'sc-cur', 'sc-list'].forEach(function (id) { $id(id).innerHTML = ''; });
+      SC_DRAWN = '';
       paintCounts(null);
       return;
     }
@@ -464,6 +480,7 @@
     if (!r) {
       $id('sc-now').innerHTML = '<div class="ritem" style="cursor:default">관제 표에 아직 줄이 없습니다</div>';
       ['sc-spark', 'sc-cur', 'sc-list'].forEach(function (id) { $id(id).innerHTML = ''; });
+      SC_DRAWN = '';
       return;
     }
     var g = gradeOf(r.level);
@@ -496,6 +513,9 @@
   function renderList() {
     var box = $id('sc-list');
     if (!box || !SCORE || !SCORE.ok) return;
+    var key = SC_VER + '|' + SC_FILTER + '|' + SC_CAP;
+    if (key === SC_DRAWN && box.firstChild) return;        // 받은 것 · 필터 · 상한이 그대로면 그대로
+    SC_DRAWN = key;
     var rows = (SCORE.rows || []).filter(function (r) {
       if (SC_FILTER === 'warn') return r.level && r.level !== '정상';
       if (SC_FILTER === 'danger') return r.level === '위험' || r.level === '초위험';
@@ -503,7 +523,21 @@
       return true;
     });
     if (!rows.length) { box.innerHTML = '<div class="sc-cap" style="padding:10px 2px">해당하는 줄이 없습니다</div>'; return; }
-    box.innerHTML = rows.map(function (r) {
+    // 최신이 위다. '전체' 는 관제 표처럼 300행씩이되 **정상 줄만** 접는다 — 경계 · 위험 · HID·RET 줄은
+    //   몇 시에 났든 늘 보인다 (고객: "경계 · 위험 · HID RET 는 전부 다 보여야지 그래도").
+    //   접은 자리에는 '⋯ 정상 N행' 을 남겨 시각이 건너뛴 것을 알린다. 필터(경계↑ · 위험↑ · HID·RET)는 접지 않는다.
+    var show = [], plain = 0, gap = 0, folded = 0;
+    rows.forEach(function (r) {
+      var must = SC_FILTER !== 'all' || (r.level && r.level !== '정상') || (r.hid || []).length > 0;
+      if (must || plain < SC_CAP) {
+        if (gap) { show.push({ gap: gap }); gap = 0; }
+        show.push(r);
+        if (!must) plain++;
+      } else { gap++; folded++; }
+    });
+    var shown = rows.length - folded;
+    box.innerHTML = show.map(function (r) {
+      if (r.gap) return '<div class="sc-cap" style="padding:2px 4px">⋯ 정상 ' + r.gap + '행</div>';
       var rules = rulesOf(r), hl = hidLine(r), a = almChip(r.alm);
       return '<div class="ritem" style="border-left-color:' + gradeOf(r.level).c + '" data-at="' + esc(r.at) + '">'
         + '<div class="rh"><span class="rid">' + esc(r.time || '') + '</span>'
@@ -511,22 +545,28 @@
         + (rules.length ? '<div class="rv sc-rule" title="' + esc(rules.join('\n')) + '">' + esc(rules.join(' · ')) + '</div>' : '')
         + (a || hl ? '<div class="rv" style="font-weight:normal;color:var(--fg2)">' + a + (a && hl ? ' ' : '') + hl + '</div>' : '')
         + '</div>';
-    }).join('');
+    }).join('') + (folded ? '<div class="rfilter" style="justify-content:center;align-items:center;margin:8px 0 2px">'
+      + '<button data-more="1">아래 ' + Math.min(folded, SC_STEP) + '행 더 보기</button>'
+      + '<span class="sc-cap" style="margin:0 0 0 6px">' + shown + ' / ' + rows.length + '행 표시 중 · 접은 정상 ' + folded + '행'
+      + '</span></div>' : '');
     box.querySelectorAll('.ritem').forEach(function (el) {
       el.ondblclick = function () { openGraph(el.dataset.at); };
     });
+    var more = box.querySelector('[data-more]');
+    if (more) more.onclick = function () { SC_CAP += SC_STEP; renderList(); };
   }
 
-  // 최근 60분 추이 — 선 하나 · 등급 띠 · 마우스를 올리면 그 분 (더블클릭 → 그래프)
+  // 오늘 하루 추이 — 선 하나 · 등급 띠 · 마우스를 올리면 그 분 (더블클릭 → 그래프)
+  // ★예전엔 최근 60분만 그려 그 앞의 경계가 안 보였다 (고객 2026-10-07: "오늘 하루 동안 벌어진 것 보여줘야지")
   function renderSpark(rows, cuts) {
     var box = $id('sc-spark');
-    var pts = rows.slice(0, 60).reverse();
+    var pts = rows.slice().reverse();
     if (pts.length < 2) { box.innerHTML = ''; return; }
     var W = Math.max(200, box.clientWidth || 244), H = 70, P = 4;
     var X = function (i) { return P + i * (W - 2 * P) / (pts.length - 1); };
     var Y = function (v) { return H - P - Math.max(0, Math.min(100, +v || 0)) / 100 * (H - 2 * P); };
     var s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" '
-      + 'aria-label="최근 60분 스코어 추이" style="display:block;cursor:pointer">';
+      + 'aria-label="오늘 스코어 추이" style="display:block;cursor:pointer">';
     if (cuts && cuts.warn != null) {
       var band = function (lo, hi, col, op) {
         return '<rect x="0" y="' + Y(hi) + '" width="' + W + '" height="' + Math.max(0, Y(lo) - Y(hi))
@@ -545,7 +585,8 @@
       + '" stroke="var(--panel)" stroke-width="1.5"/>';
     s += '<line id="sc-x" x1="0" x2="0" y1="0" y2="' + H + '" stroke="var(--fg2)" stroke-width="1" style="display:none"/>';
     s += '</svg><div class="sc-tip" id="sc-tip"></div>';
-    box.innerHTML = s + '<div class="sc-cap">최근 ' + pts.length + '분' + (cuts && cuts.warn != null
+    box.innerHTML = s + '<div class="sc-cap">' + esc(pts[0].time || '') + '~' + esc(last.time || '') + ' (' + pts.length + '분)'
+      + (cuts && cuts.warn != null
       ? ' · 경계 ' + cuts.warn + ' · 위험 ' + cuts.danger + ' · 초위험 ' + cuts.critical : '') + ' · 더블클릭 → 그래프</div>';
     var svg = box.querySelector('svg'), tip = $id('sc-tip'), xl = $id('sc-x');
     var pick = -1;
@@ -695,7 +736,7 @@
     var box = $id('lg-pin');
     if (!box || !at) return;
     var r = rowAt(at);
-    if (!r) { box.innerHTML = '<div class="note" style="margin-top:8px">' + esc((at || '').replace('T', ' ').slice(0, 16)) + ' — 최근 90분 목록 밖입니다</div>'; return; }
+    if (!r) { box.innerHTML = '<div class="note" style="margin-top:8px">' + esc((at || '').replace('T', ' ').slice(0, 16)) + ' — 오늘 목록 밖입니다</div>'; return; }
     var rules = rulesOf(r), mets = r.metrics || [], hl = hidLine(r);
     box.innerHTML = '<div class="ms-sec" style="margin-top:12px">'
       + '<h4>' + esc((r.datetime || '').slice(0, 16)) + ' · ' + Math.round(+r.score || 0) + '점 ' + lvChip(r.level) + ' ' + almChip(r.alm) + '</h4>'

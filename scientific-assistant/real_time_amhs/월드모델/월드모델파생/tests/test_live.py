@@ -658,6 +658,8 @@ class 서버_한_벌(unittest.TestCase):
 
     def test_관제_스코어_중계(self):
         self.assertEqual(self.R["score"], [200, True, "M16HUB", 30])
+        # 고객(2026-10-07): "12:40분~현재까지 보여주네 — 오늘 하루 동안 벌어진 것 보여줘야지"
+        self.assertEqual(self.R["score_day"], [1440, 1440], "기본 · 최대 = 하루")
         self.assertEqual(self.R["graph"], [200, True])
         self.assertEqual(self.R["report"], [200, True])
 
@@ -700,6 +702,15 @@ class 서버_연결(unittest.TestCase):
         self.assertIn("font-size:14px;font-weight:700", pin)
         self.assertIn("causeHtml(c)", pin)
         self.assertIn("color:var(--crit);font-weight:800", js)
+        # 오늘 하루 전부 (2026-10-07) — "12:40분~현재까지 보여주네 · 오늘 하루 동안 벌어진 것 보여줘야지"
+        #   · "실시간 관제처럼 아래 300행 보기" · "경계 · 위험 · HID RET 는 전부 다 보여야지 그래도"
+        self.assertIn('n = max(1, min(1440, int(request.query_params.get("limit") or 1440)))', self.m)
+        self.assertNotIn("limit=90", js)
+        for need in ("SC_DAY = 1440", "'/api/score/feed?limit=' + SC_DAY", "SC_STEP = 300", "행 더 보기",
+                     "⋯ 정상 ' + r.gap", "접은 정상 ", "rows.slice().reverse()"):
+            self.assertIn(need, js)
+        # 전체 목록에서 접는 것은 정상 줄뿐 — 경계 · 위험 · HID·RET 줄은 몇 시든 늘 그린다 · 필터는 안 접는다
+        self.assertIn("var must = SC_FILTER !== 'all' || (r.level && r.level !== '정상') || (r.hid || []).length > 0;", js)
         # 기여도 중계는 뺐다 (2026-10-07) — 화면도 더는 안 부른다
         self.assertNotIn('"/api/score/contrib"', self.m)
         self.assertNotIn("/api/score/contrib", _read("static", "js", "live_mode.js"))

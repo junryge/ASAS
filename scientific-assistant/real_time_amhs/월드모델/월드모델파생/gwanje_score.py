@@ -270,13 +270,13 @@ def get(path: str, params: dict, ttl: float = 0.0, timeout: float = 8.0):
 
 
 def feed(fab: str, prefix: str, limit: int) -> dict:
-    """그 FAB 의 관제 표 — 최근 limit 분 (최신이 위)."""
+    """그 FAB 의 관제 표 — 오늘 것 최대 limit 분 (최신이 위 · 화면은 하루치 1440 을 묻는다)."""
     sysname = sys_for(fab, prefix)
     where = base()
     if not sysname:
         return {"ok": False, "error": f"이 지도({fab}/{prefix})는 관제 시스템과 짝이 없습니다"}
     try:
-        st, _ct, body, _cd = get("/api/feed", {"sys": sysname, "limit": limit}, ttl=5)
+        st, _ct, body, _cd = get("/api/feed", {"sys": sysname, "limit": limit}, ttl=5, timeout=15)
     except OSError as e:
         return {"ok": False, "sys": sysname, "gwanje": where, "gwanje_src": resolve()["src"],
                 "error": f"관제에 닿지 않습니다 — 이 PC({_default_base()})와 관제 화면에서 넘어온 주소를 "

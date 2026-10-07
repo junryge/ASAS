@@ -26,7 +26,9 @@ function page(opts) {
       set innerHTML(v) { html = String(v); this.firstChild = html ? El(id + '>') : null; },
       classList: { toggle(c, on) { if (on === undefined ? !cls.has(c) : on) cls.add(c); else cls.delete(c); },
                    contains: c => cls.has(c), add: c => cls.add(c), remove: c => cls.delete(c) },
-      appendChild() {}, querySelector() { return El(id + ' q'); }, querySelectorAll() { return []; }, setAttribute() {},
+      appendChild() {}, querySelectorAll() { return []; }, setAttribute() {},
+      // 같은 선택자면 같은 칸 — 시험이 '아래 300행 더 보기' 단추를 눌러 볼 수 있게
+      _q: {}, querySelector(sel) { return this._q[sel] || (this._q[sel] = El(id + ' ' + sel)); },
       getBoundingClientRect() { return { left: 0, top: 0 }; }, clientWidth: 244, offsetWidth: 40,
     };
   }
@@ -51,7 +53,7 @@ function page(opts) {
       P.fetches.push([url, o && o.body ? JSON.parse(o.body) : null]);
       const d = url.indexOf('/api/live/cmd') === 0 ? { playing: true, me_playing: true, table: 'oht_data_m16br' }
         : { ok: true, sys: 'M16HUB', rows: opts.scoreRows || [], fab_cuts: {} };
-      return Promise.resolve({ ok: true, json: () => Promise.resolve(d), text: () => Promise.resolve('') });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(d), text: () => Promise.resolve(JSON.stringify(d)) });
     },
     ws: { readyState: 1, send: s => P.sent.push(JSON.parse(s)) },
     updateUI: d => { P.shown.push(d); g.document.getElementById('time-display').textContent = d.time_short || ''; },
@@ -186,7 +188,7 @@ const liveFrame = (t, extra) => ({ time: '2026-10-06 ' + t, time_short: t, state
   const lab = P.filterBtns.map(b => b.innerHTML).join(' | ');
   ok(lab === '전체 <b>6</b> | 경계↑ <b>4</b> | 위험↑ <b>2</b> | HID·RET <b>3</b>', '필터 단추에 개수: ' + lab);
   const sum = P.els['sc-sum'].innerHTML;
-  ok(sum.indexOf('최근 6분') >= 0 && sum.indexOf('경계↑ 4') >= 0 && sum.indexOf('위험↑ 2') >= 0, '요약에 경계↑ · 위험↑ 개수: ' + sum);
+  ok(sum.indexOf('오늘 10:00~10:00') >= 0 && sum.indexOf('경계↑ 4') >= 0 && sum.indexOf('위험↑ 2') >= 0, '요약에 오늘 · 경계↑ · 위험↑ 개수: ' + sum);
   ok(/HID_JAM<\/b> <b class="lv-red">2</.test(sum) && /RET<\/b> <b class="lv-red">2</.test(sum), '요약에 HID_JAM · RET 따로: ' + sum);
   P = page({ scoreRows: [row('정상')] });
   P.g.setAppMode('live');
@@ -194,6 +196,43 @@ const liveFrame = (t, extra) => ({ time: '2026-10-06 ' + t, time_short: t, state
   P.els['rtab-score'].style.display = 'block';
   P.g.LiveMode.renderScore();
   ok(P.els['sc-sum'].innerHTML.indexOf('위험↑ 0') >= 0 && P.els['sc-sum'].innerHTML.indexOf('risk-DANGER') < 0, '0 이면 칩 대신 흐린 글자');
+
+  // ── 10) 오늘 하루 전부 — '전체' 는 정상 줄만 300행씩 접고, 경계 · 위험 · HID·RET 는 몇 시든 늘 보인다 ──
+  //   고객(2026-10-07): "12:40분~현재까지 보여주네 — 오늘 하루 동안 벌어진 것 보여줘야지" ·
+  //   "실시간 관제처럼 아래 300행 보기" · "경계 · 위험 · HID RET 는 전부 다 보여야지 그래도"
+  const hm = i => { const m = 699 - i; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
+  const day = [];
+  for (let i = 0; i < 700; i++) {            // 최신이 위 — d0 = 11:39 · d699 = 00:00
+    const lv = (i === 650 || i === 651) ? '경계' : '정상';
+    day.push({ at: 'd' + i, datetime: '2026-10-07 ' + hm(i), time: hm(i), score: lv === '경계' ? 64 : 40,
+               level: lv, reason: '', metrics: [], hid: i === 680 ? [{ z: '9' }] : [] });
+  }
+  P = page({ scoreRows: day });
+  P.g.setAppMode('live');
+  await flush(); await flush();
+  P.els['rtab-score'].style.display = 'block';
+  P.g.LiveMode.renderScore();
+  ok(P.fetches.some(f => f[0].indexOf('/api/score/feed?limit=1440') === 0), '하루치(1440분)를 묻는다');
+  const cnt = h => (h.match(/class="ritem"/g) || []).length;
+  let L = P.els['sc-list'].innerHTML;
+  ok(cnt(L) === 303, '전체 = 최근 정상 300 + 300행 밖 경계 2 · HID 1: ' + cnt(L));
+  ok(L.indexOf('data-at="d650"') >= 0 && L.indexOf('data-at="d651"') >= 0 && L.indexOf('data-at="d680"') >= 0,
+     '300행 밖의 경계 · HID 줄도 그린다');
+  ok(L.indexOf('⋯ 정상 350행') >= 0 && L.indexOf('⋯ 정상 28행') >= 0, '접은 자리에 몇 행인지');
+  ok(L.indexOf('아래 300행 더 보기') >= 0 && L.indexOf('303 / 700행 표시 중 · 접은 정상 397행') >= 0, '더 보기 · 몇 행 표시 중');
+  ok(P.els['sc-sum'].innerHTML.indexOf('오늘 00:00~11:39') >= 0, '요약은 오늘 처음~지금: ' + P.els['sc-sum'].innerHTML.slice(0, 120));
+  ok(P.els['sc-spark'].innerHTML.indexOf('00:00~11:39 (700분)') >= 0, '추이도 오늘 하루');
+  P.els['sc-list'].querySelector('[data-more]').onclick();
+  L = P.els['sc-list'].innerHTML;
+  ok(cnt(L) === 603 && L.indexOf('아래 97행 더 보기') >= 0 && L.indexOf('⋯ 정상 50행') >= 0, '더 보기 → 정상 300행 더: ' + cnt(L));
+  P.filterBtns[1].onclick();                 // 경계↑ — 접지 않는다
+  L = P.els['sc-list'].innerHTML;
+  ok(cnt(L) === 2 && L.indexOf('더 보기') < 0 && L.indexOf('⋯ 정상') < 0, '경계↑ 는 전부 · 접지 않는다');
+  P.filterBtns[3].onclick();                 // HID·RET
+  L = P.els['sc-list'].innerHTML;
+  ok(cnt(L) === 1 && L.indexOf('data-at="d680"') >= 0, 'HID·RET 는 전부');
+  P.filterBtns[0].onclick();                 // 전체로 돌아오면 다시 300행부터
+  ok(cnt(P.els['sc-list'].innerHTML) === 303, '필터를 바꾸면 다시 300행부터');
 
   console.log(bad ? 'FAILED ' + bad : 'OK');
   process.exit(bad ? 1 : 0);
