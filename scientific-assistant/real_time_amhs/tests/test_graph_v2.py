@@ -156,14 +156,9 @@ class 칸마다_임계를_적는다(unittest.TestCase):
         self.assertIn("AVGTOTALTIME1MIN", svg)
 
     def _line_y(self, cell):
-        """그 칸 추이선의 **칸 안** 높이 (0=바닥, 1=맨 위) — 클수록 값이 크다.
-
-        ★2026-10-07 지표가 스코어처럼 한 줄에 하나(가로 전체 폭)로 바뀌어 칸마다
-          y 가 다르다. 절대 y 로 견주면 '어느 칸이 위에 깔렸나' 를 재게 된다.
-        """
-        top, by, _ty = self._band(cell)
-        ly = float(re.search(r'd="M[\d.]+,([\d.]+)', cell).group(1))
-        return (by - ly) / (by - top)
+        """그 칸 추이선의 y — 작을수록 위(=값이 큼)."""
+        m = re.search(r'd="M[\d.]+,([\d.]+)', cell)
+        return float(m.group(1))
 
     def test_칸끼리_같은_자로_잰다(self):
         """★이게 옛 그래프의 가장 큰 문제였다. 칸마다 자기 min~max 로 재면
@@ -174,7 +169,7 @@ class 칸마다_임계를_적는다(unittest.TestCase):
                                      40, cfg=self.cfg))
         hi = self._line_y(cells["M16HUB 반송시간"])   # 2.5배 → 위쪽
         lo = self._line_y(cells["M14 반송시간"])      # 0.6배 → 아래쪽
-        self.assertGreater(hi, lo,
+        self.assertLess(hi, lo,
                         "2.5배가 0.6배보다 위에 있어야 한다 (자기 min~max 로 "
                         "재면 둘 다 같은 높이가 된다)")
 
@@ -184,7 +179,7 @@ class 칸마다_임계를_적는다(unittest.TestCase):
                              % graphs._DARK["line"], cell).group(1))
         ty = float(re.search(r'y1="([\d.]+)"[^>]*stroke="%s" stroke-width="1" '
                              r'opacity="\.55"' % graphs._DARK["crit"], cell).group(1))
-        return by - (graphs.PANEL_H - graphs.PANEL_TOP - graphs.PANEL_BOT), by, ty
+        return by - (graphs.CELL_H - 66 - 12), by, ty
 
     def test_임계_2배_안이면_임계선이_가운데다(self):
         """0~임계×2 로 재니 임계는 가운데 — 눈이 기준선을 찾을 필요가 없다."""

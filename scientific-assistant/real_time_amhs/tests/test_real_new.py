@@ -362,11 +362,7 @@ class 실시간_화면에서_자주_보는_모양(unittest.TestCase):
         """고른 시각과 끝 시각이 한자리에 겹쳐 '23:2344' 로 읽혔다."""
         rows = _rows("M14", "", M14_ra=3)
         svg = G.render(rows, BASE + dt.timedelta(minutes=59), 60, cfg=CFG)
-        # ★시간축은 스코어 밑 · 맨 아래 두 곳이다 (2026-10-07 지표 줄이 길어져서).
-        #   축마다 시작 한 번 · 끝(=고른 분) 한 번이면 맞다.
-        axes = svg.count(">09:29<")                # 창 시작 (09:59 ±30분, 자료는 09:59 까지)
-        self.assertGreaterEqual(axes, 1)
-        self.assertEqual(svg.count(">09:59<"), axes, "끝 시각을 두 번 적었다")
+        self.assertEqual(svg.count(">09:59<"), 1, "끝 시각을 두 번 적었다")
         self.assertRegex(svg, r'text-anchor="end" fill="[^"]+" font-weight="700"[^>]*>09:59<',
                          "고른 시각이 칸 밖으로 안 나가게 끝에 맞춰야 한다")
 

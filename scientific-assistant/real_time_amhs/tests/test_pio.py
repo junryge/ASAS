@@ -471,16 +471,20 @@ class 컬럼이_0만_올_때(unittest.TestCase):
             cfg = json.load(f)
         return graphs.render(rows, base + dt.timedelta(minutes=30), 60, cfg=cfg)
 
-    def test_0_만_와도_막대가_선다(self):
+    def test_0_만_와도_선이_선다(self):
+        """★2026-10-07 막대 → 경로마다 선 하나 (고객: "왜 막대로 주냐 — 선으로 주라" ·
+        "pio 관련은 선을 2개 3개로"). 1분 컬럼이 0 뿐이면 reason 값으로 그린다."""
         import re
         base, rows = self._rows(0)
         svg = self._svg(rows, base)
         self.assertIn("PIO 주 경로", svg)
         self.assertNotIn("범위 0~0개", svg)
         blk = svg.split("PIO 주 경로")[1]
-        bars = [b for b in re.findall(r'<rect[^>]*fill="#(?:C58CFF|5FB8FF)"[^>]*/>', blk)
-                if 'rx="1.5"' not in b]
-        self.assertGreater(len(bars), 60)      # 60분 × 2경로
+        lines = re.findall(r'<path class="pio" d="([^"]+)" fill="none" stroke="#(C58CFF|5FB8FF)"', blk)
+        self.assertEqual({c for _d, c in lines}, {"C58CFF", "5FB8FF"}, "경로마다 선 하나")
+        for d, _c in lines:
+            ys = {y for y in re.findall(r'[\d.]+,([\d.]+)', d)}
+            self.assertGreater(len(ys), 1, "0 으로 깔린 선 — reason 값으로 대체가 안 됐다")
 
     def test_단위가_다르면_이름표에_적는다(self):
         """1분 개수가 아니라 10분 누적이다. 안 적으면 열 배로 읽힌다."""
@@ -836,13 +840,8 @@ class 마우스를_대면_그_자리에_뜬다(unittest.TestCase):
         self.assertFalse([t for t in tips if "\n" in t], "줄바꿈이 글자 안에 남았다")
 
     def test_창이_길면_띠를_묶는다(self):
-        """띠가 HIT_MIN_W 보다 좁으면 마우스로 집을 수가 없다 — 분을 묶는다.
-
-        ★2026-10-07 지표가 가로 전체 폭이 되어 180분(자료 121분)이면 띠가 8px 로
-          넉넉하다. 6시간 창(361분)으로 묶이는지 본다.
-        """
-        svg = _G.render(_rows("M14", n=400), _dt.datetime(2026, 9, 16, 17, 0),
-                        minutes=360, width=1040)
+        """180분이면 1.8px 짜리 띠가 180개 — 마우스로 집을 수가 없다."""
+        svg = _G.render(_rows("M14", n=200), self.C, minutes=180, width=1040)
         self.assertTrue(any("최고" in t for t in self._tips(svg)))
 
     def test_눌러서_고정할_수_있다(self):
