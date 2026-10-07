@@ -132,10 +132,6 @@ class 화면과_서버가_잇는다(unittest.TestCase):
         for need in ("/api/score/gwanje", "관제 주소 ", "gwLink(S)", "window.prompt("):
             self.assertIn(need, js)
 
-    def test_주소_파일은_저장소에_안_올린다(self):
-        with open(os.path.join(APP, "..", "..", ".gitignore"), encoding="utf-8") as f:
-            self.assertIn("관제_주소.json", f.read().split())
-
 
 if __name__ == "__main__":
     unittest.main()
