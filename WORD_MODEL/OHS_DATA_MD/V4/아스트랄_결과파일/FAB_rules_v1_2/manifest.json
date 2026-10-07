@@ -1,0 +1,137 @@
+[
+  {
+    "path": "CHANGELOG.md",
+    "bytes": 2092,
+    "sha256": "150da495c3251ff343a41fb5798fb28da0a988a683bd0bab4885eb56e11eb9e2"
+  },
+  {
+    "path": "FAB별_지표와_스코어링룰_v1_2_설명.html",
+    "bytes": 167668,
+    "sha256": "d1e96f5a791e8bcae39fb910b88295fac2e90ba0d9225c22a68f691ebd239933"
+  },
+  {
+    "path": "HUBROOM_domain.md",
+    "bytes": 13957,
+    "sha256": "ad39b768fa08a2fb640a18bb073a12c0b0589b1eaf0ca734092352593477e98a"
+  },
+  {
+    "path": "README.md",
+    "bytes": 1119,
+    "sha256": "462e4fbc1a109b7d76e2024b253e64235c60b04c1aa545abda15fb1adce85fe9"
+  },
+  {
+    "path": "RULES.md",
+    "bytes": 8107,
+    "sha256": "53eb95e499ae483bab88dc77470819f47cf3517c8b6d82ab9c96c275865d1b2a"
+  },
+  {
+    "path": "build_html.py",
+    "bytes": 35806,
+    "sha256": "89f387e8392a30b3ba048728c2b2ac420817be303dc551e9f1693bac9ec966d7"
+  },
+  {
+    "path": "derived_thresholds.csv",
+    "bytes": 2348,
+    "sha256": "a5bd7ebeb72b72d019b8b0dda09c95c0a9b86ee5ac73ae8458f6729b37086b28"
+  },
+  {
+    "path": "design_replay/FAB_scores.csv.gz",
+    "bytes": 4670218,
+    "sha256": "072d6fb295b58c397d48f62b0b73d7310da1ace206da4c091a902ae31591ba32"
+  },
+  {
+    "path": "design_replay/alert_episodes.csv",
+    "bytes": 154178,
+    "sha256": "aae3acb33b5d5328a8d72a2490899c23e644eca1ebc86366ac65a4e0cfdf4e4b"
+  },
+  {
+    "path": "design_replay/run.log",
+    "bytes": 475,
+    "sha256": "57efa63fac645f0907ed88f7b9d5b9cf116b829010c8e0a887b22dba3cd4f7d5"
+  },
+  {
+    "path": "design_replay/run_status.json",
+    "bytes": 115,
+    "sha256": "d5c0a94e90404a89a2750670df56499453ce9fa09f6776f0bbddf06ff9916a24"
+  },
+  {
+    "path": "design_replay/score_summary.csv",
+    "bytes": 203,
+    "sha256": "10b1706ff415f51afd99ff3d887e723c3b7421c4d30d20c16bc61a5b2ff9dedb"
+  },
+  {
+    "path": "design_replay/sorter_version_comparison.csv",
+    "bytes": 183,
+    "sha256": "5017285c6952b650628394318aaed29aa718a91229f1c734c18e758ebe0dd7c4"
+  },
+  {
+    "path": "fab_risk_rules.py",
+    "bytes": 16265,
+    "sha256": "e8d49b9a55234fa46cd6595802a957230867159836393780f5f6fab4cf087555"
+  },
+  {
+    "path": "history/FAB_위험룰_v1_1_실행패키지.zip",
+    "bytes": 9952178,
+    "sha256": "c4347c7045807955824aaabb863e32fb4ef1a998418e5ee67d23dd52fb77cb85"
+  },
+  {
+    "path": "history/v1.1_to_v1.2_fab_risk_rules.py.diff",
+    "bytes": 4002,
+    "sha256": "7ffe07c20cd1a50bcf0bde1cffc9e89eb936a0f3c38cc78c10a8eb90654f19d0"
+  },
+  {
+    "path": "history/v1.1_to_v1.2_rule_config.json.diff",
+    "bytes": 2452,
+    "sha256": "ce2d0b802c84ceb40f736c401f2ec566110282b9167ef5ad8068c67495639bed"
+  },
+  {
+    "path": "release_history.json",
+    "bytes": 2039,
+    "sha256": "43ec30c88c87cca61f3260a56f216e6aa7374fcbd601cb31a330918b3bce5e3c"
+  },
+  {
+    "path": "requirements.txt",
+    "bytes": 27,
+    "sha256": "50bd36afe0a4a4950f51db01fddfedc5d16814a1664c8a21a02e7c247b481bda"
+  },
+  {
+    "path": "rule_catalog.csv",
+    "bytes": 794,
+    "sha256": "f20147b5c8e879520be42eb25088ee8c71b80d2f48d6bc1fc2adc4ca989fabff"
+  },
+  {
+    "path": "rule_config.json",
+    "bytes": 27931,
+    "sha256": "fa1dc32687c8e1c15faacdf4c97cd758b8739d14558150a2585274324a796bbe"
+  },
+  {
+    "path": "rule_name_mapping.csv",
+    "bytes": 1949,
+    "sha256": "572fbf5b7be4fe36181e76e73b2f5d5b0b79a42067cc421c907633c73b40aef7"
+  },
+  {
+    "path": "run_safe.py",
+    "bytes": 1269,
+    "sha256": "5f67d3b2a810a07c50591095e97c3ddee67a4fbe1062c3322d1045e5ad0dec63"
+  },
+  {
+    "path": "source_dictionary.csv",
+    "bytes": 32723,
+    "sha256": "8f31b19e0ca51dbc85706de1351d68ffa4cdd8dae393bc792361f882c6fc7952"
+  },
+  {
+    "path": "storage_parameters.csv",
+    "bytes": 438,
+    "sha256": "fe32ab99858fe86dc46e7d7f0a02fe9a4d580d7f380c6f7a5065f977a5d46ae8"
+  },
+  {
+    "path": "verification.json",
+    "bytes": 1284,
+    "sha256": "e3c162d6cf161a1175a1d0c68f0379851c0ef4515acf616dea81e4f276313282"
+  },
+  {
+    "path": "verify_rules.py",
+    "bytes": 2242,
+    "sha256": "e0a0bdf543c1ddf9ec5ce81341106a538faf40a84b6552b516815ef952e09ea5"
+  }
+]

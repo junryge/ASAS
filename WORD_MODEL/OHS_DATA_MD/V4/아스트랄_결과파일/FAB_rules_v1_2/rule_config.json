@@ -1,0 +1,1113 @@
+{
+  "version": "1.2",
+  "fit_start": "2026-08-11 00:00:00",
+  "fit_end": "2026-09-11 23:59:00",
+  "fit_minutes": 46080,
+  "time_columns": {
+    "M14A": "M14.QUE.LOAD.AVGLOADTIME1MIN",
+    "M14B": "M14B.QUE.TIME.AVGTOTALTIME1MIN",
+    "M16A": "M16A.QUE.LOAD.AVGLOADTIME1MIN",
+    "M16B": "M16B.QUE.LOAD.AVGLOADTIME1MIN",
+    "M16HUB": "M16HUB.QUE.TIME.AVGTOTALTIME1MIN"
+  },
+  "parameters": {
+    "M14A.q": {
+      "low": 1828.0,
+      "high": 2011.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14A.growth": {
+      "low": 0.055723,
+      "high": 0.15,
+      "enabled": true,
+      "n": 46013
+    },
+    "M14A.time": {
+      "low": 3.021,
+      "high": 3.38,
+      "enabled": true,
+      "n": 46055
+    },
+    "M14A.sla": {
+      "low": 22.636,
+      "high": 29.19,
+      "enabled": true,
+      "n": 46055
+    },
+    "M14A.util_drop": {
+      "low": 3.4,
+      "high": 6.43,
+      "enabled": true,
+      "n": 46011
+    },
+    "M14A.qjump": {
+      "low": 0.031017,
+      "high": 1.031017,
+      "enabled": true,
+      "n": 46011
+    },
+    "M14A.loss": {
+      "low": 0.06,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46002
+    },
+    "M14A.deficit": {
+      "low": 0.072078,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14A.route_HUB": {
+      "low": 192.0,
+      "high": 297.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14A.alt_HUB": {
+      "low": 2,
+      "high": 10,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14A.pio_HUB": {
+      "low": 2,
+      "high": 8,
+      "enabled": true,
+      "n": 46076
+    },
+    "M14A.pio_M14B": {
+      "low": 11.0,
+      "high": 20.0,
+      "enabled": true,
+      "n": 46076
+    },
+    "M14A.cnvtime_NORTH": {
+      "low": 10.102,
+      "high": 21.707,
+      "enabled": true,
+      "n": 46031
+    },
+    "M14A.cnvq_NORTH": {
+      "low": 118.0,
+      "high": 195.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14A.cnvtime_SOUTH": {
+      "low": 5.8567,
+      "high": 10.64088,
+      "enabled": true,
+      "n": 46014
+    },
+    "M14A.cnvq_SOUTH": {
+      "low": 75.0,
+      "high": 113.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14B.q": {
+      "low": 1382.0,
+      "high": 1582.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14B.growth": {
+      "low": 0.06367,
+      "high": 0.15,
+      "enabled": true,
+      "n": 46013
+    },
+    "M14B.time": {
+      "low": 3.704,
+      "high": 4.054,
+      "enabled": true,
+      "n": 46055
+    },
+    "M14B.sla": {
+      "low": 0.0,
+      "high": 1.0,
+      "enabled": false,
+      "n": 0
+    },
+    "M14B.util_drop": {
+      "low": 3.24,
+      "high": 6.129,
+      "enabled": true,
+      "n": 46011
+    },
+    "M14B.qjump": {
+      "low": 0.034426,
+      "high": 1.034426,
+      "enabled": true,
+      "n": 46011
+    },
+    "M14B.loss": {
+      "low": 0.06,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46002
+    },
+    "M14B.deficit": {
+      "low": 0.06,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14B.route_HUB": {
+      "low": 66.0,
+      "high": 119.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14B.alt_HUB": {
+      "low": 15.0,
+      "high": 50.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14B.pio_HUB": {
+      "low": 2,
+      "high": 8,
+      "enabled": true,
+      "n": 46076
+    },
+    "M14B.route_M14A": {
+      "low": 392.0,
+      "high": 555.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M14B.pio_M14A": {
+      "low": 8.0,
+      "high": 22.0,
+      "enabled": true,
+      "n": 46076
+    },
+    "M16A.q": {
+      "low": 1940.0,
+      "high": 2156.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16A.growth": {
+      "low": 0.053258,
+      "high": 0.15,
+      "enabled": true,
+      "n": 46013
+    },
+    "M16A.time": {
+      "low": 2.638,
+      "high": 2.834,
+      "enabled": true,
+      "n": 46043
+    },
+    "M16A.sla": {
+      "low": 10.04,
+      "high": 13.28,
+      "enabled": true,
+      "n": 46055
+    },
+    "M16A.util_drop": {
+      "low": 3.54,
+      "high": 6.839,
+      "enabled": true,
+      "n": 46011
+    },
+    "M16A.qjump": {
+      "low": 0.028097,
+      "high": 1.028097,
+      "enabled": true,
+      "n": 46011
+    },
+    "M16A.loss": {
+      "low": 0.06,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46002
+    },
+    "M16A.deficit": {
+      "low": 0.06,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16A.route_HUB": {
+      "low": 547.0,
+      "high": 612.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16A.alt_HUB": {
+      "low": 391.0,
+      "high": 443.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16A.pio_HUB": {
+      "low": 6.0,
+      "high": 29.0,
+      "enabled": true,
+      "n": 46076
+    },
+    "M16A.route_M16B": {
+      "low": 230.0,
+      "high": 368.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16A.pio_M16B": {
+      "low": 2,
+      "high": 8,
+      "enabled": true,
+      "n": 46076
+    },
+    "M16B.q": {
+      "low": 870.0,
+      "high": 978.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16B.growth": {
+      "low": 0.091395,
+      "high": 0.178028,
+      "enabled": true,
+      "n": 46013
+    },
+    "M16B.time": {
+      "low": 2.845,
+      "high": 3.208,
+      "enabled": true,
+      "n": 46043
+    },
+    "M16B.sla": {
+      "low": 13.76,
+      "high": 19.17,
+      "enabled": true,
+      "n": 46055
+    },
+    "M16B.util_drop": {
+      "low": 4.15,
+      "high": 7.92,
+      "enabled": true,
+      "n": 46011
+    },
+    "M16B.qjump": {
+      "low": 0.054334,
+      "high": 1.054334,
+      "enabled": true,
+      "n": 46011
+    },
+    "M16B.loss": {
+      "low": 0.06,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46002
+    },
+    "M16B.deficit": {
+      "low": 0.06,
+      "high": 0.22,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16B.route_M16A": {
+      "low": 216.0,
+      "high": 249.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16B.pio_M16A": {
+      "low": 2,
+      "high": 8,
+      "enabled": true,
+      "n": 46076
+    },
+    "M16HUB.q": {
+      "low": 418.0,
+      "high": 596.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16HUB.growth": {
+      "low": 0.065375,
+      "high": 0.15,
+      "enabled": true,
+      "n": 46013
+    },
+    "M16HUB.time": {
+      "low": 9.1221,
+      "high": 14.16483,
+      "enabled": true,
+      "n": 46040
+    },
+    "M16HUB.sla": {
+      "low": 0.0,
+      "high": 1.0,
+      "enabled": false,
+      "n": 46055
+    },
+    "M16HUB.loaded": {
+      "low": 1.007547,
+      "high": 1.107547,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16HUB.route_M14A": {
+      "low": 71.0,
+      "high": 162.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16HUB.pio_M14A": {
+      "low": 2,
+      "high": 8,
+      "enabled": true,
+      "n": 46076
+    },
+    "M16HUB.route_M14B": {
+      "low": 67.0,
+      "high": 137.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16HUB.pio_M14B": {
+      "low": 2,
+      "high": 8,
+      "enabled": true,
+      "n": 46076
+    },
+    "M16HUB.route_M16A": {
+      "low": 143.0,
+      "high": 167.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16HUB.pio_M16A": {
+      "low": 7.0,
+      "high": 20.0,
+      "enabled": true,
+      "n": 46076
+    },
+    "M16HUB.route_MLUD": {
+      "low": 20.0,
+      "high": 34.0,
+      "enabled": true,
+      "n": 46051
+    },
+    "M16HUB.pio_MLUD": {
+      "low": 2,
+      "high": 11.0,
+      "enabled": true,
+      "n": 46076
+    }
+  },
+  "sorter_parameters": {
+    "M14A.sorter_normal": {
+      "low": 84.0,
+      "high": 741.44,
+      "enabled": true
+    },
+    "M14A.sorter_cu": {
+      "low": 22.2,
+      "high": 307.0,
+      "enabled": false
+    },
+    "M14B.sorter_normal": {
+      "low": 54.5,
+      "high": 599.44,
+      "enabled": true
+    },
+    "M14B.sorter_cu": {
+      "low": 16.35,
+      "high": 337.0,
+      "enabled": false
+    },
+    "M16A.sorter_normal": {
+      "low": 90.0,
+      "high": 360,
+      "enabled": true
+    },
+    "M16A.sorter_cu": {
+      "low": 27.0,
+      "high": 90.0,
+      "enabled": false
+    },
+    "M16B.sorter_normal": {
+      "low": 45.0,
+      "high": 180,
+      "enabled": true
+    },
+    "M16B.sorter_cu": {
+      "low": 13.5,
+      "high": 76.0,
+      "enabled": false
+    }
+  },
+  "features": {
+    "M14A.q": {
+      "display": "파생.M14A.현재 영역 물량",
+      "raw_columns": [
+        "M14.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M14A.q"
+    },
+    "M14A.growth": {
+      "display": "파생.M14A.최근10분 물량 증가율",
+      "raw_columns": [
+        "M14.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M14A.growth"
+    },
+    "M14A.time": {
+      "display": "파생.M14A.완료반송시간 3분 중앙값",
+      "raw_columns": [
+        "M14.QUE.LOAD.AVGLOADTIME1MIN"
+      ],
+      "feature_id": "M14A.time"
+    },
+    "M14A.sla": {
+      "display": "파생.M14A.4분초과율 3분 중앙값",
+      "raw_columns": [
+        "M14.QUE.ALL.TRANSPORT4MINOVERRATIO"
+      ],
+      "feature_id": "M14A.sla"
+    },
+    "M14A.util_drop": {
+      "display": "파생.M14A.직전5분 대비 OHT가동률 하락폭",
+      "raw_columns": [
+        "M14.QUE.OHT.OHTUTIL"
+      ],
+      "feature_id": "M14A.util_drop"
+    },
+    "M14A.qjump": {
+      "display": "파생.M14A.직전5분 대비 Queue 증가율",
+      "raw_columns": [
+        "M14.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M14A.qjump"
+    },
+    "M14A.loss": {
+      "display": "파생.M14A.과거처리수준 대비 완료감소율",
+      "raw_columns": [
+        "M14.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M14A.loss"
+    },
+    "M14A.deficit": {
+      "display": "파생.M14A.최근10분 생성대비 완료부족률",
+      "raw_columns": [
+        "M14.QUE.ALL.CURRENTQCREATED",
+        "M14.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M14A.deficit"
+    },
+    "M14A.route_HUB": {
+      "display": "파생.M14A.HUB행 현재물량",
+      "raw_columns": [
+        "M14.QUE.ALL.3F_TO_HUB_JOB"
+      ],
+      "feature_id": "M14A.route_HUB"
+    },
+    "M14A.alt_HUB": {
+      "display": "파생.M14A.HUB행 ALT대기",
+      "raw_columns": [
+        "M14.QUE.ALL.3F_TO_HUB_JOB_ALT"
+      ],
+      "feature_id": "M14A.alt_HUB"
+    },
+    "M14A.pio_HUB": {
+      "display": "파생.M14A.HUB행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16HUB<-M14A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14A.pio_HUB"
+    },
+    "M14A.piofreq_HUB": {
+      "display": "파생.M14A.HUB행 PIO 발생분수",
+      "raw_columns": [
+        "M16HUB<-M14A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14A.piofreq_HUB"
+    },
+    "M14A.pio_M14B": {
+      "display": "파생.M14A.M14B행 PIO 최근5분 합",
+      "raw_columns": [
+        "M14A->M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14A.pio_M14B"
+    },
+    "M14A.piofreq_M14B": {
+      "display": "파생.M14A.M14B행 PIO 발생분수",
+      "raw_columns": [
+        "M14A->M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14A.piofreq_M14B"
+    },
+    "M14A.cnvtime_NORTH": {
+      "display": "파생.M14A.NORTH CNV향 반송시간",
+      "raw_columns": [
+        "M14.QUE.CNV.NORTHM14TOCNVTIME1MIN"
+      ],
+      "feature_id": "M14A.cnvtime_NORTH"
+    },
+    "M14A.cnvq_NORTH": {
+      "display": "파생.M14A.NORTH CNV향 물량",
+      "raw_columns": [
+        "M14.QUE.CNV.M14ATONORTHCURRENTQCNT"
+      ],
+      "feature_id": "M14A.cnvq_NORTH"
+    },
+    "M14A.cnvtime_SOUTH": {
+      "display": "파생.M14A.SOUTH CNV향 반송시간",
+      "raw_columns": [
+        "M14.QUE.CNV.SOUTHM14TOCNVTIME1MIN"
+      ],
+      "feature_id": "M14A.cnvtime_SOUTH"
+    },
+    "M14A.cnvq_SOUTH": {
+      "display": "파생.M14A.SOUTH CNV향 물량",
+      "raw_columns": [
+        "M14.QUE.CNV.M14ATOSOUTHCURRENTQCNT"
+      ],
+      "feature_id": "M14A.cnvq_SOUTH"
+    },
+    "M14A.sorter_normal": {
+      "display": "파생.M14A.normal Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M14.SORTER.ABN.SORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M14A.sorter_normal"
+    },
+    "M14A.sorter_cu": {
+      "display": "파생.M14A.cu Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M14.SORTER.ABN.CUSORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M14A.sorter_cu"
+    },
+    "M14B.q": {
+      "display": "파생.M14B.현재 영역 물량",
+      "raw_columns": [
+        "M14B.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M14B.q"
+    },
+    "M14B.growth": {
+      "display": "파생.M14B.최근10분 물량 증가율",
+      "raw_columns": [
+        "M14B.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M14B.growth"
+    },
+    "M14B.time": {
+      "display": "파생.M14B.완료반송시간 3분 중앙값",
+      "raw_columns": [
+        "M14B.QUE.TIME.AVGTOTALTIME1MIN"
+      ],
+      "feature_id": "M14B.time"
+    },
+    "M14B.sla": {
+      "display": "파생.M14B.4분초과율 3분 중앙값",
+      "raw_columns": [
+        "M14B.QUE.ALL.TRANSPORT4MINOVERRATIO"
+      ],
+      "feature_id": "M14B.sla"
+    },
+    "M14B.util_drop": {
+      "display": "파생.M14B.직전5분 대비 OHT가동률 하락폭",
+      "raw_columns": [
+        "M14B.QUE.OHT.OHTUTIL"
+      ],
+      "feature_id": "M14B.util_drop"
+    },
+    "M14B.qjump": {
+      "display": "파생.M14B.직전5분 대비 Queue 증가율",
+      "raw_columns": [
+        "M14B.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M14B.qjump"
+    },
+    "M14B.loss": {
+      "display": "파생.M14B.과거처리수준 대비 완료감소율",
+      "raw_columns": [
+        "M14B.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M14B.loss"
+    },
+    "M14B.deficit": {
+      "display": "파생.M14B.최근10분 생성대비 완료부족률",
+      "raw_columns": [
+        "M14B.QUE.ALL.CURRENTQCREATED",
+        "M14B.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M14B.deficit"
+    },
+    "M14B.route_HUB": {
+      "display": "파생.M14B.HUB행 현재물량",
+      "raw_columns": [
+        "M14B.QUE.ALL.7F_TO_HUB_JOB"
+      ],
+      "feature_id": "M14B.route_HUB"
+    },
+    "M14B.alt_HUB": {
+      "display": "파생.M14B.HUB행 ALT대기",
+      "raw_columns": [
+        "M14B.QUE.ALL.7F_TO_HUB_JOB_ALT"
+      ],
+      "feature_id": "M14B.alt_HUB"
+    },
+    "M14B.pio_HUB": {
+      "display": "파생.M14B.HUB행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16HUB<-M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14B.pio_HUB"
+    },
+    "M14B.piofreq_HUB": {
+      "display": "파생.M14B.HUB행 PIO 발생분수",
+      "raw_columns": [
+        "M16HUB<-M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14B.piofreq_HUB"
+    },
+    "M14B.route_M14A": {
+      "display": "파생.M14B.M14A행 현재물량",
+      "raw_columns": [
+        "M14B.LFT.SENDFAB.TO_M14A_CURRENTQCNT"
+      ],
+      "feature_id": "M14B.route_M14A"
+    },
+    "M14B.pio_M14A": {
+      "display": "파생.M14B.M14A행 PIO 최근5분 합",
+      "raw_columns": [
+        "M14A<-M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14B.pio_M14A"
+    },
+    "M14B.piofreq_M14A": {
+      "display": "파생.M14B.M14A행 PIO 발생분수",
+      "raw_columns": [
+        "M14A<-M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M14B.piofreq_M14A"
+    },
+    "M14B.sorter_normal": {
+      "display": "파생.M14B.normal Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M14B.SORTER.ABN.SORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M14B.sorter_normal"
+    },
+    "M14B.sorter_cu": {
+      "display": "파생.M14B.cu Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M14B.SORTER.ABN.CUSORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M14B.sorter_cu"
+    },
+    "M16A.q": {
+      "display": "파생.M16A.현재 영역 물량",
+      "raw_columns": [
+        "M16A.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M16A.q"
+    },
+    "M16A.growth": {
+      "display": "파생.M16A.최근10분 물량 증가율",
+      "raw_columns": [
+        "M16A.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M16A.growth"
+    },
+    "M16A.time": {
+      "display": "파생.M16A.완료반송시간 3분 중앙값",
+      "raw_columns": [
+        "M16A.QUE.LOAD.AVGLOADTIME1MIN"
+      ],
+      "feature_id": "M16A.time"
+    },
+    "M16A.sla": {
+      "display": "파생.M16A.4분초과율 3분 중앙값",
+      "raw_columns": [
+        "M16A.QUE.ALL.TRANSPORT4MINOVERRATIO"
+      ],
+      "feature_id": "M16A.sla"
+    },
+    "M16A.util_drop": {
+      "display": "파생.M16A.직전5분 대비 OHT가동률 하락폭",
+      "raw_columns": [
+        "M16A.QUE.OHT.OHTUTIL"
+      ],
+      "feature_id": "M16A.util_drop"
+    },
+    "M16A.qjump": {
+      "display": "파생.M16A.직전5분 대비 Queue 증가율",
+      "raw_columns": [
+        "M16A.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M16A.qjump"
+    },
+    "M16A.loss": {
+      "display": "파생.M16A.과거처리수준 대비 완료감소율",
+      "raw_columns": [
+        "M16A.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M16A.loss"
+    },
+    "M16A.deficit": {
+      "display": "파생.M16A.최근10분 생성대비 완료부족률",
+      "raw_columns": [
+        "M16A.QUE.ALL.CURRENTQCREATED",
+        "M16A.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M16A.deficit"
+    },
+    "M16A.route_HUB": {
+      "display": "파생.M16A.HUB행 현재물량",
+      "raw_columns": [
+        "M16A.QUE.ALL.6F_TO_HUB_JOB"
+      ],
+      "feature_id": "M16A.route_HUB"
+    },
+    "M16A.alt_HUB": {
+      "display": "파생.M16A.HUB행 ALT대기",
+      "raw_columns": [
+        "M16A.QUE.ALL.6F_TO_HUB_JOB_ALT"
+      ],
+      "feature_id": "M16A.alt_HUB"
+    },
+    "M16A.pio_HUB": {
+      "display": "파생.M16A.HUB행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16HUB<-M16A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16A.pio_HUB"
+    },
+    "M16A.piofreq_HUB": {
+      "display": "파생.M16A.HUB행 PIO 발생분수",
+      "raw_columns": [
+        "M16HUB<-M16A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16A.piofreq_HUB"
+    },
+    "M16A.route_M16B": {
+      "display": "파생.M16A.M16B행 현재물량",
+      "raw_columns": [
+        "M16A.LFT.SENDFAB.TO_M16B_CURRENTQCNT"
+      ],
+      "feature_id": "M16A.route_M16B"
+    },
+    "M16A.pio_M16B": {
+      "display": "파생.M16A.M16B행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16A->M16B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16A.pio_M16B"
+    },
+    "M16A.piofreq_M16B": {
+      "display": "파생.M16A.M16B행 PIO 발생분수",
+      "raw_columns": [
+        "M16A->M16B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16A.piofreq_M16B"
+    },
+    "M16A.sorter_normal": {
+      "display": "파생.M16A.normal Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M16A.SORTER.ABN.SORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M16A.sorter_normal"
+    },
+    "M16A.sorter_cu": {
+      "display": "파생.M16A.cu Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M16A.SORTER.ABN.CUSORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M16A.sorter_cu"
+    },
+    "M16B.q": {
+      "display": "파생.M16B.현재 영역 물량",
+      "raw_columns": [
+        "M16B.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M16B.q"
+    },
+    "M16B.growth": {
+      "display": "파생.M16B.최근10분 물량 증가율",
+      "raw_columns": [
+        "M16B.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M16B.growth"
+    },
+    "M16B.time": {
+      "display": "파생.M16B.완료반송시간 3분 중앙값",
+      "raw_columns": [
+        "M16B.QUE.LOAD.AVGLOADTIME1MIN"
+      ],
+      "feature_id": "M16B.time"
+    },
+    "M16B.sla": {
+      "display": "파생.M16B.4분초과율 3분 중앙값",
+      "raw_columns": [
+        "M16B.QUE.ALL.TRANSPORT4MINOVERRATIO"
+      ],
+      "feature_id": "M16B.sla"
+    },
+    "M16B.util_drop": {
+      "display": "파생.M16B.직전5분 대비 OHT가동률 하락폭",
+      "raw_columns": [
+        "M16B.QUE.OHT.OHTUTIL"
+      ],
+      "feature_id": "M16B.util_drop"
+    },
+    "M16B.qjump": {
+      "display": "파생.M16B.직전5분 대비 Queue 증가율",
+      "raw_columns": [
+        "M16B.QUE.ALL.CURRENTQCNT"
+      ],
+      "feature_id": "M16B.qjump"
+    },
+    "M16B.loss": {
+      "display": "파생.M16B.과거처리수준 대비 완료감소율",
+      "raw_columns": [
+        "M16B.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M16B.loss"
+    },
+    "M16B.deficit": {
+      "display": "파생.M16B.최근10분 생성대비 완료부족률",
+      "raw_columns": [
+        "M16B.QUE.ALL.CURRENTQCREATED",
+        "M16B.QUE.ALL.CURRENTQCOMPLETED"
+      ],
+      "feature_id": "M16B.deficit"
+    },
+    "M16B.route_M16A": {
+      "display": "파생.M16B.M16A행 현재물량",
+      "raw_columns": [
+        "M16B.LFT.SENDFAB.TO_M16A_CURRENTQCNT"
+      ],
+      "feature_id": "M16B.route_M16A"
+    },
+    "M16B.pio_M16A": {
+      "display": "파생.M16B.M16A행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16B->M16A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16B.pio_M16A"
+    },
+    "M16B.piofreq_M16A": {
+      "display": "파생.M16B.M16A행 PIO 발생분수",
+      "raw_columns": [
+        "M16B->M16A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16B.piofreq_M16A"
+    },
+    "M16B.sorter_normal": {
+      "display": "파생.M16B.normal Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M16B.SORTER.ABN.SORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M16B.sorter_normal"
+    },
+    "M16B.sorter_cu": {
+      "display": "파생.M16B.cu Sorter대기 5분중앙값",
+      "raw_columns": [
+        "M16B.SORTER.ABN.CUSORTERWAITCOUNTOVER"
+      ],
+      "feature_id": "M16B.sorter_cu"
+    },
+    "M16HUB.q": {
+      "display": "파생.M16HUB.현재 영역 물량",
+      "raw_columns": [
+        "M16HUB.QUE.ALL.CURRENT_M16A_3F_JOB_2"
+      ],
+      "feature_id": "M16HUB.q"
+    },
+    "M16HUB.growth": {
+      "display": "파생.M16HUB.최근10분 물량 증가율",
+      "raw_columns": [
+        "M16HUB.QUE.ALL.CURRENT_M16A_3F_JOB_2"
+      ],
+      "feature_id": "M16HUB.growth"
+    },
+    "M16HUB.time": {
+      "display": "파생.M16HUB.완료반송시간 3분 중앙값",
+      "raw_columns": [
+        "M16HUB.QUE.TIME.AVGTOTALTIME1MIN"
+      ],
+      "feature_id": "M16HUB.time"
+    },
+    "M16HUB.sla": {
+      "display": "파생.M16HUB.4분초과율 3분 중앙값",
+      "raw_columns": [
+        "M16HUB.QUE.ALL.TRANSPORT4MINOVERRATIO"
+      ],
+      "feature_id": "M16HUB.sla"
+    },
+    "M16HUB.loaded": {
+      "display": "파생.M16HUB.운용대수 대비 적재OHT 비율",
+      "raw_columns": [
+        "M16HUB.QUE.ALL.3F_CMD",
+        "M16HUB.QUE.OHT.CURRENTOHTQCNT"
+      ],
+      "feature_id": "M16HUB.loaded"
+    },
+    "M16HUB.stb_cmd": {
+      "display": "파생.M16HUB.STB행 적재OHT 수",
+      "raw_columns": [
+        "M16HUB.QUE.STB.3F_TO_M16A_3F_STB_CMD"
+      ],
+      "feature_id": "M16HUB.stb_cmd"
+    },
+    "M16HUB.zero": {
+      "display": "파생.M16HUB.최근3분 완료시간0 발생분수",
+      "raw_columns": [
+        "M16HUB.QUE.TIME.AVGTOTALTIME1MIN"
+      ],
+      "feature_id": "M16HUB.zero"
+    },
+    "M16HUB.route_M14A": {
+      "display": "파생.M16HUB.M14A행 현재물량",
+      "raw_columns": [
+        "M16HUB.QUE.ALL.3F_TO_M14A_3F_JOB"
+      ],
+      "feature_id": "M16HUB.route_M14A"
+    },
+    "M16HUB.pio_M14A": {
+      "display": "파생.M16HUB.M14A행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16HUB->M14A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.pio_M14A"
+    },
+    "M16HUB.piofreq_M14A": {
+      "display": "파생.M16HUB.M14A행 PIO 발생분수",
+      "raw_columns": [
+        "M16HUB->M14A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.piofreq_M14A"
+    },
+    "M16HUB.route_M14B": {
+      "display": "파생.M16HUB.M14B행 현재물량",
+      "raw_columns": [
+        "M16HUB.QUE.ALL.3F_TO_M14B_7F_JOB"
+      ],
+      "feature_id": "M16HUB.route_M14B"
+    },
+    "M16HUB.pio_M14B": {
+      "display": "파생.M16HUB.M14B행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16HUB->M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.pio_M14B"
+    },
+    "M16HUB.piofreq_M14B": {
+      "display": "파생.M16HUB.M14B행 PIO 발생분수",
+      "raw_columns": [
+        "M16HUB->M14B_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.piofreq_M14B"
+    },
+    "M16HUB.route_M16A": {
+      "display": "파생.M16HUB.M16A행 현재물량",
+      "raw_columns": [
+        "M16HUB.QUE.ALL.3F_TO_M16A_6F_JOB"
+      ],
+      "feature_id": "M16HUB.route_M16A"
+    },
+    "M16HUB.pio_M16A": {
+      "display": "파생.M16HUB.M16A행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16HUB->M16A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.pio_M16A"
+    },
+    "M16HUB.piofreq_M16A": {
+      "display": "파생.M16HUB.M16A행 PIO 발생분수",
+      "raw_columns": [
+        "M16HUB->M16A_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.piofreq_M16A"
+    },
+    "M16HUB.route_MLUD": {
+      "display": "파생.M16HUB.MLUD행 현재물량",
+      "raw_columns": [
+        "M16HUB.QUE.MLUD.3F_TO_M16A_MLUD_AI_CMD"
+      ],
+      "feature_id": "M16HUB.route_MLUD"
+    },
+    "M16HUB.pio_MLUD": {
+      "display": "파생.M16HUB.MLUD행 PIO 최근5분 합",
+      "raw_columns": [
+        "M16HUB->MLUD_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.pio_MLUD"
+    },
+    "M16HUB.piofreq_MLUD": {
+      "display": "파생.M16HUB.MLUD행 PIO 발생분수",
+      "raw_columns": [
+        "M16HUB->MLUD_PIOERROR_DEPOSITED"
+      ],
+      "feature_id": "M16HUB.piofreq_MLUD"
+    }
+  },
+  "weights": {
+    "delay": 45,
+    "backlog": 40,
+    "completion": 85,
+    "port": 55,
+    "silent": 80
+  },
+  "aggregation": {
+    "second": 0.3,
+    "third": 0.15,
+    "trend_cap": 10
+  },
+  "score_boundaries": [
+    20,
+    40,
+    70
+  ],
+  "rapid": {
+    "util_drop_pp": 8,
+    "queue_jump_ratio": 0.05,
+    "min_points": 40,
+    "max_points": 70
+  },
+  "causal": true,
+  "notes": [
+    "Design replay only; not independently validated",
+    "Time input mapping follows original column-flow R-A: M14/M16A/M16B AVGLOADTIME1MIN; M14B/HUB AVGTOTALTIME1MIN",
+    "M16A MCS Queue covers 2F/3F/6F; backlog needs local evidence",
+    "Sorter separate from FAB risk",
+    "Missing values are not zero; no backward fill",
+    "v1.1: HUB reserved-inclusive storage; no STB CMD standalone points",
+    "HUB free ratio is reference-only, not inverted into occupied ratio",
+    "HUB has no STK: M16HUB.STRATE.STK.STORAGERATIO excluded",
+    "Other FABs normally have high storage occupancy; HUB empty-buffer thresholds never transferred",
+    "2026-08-26 M16A OHT STOP confirmed by user; exact STOP/START not supplied; not a score input",
+    "Storage unavailable does not mean empty; explicit optional-input quality flag",
+    "Persistence is aggregate metric duration, not individual FOUP dwell or exact MCS timer count",
+    "v1.2: Normal Sorter and CU Sorter are distinct equipment; score only Normal Sorter. CU excluded, not considered healthy. No MAX aggregation between equipment."
+  ],
+  "parent_config_id": "7c6396b695153b20",
+  "revision_date": "2026-09-28",
+  "revision_id": "FAB-RULE-20260928-02",
+  "hub_storage": {
+    "used_column": "M16HUB.STRATE.ALL.FABSTORAGERATIO",
+    "free_reference_column": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
+    "cmd_reference_column": "M16HUB.QUE.STB.3F_TO_M16A_3F_STB_CMD",
+    "low_pct": 5.0,
+    "high_pct": 20.0,
+    "min_persistence_minutes": 5,
+    "full_persistence_minutes": 10,
+    "release_window_minutes": 5,
+    "release_drop_pp": 2.0,
+    "unconfirmed_fraction": 0.25,
+    "selection_basis": "domain-based candidate thresholds; design P90=0.59%, P99=14.2%; independent validation pending"
+  },
+  "sorter_mode": "normal_only",
+  "config_id": "7e257816335e0778"
+}

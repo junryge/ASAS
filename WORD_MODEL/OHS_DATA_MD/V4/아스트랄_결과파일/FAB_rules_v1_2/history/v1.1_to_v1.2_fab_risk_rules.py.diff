@@ -1,0 +1,48 @@
+--- v1.1/fab_risk_rules.py
++++ v1.2/fab_risk_rules.py
+@@ -1,4 +1,4 @@
+-"""FAB transport risk v1.1. Frozen calibration; causal features only.
++"""FAB transport risk v1.2. Frozen calibration; causal features only.
+ Python 3.10+, numpy, pandas. Scores are severity indices, not probabilities.
+ """
+ from pathlib import Path
+@@ -109,7 +109,7 @@
+  return pd.DataFrame(z,index=d.index),spec,cores
+ 
+ def score(d,cfg):
+- if cfg.get('version')!='1.1':raise ValueError('v1.1 engine requires v1.1 config; use history for v1.0')
++ if cfg.get('version')!='1.2':raise ValueError('v1.2 engine requires v1.2 config; use history for v1.0')
+  x,spec,cores=features(d);outputs=[]
+  hub_storage=storage_context(d,cfg)
+  def sev(k):
+@@ -171,10 +171,10 @@
+   fs=pd.Series(scores,index=d.index);sortscore=pd.Series(np.nan,index=d.index)
+   if f!='M16HUB':
+    vals=[]
+-   for typ in ['normal','cu']:
++   for typ in ['normal']:
+     sp=cfg['sorter_parameters'][f+'.sorter_'+typ]
+     if sp['enabled']: vals.append(((x[f+'.sorter_'+typ]-sp['low'])/(sp['high']-sp['low'])*100).clip(0,100))
+-   sortscore=maximum(*vals).round(1)
++   sortscore=vals[0].round(1) if vals else pd.Series(np.nan,index=d.index)
+   def state(v):
+    return np.select([v.isna(),v>=70,v>=40,v>=20],['판단불가','위험','경고','주의'],default='낮음')
+   top=comp.idxmax(axis=1).map(RULE_NAMES).where(comp.max(axis=1)>0,'뚜렷한 위험 신호 없음')
+@@ -182,7 +182,7 @@
+   top=top.where(~(valid & fs.ge(20) & instant.lt(fs-1)), '회복 확인 중(하락 완화)')
+   support_keys=[k for k,v in cfg['parameters'].items() if k.startswith(f+'.') and v['enabled']]
+   coverage=x[support_keys].notna().mean(axis=1).mul(100).round(1)
+-  o=pd.DataFrame({'time':d.index,'FAB':f,'점수.FAB반송위험':fs.to_numpy(),'등급.FAB반송위험':state(fs),'점수.Sorter대기':sortscore.to_numpy(),'등급.Sorter대기':state(sortscore) if f!='M16HUB' else '해당없음','설명.주요위험':top.to_numpy(),'품질.필수입력유효':valid.to_numpy(),'품질.파생값관측률':coverage.to_numpy(),'점수.기본위험':base.round(2).to_numpy(),'점수.추세보정':acceleration.round(2).to_numpy()})
++  o=pd.DataFrame({'time':d.index,'FAB':f,'점수.FAB반송위험':fs.to_numpy(),'등급.FAB반송위험':state(fs),'점수.일반Sorter대기':sortscore.to_numpy(),'등급.일반Sorter대기':state(sortscore) if f!='M16HUB' else '해당없음','설명.주요위험':top.to_numpy(),'품질.필수입력유효':valid.to_numpy(),'품질.파생값관측률':coverage.to_numpy(),'점수.기본위험':base.round(2).to_numpy(),'점수.추세보정':acceleration.round(2).to_numpy()})
+   for k in comp:o['룰.'+RULE_NAMES[k]]=comp[k].round(2).to_numpy()
+   for k in ['q','growth','time','sla','loss','deficit','util_drop','qjump']:
+    if f+'.'+k in x:o['파생.'+spec[f+'.'+k]['display'].split('.',2)[-1]]=x[f+'.'+k].round(4).to_numpy()
+@@ -210,7 +210,7 @@
+  ap=argparse.ArgumentParser();ap.add_argument('--input',required=True);ap.add_argument('--config',required=True);ap.add_argument('--out',required=True);ap.add_argument('--fit',action='store_true');args=ap.parse_args()
+  d,meta=load_data(args.input);out=Path(args.out);out.mkdir(parents=True,exist_ok=True)
+  if args.fit:
+-  raise ValueError('v1.1 frozen release: use a separately versioned calibration change, not --fit')
++  raise ValueError('v1.2 frozen release: use a separately versioned calibration change, not --fit')
+  else:cfg=json.loads(Path(args.config).read_text(encoding='utf-8'))
+  result,x=score(d,cfg);result.to_csv(out/'FAB_scores.csv.gz',index=False,encoding='utf-8-sig',compression='gzip');episodes(result).to_csv(out/'alert_episodes.csv',index=False,encoding='utf-8-sig')
+  summary=result.groupby('FAB').agg(valid=('점수.FAB반송위험','count'),median=('점수.FAB반송위험','median'),peak=('점수.FAB반송위험','max'),warning_minutes=('점수.FAB반송위험',lambda z:int(z.ge(40).sum())),critical_minutes=('점수.FAB반송위험',lambda z:int(z.ge(70).sum())))

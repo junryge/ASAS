@@ -1,0 +1,54 @@
+[
+  {
+    "check": "M14A FAB 반송위험은 모든 분에서 v1.1과 동일",
+    "passed": true
+  },
+  {
+    "check": "M14A 일반 Sorter 원천 하나로 직접 계산한 결과 일치",
+    "passed": true
+  },
+  {
+    "check": "M14B FAB 반송위험은 모든 분에서 v1.1과 동일",
+    "passed": true
+  },
+  {
+    "check": "M14B 일반 Sorter 원천 하나로 직접 계산한 결과 일치",
+    "passed": true
+  },
+  {
+    "check": "M16A FAB 반송위험은 모든 분에서 v1.1과 동일",
+    "passed": true
+  },
+  {
+    "check": "M16A 일반 Sorter 원천 하나로 직접 계산한 결과 일치",
+    "passed": true
+  },
+  {
+    "check": "M16B FAB 반송위험은 모든 분에서 v1.1과 동일",
+    "passed": true
+  },
+  {
+    "check": "M16B 일반 Sorter 원천 하나로 직접 계산한 결과 일치",
+    "passed": true
+  },
+  {
+    "check": "M16HUB FAB 반송위험은 모든 분에서 v1.1과 동일",
+    "passed": true
+  },
+  {
+    "check": "HUB 일반 Sorter 미평가",
+    "passed": true
+  },
+  {
+    "check": "CU Sorter 급증은 일반 Sorter 및 FAB 반송점수에 영향 없음",
+    "passed": true
+  },
+  {
+    "check": "모든 CU Sorter 비활성",
+    "passed": true
+  },
+  {
+    "check": "일반 Sorter 점수 범위",
+    "passed": true
+  }
+]

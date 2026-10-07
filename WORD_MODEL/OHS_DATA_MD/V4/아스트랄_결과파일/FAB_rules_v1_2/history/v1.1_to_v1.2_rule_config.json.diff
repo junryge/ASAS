@@ -1,0 +1,59 @@
+--- v1.1/rule_config.json
++++ v1.2/rule_config.json
+@@ -1,5 +1,5 @@
+ {
+-  "version": "1.1",
++  "version": "1.2",
+   "fit_start": "2026-08-11 00:00:00",
+   "fit_end": "2026-09-11 23:59:00",
+   "fit_minutes": 46080,
+@@ -411,7 +411,7 @@
+     "M14A.sorter_cu": {
+       "low": 22.2,
+       "high": 307.0,
+-      "enabled": true
++      "enabled": false
+     },
+     "M14B.sorter_normal": {
+       "low": 54.5,
+@@ -421,7 +421,7 @@
+     "M14B.sorter_cu": {
+       "low": 16.35,
+       "high": 337.0,
+-      "enabled": true
++      "enabled": false
+     },
+     "M16A.sorter_normal": {
+       "low": 90.0,
+@@ -1082,7 +1082,6 @@
+     "Time input mapping follows original column-flow R-A: M14/M16A/M16B AVGLOADTIME1MIN; M14B/HUB AVGTOTALTIME1MIN",
+     "M16A MCS Queue covers 2F/3F/6F; backlog needs local evidence",
+     "Sorter separate from FAB risk",
+-    "M16A/B Cu Sorter identical in design data; excluded pending attribution",
+     "Missing values are not zero; no backward fill",
+     "v1.1: HUB reserved-inclusive storage; no STB CMD standalone points",
+     "HUB free ratio is reference-only, not inverted into occupied ratio",
+@@ -1090,11 +1089,12 @@
+     "Other FABs normally have high storage occupancy; HUB empty-buffer thresholds never transferred",
+     "2026-08-26 M16A OHT STOP confirmed by user; exact STOP/START not supplied; not a score input",
+     "Storage unavailable does not mean empty; explicit optional-input quality flag",
+-    "Persistence is aggregate metric duration, not individual FOUP dwell or exact MCS timer count"
++    "Persistence is aggregate metric duration, not individual FOUP dwell or exact MCS timer count",
++    "v1.2: Normal Sorter and CU Sorter are distinct equipment; score only Normal Sorter. CU excluded, not considered healthy. No MAX aggregation between equipment."
+   ],
+-  "parent_config_id": "9c2daa30d93f3887",
++  "parent_config_id": "7c6396b695153b20",
+   "revision_date": "2026-09-28",
+-  "revision_id": "FAB-RULE-20260928-01",
++  "revision_id": "FAB-RULE-20260928-02",
+   "hub_storage": {
+     "used_column": "M16HUB.STRATE.ALL.FABSTORAGERATIO",
+     "free_reference_column": "M16HUB.STRATE.STB.3F_STORAGE_UTIL",
+@@ -1108,5 +1108,6 @@
+     "unconfirmed_fraction": 0.25,
+     "selection_basis": "domain-based candidate thresholds; design P90=0.59%, P99=14.2%; independent validation pending"
+   },
+-  "config_id": "7c6396b695153b20"
++  "sorter_mode": "normal_only",
++  "config_id": "7e257816335e0778"
+ }

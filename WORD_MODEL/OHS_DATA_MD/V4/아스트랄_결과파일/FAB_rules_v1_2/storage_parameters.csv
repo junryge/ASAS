@@ -1,0 +1,12 @@
+﻿설정,값
+used_column,M16HUB.STRATE.ALL.FABSTORAGERATIO
+free_reference_column,M16HUB.STRATE.STB.3F_STORAGE_UTIL
+cmd_reference_column,M16HUB.QUE.STB.3F_TO_M16A_3F_STB_CMD
+low_pct,5.0
+high_pct,20.0
+min_persistence_minutes,5
+full_persistence_minutes,10
+release_window_minutes,5
+release_drop_pp,2.0
+unconfirmed_fraction,0.25
+selection_basis,"domain-based candidate thresholds; design P90=0.59%, P99=14.2%; independent validation pending"

@@ -1,0 +1,61 @@
+{
+  "current_version": "1.2",
+  "records": [
+    {
+      "version": "1.0",
+      "config_id": "9c2daa30d93f3887",
+      "status": "preserved_baseline",
+      "archive": "history/FAB_위험룰_v1_1_실행패키지.zip::FAB_rules_v1_1/history/v1.0/FAB_위험룰_v1_실행패키지.zip",
+      "archive_sha256": "0904140f9534685210262ad61787a7fdb61d7aa11338a1a103864db6a14219e6"
+    },
+    {
+      "version": "1.1",
+      "revision_id": "FAB-RULE-20260928-01",
+      "date": "2026-09-28",
+      "timezone": "Asia/Seoul",
+      "parent_version": "1.0",
+      "parent_config_id": "9c2daa30d93f3887",
+      "config_id": "7c6396b695153b20",
+      "status": "candidate_design_replayed_not_deployed",
+      "engine_sha256": "08b4cfab7215fc26e0e1c7b40ed3aab31d148bcd1f946a4a710b105daf05c560",
+      "config_sha256": "f427669611cf298d1a4134583c6107d561f94604277c4ced5b400724b7613cb7",
+      "design_input_sha256": "b77475068aaf21b19912a1ff813d4f634ef15b4f611a4e856a5cb608194bd0f1",
+      "design_period": [
+        "2026-08-11",
+        "2026-09-11"
+      ],
+      "changes": [
+        "REV-001",
+        "REV-002",
+        "REV-003",
+        "REV-004",
+        "REV-005",
+        "REV-006",
+        "REV-007",
+        "REV-008",
+        "REV-009"
+      ],
+      "verification_passed": 16,
+      "independent_holdout_evaluated": false
+    },
+    {
+      "version": "1.2",
+      "date": "2026-09-28",
+      "revision_id": "FAB-RULE-20260928-02",
+      "parent_version": "1.1",
+      "parent_config_id": "7c6396b695153b20",
+      "config_id": "7e257816335e0778",
+      "engine_sha256": "e8d49b9a55234fa46cd6595802a957230867159836393780f5f6fab4cf087555",
+      "config_sha256": "fa1dc32687c8e1c15faacdf4c97cd758b8739d14558150a2585274324a796bbe",
+      "status": "candidate_design_replayed_not_deployed",
+      "verification_passed": 13,
+      "changes": [
+        "general_sorter_only",
+        "cu_not_evaluated",
+        "derived_raw_mapping",
+        "plain_language_rule_explanation"
+      ],
+      "independent_holdout_evaluated": false
+    }
+  ]
+}

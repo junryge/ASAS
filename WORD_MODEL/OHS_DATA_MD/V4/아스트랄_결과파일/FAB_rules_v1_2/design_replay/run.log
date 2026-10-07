@@ -1,0 +1,8 @@
+        valid  median   peak  warning_minutes  critical_minutes
+FAB                                                            
+M14A    46010     0.0  100.0             1834                60
+M14B    46008     0.0   76.2             1164                24
+M16A    45953     0.0  100.0             1221                17
+M16B    45982     0.0  100.0             1035                17
+M16HUB  45939     0.0   76.9             1579                14
+config_id 7e257816335e0778
